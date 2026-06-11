@@ -10,6 +10,27 @@ var router = express.Router();
 var fs = require('fs');
 var path = require('path');
 var multer = require('multer');
+var AdmZip = require('adm-zip');
+
+// 从 APK 内部 assets/version.json 解析版本信息
+function parseApkInfo(filePath) {
+  try {
+    var buf = fs.readFileSync(filePath);
+    var zip = new AdmZip(buf);
+    var versionEntry = zip.getEntry('assets/version.json');
+    if (!versionEntry) return null;
+    var raw = versionEntry.getData().toString('utf8');
+    var info = JSON.parse(raw);
+    return {
+      versionName: info.versionName || '',
+      versionCode: parseInt(info.versionCode, 10) || 0,
+      changelog: info.changelog || ''
+    };
+  } catch(e) {
+    log.warn('[Version] APK解析失败 (' + path.basename(filePath) + '):', e.message);
+    return null;
+  }
+}
 
 var VERSION_DIR = path.join(__dirname, '..', 'files', 'app');
 var VERSION_FILE = path.join(VERSION_DIR, 'versions.json');
@@ -25,10 +46,10 @@ function saveVersions(versions) {
   fs.writeFileSync(VERSION_FILE, JSON.stringify(versions, null, 2), 'utf-8');
 }
 
-// Upload storage
+// Upload storage — 先用临时名，解析后再按版本重命名
 var storage = multer.diskStorage({
   destination: VERSION_DIR,
-  filename: function(req, file, cb) { cb(null, 'FileService-v' + (req.body.version || 'latest') + '.apk'); }
+  filename: function(req, file, cb) { cb(null, 'FMS-uploading-' + Date.now() + '.apk'); }
 });
 var upload = multer({ storage: storage, limits: { fileSize: 100 * 1024 * 1024 } });
 
@@ -65,21 +86,42 @@ router.post('/admin/version/upload', requireAdmin, upload.single('file'), functi
   var file = req.file;
   if (!file) return res.json({ code: 1, message: '未上传文件', data: null });
 
-  // Auto-parse version from filename: FileService-v2.3.1.apk -> 2.3.1
-  var version = req.body.version || '';
-  var versionCode = parseInt(req.body.versionCode, 10) || 0;
-  if (!version) {
-    var m = file.originalname.match(/v?(\d+)\.(\d+)\.(\d+)/);
-    if (m) {
-      var ma = parseInt(m[1]), mi = parseInt(m[2]), pa = parseInt(m[3]);
-      version = ma + '.' + mi + '.' + pa;
-      versionCode = ma * 10000 + mi * 100 + pa;
-    } else {
-      version = '0.0.0';
-      versionCode = 0;
+  // 优先从 APK 内部 assets/version.json 解析版本号和更新日志
+  var version, versionCode, notes;
+  var apkInfo = parseApkInfo(file.path);
+  if (apkInfo && apkInfo.versionName) {
+    version = apkInfo.versionName;
+    versionCode = apkInfo.versionCode;
+    notes = apkInfo.changelog || req.body.notes || '';
+    log.info('[Version] APK自动识别: v' + version + ' (' + versionCode + ') changelog: ' + (notes ? notes.substring(0, 40) : ''));
+  } else {
+    // 回退：从文件名解析
+    version = req.body.version || '';
+    versionCode = parseInt(req.body.versionCode, 10) || 0;
+    if (!version) {
+      var m = file.originalname.match(/v?(\d+)\.(\d+)\.(\d+)/);
+      if (m) {
+        version = parseInt(m[1]) + '.' + parseInt(m[2]) + '.' + parseInt(m[3]);
+        versionCode = parseInt(m[1]) * 10000 + parseInt(m[2]) * 100 + parseInt(m[3]);
+      } else {
+        version = '0.0.0';
+        versionCode = 0;
+      }
     }
+    notes = req.body.notes || '';
   }
-  var notes = req.body.notes || '';
+
+  // 重命名为 FMS-Service-v{version}.apk
+  var newFileName = 'FMS-Service-v' + version + '.apk';
+  var newPath = path.join(VERSION_DIR, newFileName);
+  try {
+    if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+    fs.renameSync(file.path, newPath);
+    file.filename = newFileName;
+    file.path = newPath;
+  } catch(e) {
+    log.error('[Version] 文件重命名失败:', e.message);
+  }
 
   var url = '/files/app/' + file.filename;
   var entry = {
