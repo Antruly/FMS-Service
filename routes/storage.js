@@ -768,28 +768,39 @@ router.post('/admin/storage/retry-failed', requireAdmin, function(req, res) {
   }
 
   var AsyncTask = require('../lib/db').AsyncTask;
-  var taskId = AsyncTask.create('auto_migrate', '迁移失败文件重试 (' + totalPending.cnt + ' 个)');
-
-  processBatch(taskId, function(err) {
-    if (err) {
-      AsyncTask.complete(taskId, 'failed', err);
-    } else {
-      AsyncTask.complete(taskId, 'completed', '迁移完成');
-    }
+  var taskId = AsyncTask.create('auto_migrate', '迁移失败文件重试 (' + totalPending.cnt + '个)', {
+    total_pending: totalPending.cnt
   });
+  AsyncTask.start(taskId, totalPending.cnt);
+  AsyncTask.appendLog(taskId, '开始重试迁移失败文件，共 ' + totalPending.cnt + ' 个', 'info');
 
-  res.json({ code: 0, message: '已开始重试 ' + totalPending.cnt + ' 个文件', data: { reset: resetCount.cnt, pending: totalPending.cnt } });
+  var migrated = 0, errors = 0;
+  var batchSize = 5;
 
-  function processBatch(taskId, done) {
+  function runBatch() {
     var files = db.query(
-      "SELECT * FROM virtual_files WHERE (storage_id IS NULL OR storage_id = 0) AND enc_version >= 1 AND (migration_status IS NULL OR migration_status = 0) ORDER BY id LIMIT 5"
+      "SELECT * FROM virtual_files WHERE (storage_id IS NULL OR storage_id = 0) AND enc_version >= 1 AND (migration_status IS NULL OR migration_status = 0) ORDER BY id LIMIT ?",
+      [batchSize]
     );
-    if (files.length === 0) return done(null);
-    migrateFileBatch(files, function(m, e) {
-      AsyncTask.update(taskId, m, e);
-      processBatch(taskId, done);
+    if (files.length === 0) {
+      AsyncTask.complete(taskId, 'completed');
+      AsyncTask.appendLog(taskId, '重试迁移完成! 成功:' + migrated + ' 失败:' + errors, 'info');
+      return;
+    }
+    migrateFileBatch(files, function(batchMigrated, batchErrors) {
+      migrated += batchMigrated;
+      errors += batchErrors;
+      AsyncTask.updateProgress(taskId, migrated, totalPending.cnt, errors);
+      if (migrated % 10 === 0) {
+        AsyncTask.appendLog(taskId, '迁移进度: ' + migrated + '/' + totalPending.cnt + ' (失败:' + errors + ')', 'info');
+      }
+      setImmediate(runBatch);
     });
   }
+
+  setImmediate(runBatch);
+
+  res.json({ code: 0, message: '已开始重试 ' + totalPending.cnt + ' 个文件', data: { reset: resetCount.cnt, pending: totalPending.cnt } });
 });
 
 // POST /api/admin/storage/migrate — 批量迁移旧文件（异步处理）
