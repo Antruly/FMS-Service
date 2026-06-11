@@ -16,6 +16,7 @@ files/path1/
 files/path2/
 files/path3/
 files/3path1/
+files/default-mirror/
 
 # ==================== Environment / Secrets ====================
 .env
