@@ -739,6 +739,16 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
       return;
     }
 
+    // 源文件不存在 → 检查是否已移动到目标（幂等：Windows 可能发两次 MOVE）
+    var destFiles = VirtualFile.listByDir(resolved.userId, destDirId);
+    var alreadyMoved = destFiles.find(function(f) { return f.name === destName; });
+    if (alreadyMoved) {
+      log.info('[WebDAV-MOVE] Already moved: ' + destName + ' id=' + alreadyMoved.id + ' in dirId=' + destDirId);
+      res.setHeader('Location', destUrl);
+      res.status(204).end();
+      return;
+    }
+
     var dirs = VirtualDir.listPersonalByParent(resolved.userId, dirId);
     var dir = dirs.find(function(d) { return d.name === srcName; });
     if (dir) {
