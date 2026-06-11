@@ -725,13 +725,17 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
     // 查找源文件/目录
     var files = VirtualFile.listByDir(resolved.userId, dirId);
     var file = files.find(function(f) { return f.name === srcName; });
+    // 构建目标 URL 用于 Location 头（RFC 4918 要求 MOVE 201 必须带 Location）
+    var destUrl = '/webdav/' + resolved.link.token + '/' + destParts.concat([destName]).map(encodeURIComponent).join('/');
+
     if (file) {
       require('../lib/db').run('UPDATE virtual_files SET dir_id = ?, name = ?, updated_at = datetime("now") WHERE id = ?',
         [destDirId, destName, file.id]);
       cacheInvalidate(resolved.userId, dirId);
       cacheInvalidate(resolved.userId, destDirId);
       log.info('[WebDAV-MOVE] OK: ' + srcName + ' id=' + file.id + ' from dirId=' + dirId + ' to dirId=' + destDirId);
-      res.status(201).end('Moved');
+      res.setHeader('Location', destUrl);
+      res.status(201).end();
       return;
     }
 
@@ -743,7 +747,8 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
       cacheInvalidate(resolved.userId, dirId);
       cacheInvalidate(resolved.userId, destDirId);
       log.info('[WebDAV-MOVE] OK dir: ' + srcName + ' id=' + dir.id + ' from parent=' + dirId + ' to parent=' + destDirId);
-      res.status(201).end('Moved');
+      res.setHeader('Location', destUrl);
+      res.status(201).end();
       return;
     }
 
@@ -1135,7 +1140,9 @@ router.all('/webdav/:token/*', function(req, res, next) {
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 
   fs.renameSync(resolved.fullPath, destPath);
-  res.status(201).end('Moved');
+  // RFC 4918: MOVE 201 必须带 Location 头指向新位置，否则 Windows 可能重试
+  res.setHeader('Location', '/webdav/' + token + '/' + destMatch[1]);
+  res.status(201).end();
 });
 
 // PROPPATCH - RFC 4918 Section 9.2: 设置/删除属性
