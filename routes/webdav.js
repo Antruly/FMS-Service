@@ -741,6 +741,13 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
     log.debug('[WebDAV-MOVE] Looking for "' + srcName + '" (' + srcName.length + ' chars) in dirId=' + dirId + ' userId=' + resolved.userId + ' files count=' + files.length);
     if (files.length > 0) {
       log.debug('[WebDAV-MOVE] First 5 files in dirId=' + dirId + ': ' + files.slice(0,5).map(function(f){ return '"' + f.name + '" (' + f.name.length + ' chars)'; }).join(', '));
+    } else {
+      // 文件不在预期目录 — 全库搜索该用户的文件，看它到底在哪
+      var allFiles = require('../lib/db').query('SELECT id, name, dir_id FROM virtual_files WHERE user_id = ? ORDER BY dir_id, name', [resolved.userId]);
+      log.debug('[WebDAV-MOVE] User ' + resolved.userId + ' has ' + allFiles.length + ' files total across all dirs:');
+      allFiles.forEach(function(f) {
+        log.debug('[WebDAV-MOVE]   id=' + f.id + ' dir_id=' + f.dir_id + ' name="' + f.name + '"');
+      });
     }
     var file = files.find(function(f) { return f.name === srcName; });
     if (file) {
