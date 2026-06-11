@@ -361,8 +361,6 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
       </table>
     </div>
     <div class="pagination" id="file-pagination"></div>
-    <!-- 重复文件 -->
-    <div id="duplicates-container" style="margin-top:16px"></div>
   </div>
 </div>
 
@@ -1074,80 +1072,70 @@ function showFileDetail(id){
   });
 }
 
-// ==================== DUPLICATES ====================
+// ==================== DUPLICATES & LOST FILES ====================
 function loadDuplicates(){
-  var container=$('duplicates-container');
-  container.innerHTML='<div class="empty">加载中...</div>';
+  var tbody=$('file-table-body');
+  tbody.innerHTML='<tr><td colspan="8" class="empty">加载中...</td></tr>';
+  $('file-pagination').innerHTML='<span style="font-size:11px;color:var(--warn)">📋 重复文件视图</span>';
   api('/api/admin/storage/duplicates').then(function(r){
-    if(r.code!==0){container.innerHTML='';return}
+    if(r.code!==0){tbody.innerHTML='<tr><td colspan="8" class="empty">加载失败</td></tr>';return}
     var groups=r.data.groups||[];
     if(groups.length===0){
-      container.innerHTML='<div class="section" style="margin-top:12px"><div class="section-header"><h2>📋 重复文件</h2></div><div class="empty">✅ 没有重复文件</div></div>';
+      tbody.innerHTML='<tr><td colspan="8" class="empty">✅ 没有重复文件</td></tr>';
       return;
     }
-    var html='<div class="section" style="margin-top:12px"><div class="section-header"><h2>📋 重复文件 ('+groups.length+'组)</h2></div>';
+    var html='',totalCount=0;
     groups.forEach(function(g){
-      var totalRefs=g.files.reduce(function(s,f){return s+f.ref_count},0);
-      html+='<div style="margin-bottom:12px;border:1px solid var(--warn);border-radius:8px;overflow:hidden">';
-      html+='<div style="padding:8px 14px;background:var(--warn-dim);font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">';
-      html+='<span>🔁 哈希: <code style="font-size:11px">'+escHtml(g.file_hash.substring(0,24))+'...</code></span>';
-      html+='<span>大小: '+formatBytes(g.file_size)+' | 重复数: '+g.dup_count+' | 总引用: '+totalRefs+'</span>';
-      html+='</div>';
-      html+='<div style="padding:8px">';
+      totalCount+=g.files.length;
       g.files.forEach(function(f){
-        var pathCount=f.paths?f.paths.length:0;
-        html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;margin:4px 0;background:var(--bg);border-radius:6px;gap:8px;flex-wrap:wrap">';
-        html+='<div style="flex:1;min-width:0">';
-        html+='<span style="font-weight:600;font-size:13px">#'+f.id+'</span> ';
-        html+='<code style="font-size:10px;color:var(--text-muted)">'+escHtml((f.uuid||'').substring(0,14))+'...</code>';
-        html+=' <span class="badge badge-gray">组#'+(f.group_id||0)+'</span>';
-        html+=' <span style="font-size:11px;color:var(--text-muted)">引用:'+f.ref_count+' 路径:'+pathCount+'</span>';
-        html+='<div style="font-size:11px;color:var(--text-muted);margin-top:2px">'+escHtml(f.ref_users||'无引用')+'</div>';
-        html+='</div>';
-        html+='<button class="btn btn-outline btn-xs" onclick="showFileDetail('+f.id+')">详情</button>';
-        html+='</div>';
-        // 显示路径
-        if(f.paths&&f.paths.length>0){
-          f.paths.forEach(function(pp){
-            var absPath=(pp.local_path||'')+'/'+(pp.relative_path||pp.full_path||'');
-            html+='<div style="font-size:10px;color:var(--text-muted);padding:2px 10px 2px 24px;font-family:monospace">↳ '+escHtml(pp.pool_name||('镜像'+pp.mirror_index))+' @ '+escHtml(absPath)+'</div>';
-          });
-        }
+        var groupId=f.paths&&f.paths.length>0?f.paths[0].group_id:'-';
+        var relPath=f.paths&&f.paths.length>0?(f.paths[0].relative_path||f.paths[0].full_path||''):'-';
+        html+='<tr>';
+        html+='<td>#'+f.id+'</td>';
+        html+='<td class="mono" title="'+escHtml(f.uuid||'')+'">'+escHtml((f.uuid||'').substring(0,12))+'...</td>';
+        html+='<td class="mono" title="'+escHtml(relPath)+'">🔁 '+escHtml(relPath.substring(0,30))+'</td>';
+        html+='<td><span class="badge badge-gray">组#'+groupId+'</span></td>';
+        html+='<td>'+formatBytes(g.file_size)+'</td>';
+        html+='<td><strong>'+f.ref_count+'</strong></td>';
+        html+='<td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(f.ref_users||'')+'">'+escHtml(f.ref_users||'-')+'</td>';
+        html+='<td><button class="btn btn-outline btn-xs" onclick="showFileDetail('+f.id+')">详情</button></td>';
+        html+='</tr>';
       });
-      html+='</div></div>';
     });
-    html+='</div>';
-    container.innerHTML=html;
+    tbody.innerHTML=html;
+    $('file-pagination').innerHTML='<span style="font-size:11px;color:var(--warn)">📋 重复文件: '+groups.length+'组 ('+totalCount+'个文件) | 哈希相同但存储了多份</span>';
   });
 }
 
 function loadLostFilesSimple(){
-  var container=$('duplicates-container');
-  container.innerHTML='<div class="empty">加载中...</div>';
+  var tbody=$('file-table-body');
+  tbody.innerHTML='<tr><td colspan="8" class="empty">加载中...</td></tr>';
+  $('file-pagination').innerHTML='<span style="font-size:11px;color:var(--danger)">⚠️ 丢失文件视图</span>';
   api('/api/admin/storage/lost-files').then(function(r){
-    if(r.code!==0){container.innerHTML='';return}
+    if(r.code!==0){tbody.innerHTML='<tr><td colspan="8" class="empty">加载失败</td></tr>';return}
     var d=r.data;
     var all=[];
     if(d.physical&&d.physical.files) all=all.concat(d.physical.files.map(function(f){f._type='物理丢失';f._cls='danger';return f}));
     if(d.logical&&d.logical.files) all=all.concat(d.logical.files.map(function(f){f._type='逻辑丢失';f._cls='warn';return f}));
     if(all.length===0){
-      container.innerHTML='<div class="section" style="margin-top:12px"><div class="section-header"><h2>⚠️ 丢失文件</h2></div><div class="empty">✅ 没有丢失文件</div></div>';
+      tbody.innerHTML='<tr><td colspan="8" class="empty">✅ 没有丢失文件</td></tr>';
       return;
     }
-    var html='<div class="section" style="margin-top:12px"><div class="section-header"><h2>⚠️ 丢失文件 ('+all.length+'个)</h2><span style="font-size:11px;color:var(--text-muted)">物理丢失:'+(d.physical?d.physical.count:0)+' | 逻辑丢失:'+(d.logical?d.logical.count:0)+'</span></div>';
-    html+='<div class="table-wrap"><table><thead><tr><th>ID</th><th>UUID</th><th>类型</th><th>大小</th><th>引用</th><th>创建时间</th></tr></thead><tbody>';
+    var html='';
     all.forEach(function(f){
       html+='<tr>';
       html+='<td>#'+f.id+'</td>';
-      html+='<td><code style="font-size:10px">'+escHtml((f.uuid||'').substring(0,14))+'</code></td>';
-      html+='<td><span style="color:var(--'+f._cls+');font-weight:600">'+f._type+'</span></td>';
+      html+='<td class="mono" title="'+escHtml(f.uuid||'')+'">'+escHtml((f.uuid||'').substring(0,12))+'...</td>';
+      html+='<td><span style="color:var(--'+f._cls+');font-weight:600">⚠ '+f._type+'</span></td>';
+      html+='<td>-</td>';
       html+='<td>'+formatBytes(f.size||0)+'</td>';
-      html+='<td>'+f.ref_count+'</td>';
-      html+='<td style="font-size:11px;color:var(--text-muted)">'+escHtml((f.created_at||'').substring(0,10))+'</td>';
+      html+='<td><strong>'+f.ref_count+'</strong></td>';
+      html+='<td style="font-size:11px;color:var(--text-muted)">-</td>';
+      html+='<td><button class="btn btn-outline btn-xs" onclick="showFileDetail('+f.id+')">详情</button></td>';
       html+='</tr>';
     });
-    html+='</tbody></table></div></div>';
-    container.innerHTML=html;
+    tbody.innerHTML=html;
+    $('file-pagination').innerHTML='<span style="font-size:11px;color:var(--danger)">⚠️ 丢失文件: '+all.length+'个 (物理:'+(d.physical?d.physical.count:0)+' | 逻辑:'+(d.logical?d.logical.count:0)+')</span>';
   });
 }
 
