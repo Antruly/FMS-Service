@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07090f">
+  <meta name="description" content="离线下载 - 文件管理">
+  <title>离线下载 // FMS</title>
+  <link rel="icon" href="/favicon.png">
+  <script src="./axios.min.js?v=2026040303"></script>
+  <script>
+    // 检查登录状态并重定向到主页的离线下载面板
+    axios.defaults.withCredentials = true;
+    axios.get('/api/auth/me').then(function(res) {
+      if (res.data.code === 0 && res.data.data && res.data.data.user) {
+        // 已登录，跳转到主页并打开离线下载页面
+        window.location.href = '/home.html#offline';
+      } else {
+        window.location.href = '/login.html';
+      }
+    }).catch(function() {
+      window.location.href = '/login.html';
+    });
+  </script>
+</head>
+<body style="background:#07090f;display:flex;align-items:center;justify-content:center;height:100vh;color:#7a90b5;font-family:'Share Tech Mono',monospace">
+  <div style="text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">&#128229;</div>
+    <div>正在跳转...</div>
+  </div>
+</body>
+</html>

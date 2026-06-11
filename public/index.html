@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07090f">
+  <meta name="description" content="FMS - 安全高效的文件管理系统，支持加密存储、分享协作、离线下载">
+  <title>FMS // 文件管理系统</title>
+  <link rel="icon" href="/favicon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <script src="/axios.min.js"></script>
+  <script src="/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #07090f; --bg2: #0d1526; --card: #0f1a2e; --cardH: #142035;
+      --border: rgba(0,212,255,0.1); --accent: #00d4ff; --accent2: #7b61ff;
+      --text: #d4e5f7; --text2: #7a90b5; --text3: #3d5070;
+      --success: #10b981; --warning: #f59e0b; --error: #ef4444;
+      --radius: 14px;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Syne',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+    .bg-grid{position:fixed;inset:0;pointer-events:none;z-index:0;background-image:linear-gradient(var(--accent) 1px,transparent 1px),linear-gradient(90deg,var(--accent) 1px,transparent 1px);background-size:52px 52px;opacity:.03}
+    .bg-orb{position:fixed;border-radius:50%;filter:blur(100px);pointer-events:none;z-index:0}
+    .bg-orb-1{width:600px;height:600px;top:-200px;right:-150px;background:radial-gradient(circle,rgba(0,212,255,.06),transparent 70%)}
+    .bg-orb-2{width:400px;height:400px;bottom:-100px;left:-100px;background:radial-gradient(circle,rgba(123,97,255,.05),transparent 70%)}
+
+    .page{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:20px 24px 60px}
+
+    /* Header */
+    .header{display:flex;align-items:center;justify-content:space-between;padding:20px 0 24px;border-bottom:1px solid var(--border);margin-bottom:32px;flex-wrap:wrap;gap:14px}
+    .header-left{display:flex;align-items:center;gap:14px}
+    .logo-icon{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 0 30px rgba(0,212,255,.2)}
+    .logo-text h1{font-size:22px;font-weight:800;letter-spacing:1px;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .logo-text span{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:3px}
+    .header-right{display:flex;gap:10px;align-items:center}
+    .btn{padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text2);cursor:pointer;font-family:'Syne',sans-serif;font-size:13px;font-weight:600;transition:all .25s;text-decoration:none;display:flex;align-items:center;gap:6px;white-space:nowrap}
+    .btn:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 0 16px rgba(0,212,255,.1)}
+    .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff}
+    .user-tag{font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px}
+
+    /* Stats Grid */
+    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
+    .stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;position:relative;overflow:hidden;transition:all .3s}
+    .stat-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.3)}
+    .stat-card .stat-icon{font-size:26px;margin-bottom:10px}
+    .stat-card .stat-value{font-size:26px;font-weight:800;letter-spacing:.5px}
+    .stat-card .stat-label{font-size:11px;color:var(--text3);margin-top:4px;font-family:'Share Tech Mono',monospace}
+    .stat-card .stat-glow{position:absolute;top:-30px;right:-30px;width:80px;height:80px;border-radius:50%;opacity:.1;pointer-events:none}
+
+    /* Main Grid */
+    .main-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px}
+    .main-grid .span2{grid-column:1/-1}
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:22px 24px;transition:all .25s}
+    .card:hover{border-color:rgba(255,255,255,.08)}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:8px}
+    .card-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+    .card-badge{font-size:10px;padding:3px 8px;border-radius:20px;font-family:'Share Tech Mono',monospace;font-weight:600}
+    .card-badge.new{background:rgba(0,212,255,.12);color:var(--accent)}
+    .card-badge.hot{background:rgba(239,68,68,.12);color:var(--error)}
+    .card-badge.admin{background:rgba(123,97,255,.12);color:var(--accent2)}
+
+    /* Updates */
+    .update-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+    .update-item:last-child{border-bottom:none}
+    .update-dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0}
+    .update-dot.feature{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+    .update-dot.fix{background:var(--success)}
+    .update-dot.security{background:var(--error);box-shadow:0 0 8px rgba(239,68,68,.4)}
+    .update-content h4{font-size:13px;font-weight:700;margin-bottom:2px}
+    .update-content p{font-size:11px;color:var(--text3)}
+    .update-time{font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;white-space:nowrap}
+
+    /* File rows */
+    .file-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+    .file-row:last-child{border-bottom:none}
+    .file-icon{font-size:20px;width:32px;text-align:center;flex-shrink:0}
+    .file-info{flex:1;min-width:0}
+    .file-info .name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .file-info .meta{font-size:10px;color:var(--text3)}
+    .file-size{font-size:10px;color:var(--text2);font-family:'Share Tech Mono',monospace;white-space:nowrap}
+
+    /* Quick actions */
+    .actions-row{display:flex;gap:10px;flex-wrap:wrap}
+    .action-chip{padding:9px 16px;border-radius:25px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-family:'Syne',sans-serif;font-size:12px;font-weight:600;transition:all .25s;display:flex;align-items:center;gap:6px;text-decoration:none}
+    .action-chip:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,.05)}
+
+    /* Progress bar */
+    .progress-wrap{margin:8px 0}
+    .progress-bar{height:6px;background:rgba(255,255,255,.05);border-radius:3px;overflow:hidden}
+    .progress-fill{height:100%;border-radius:3px;transition:width .5s}
+    .progress-fill.accent{background:var(--accent)}
+    .progress-fill.warning{background:var(--warning)}
+    .progress-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:4px}
+
+    /* System */
+    .status-row{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12px}
+    .status-dot{width:7px;height:7px;border-radius:50%}
+    .status-dot.on{background:var(--success);box-shadow:0 0 6px rgba(16,185,129,.5)}
+
+    /* Hero section (visitor) */
+    .hero{display:flex;align-items:center;gap:60px;padding:50px 0 60px;min-height:420px}
+    .hero-left{flex:1}
+    .hero-left .badge{display:inline-block;padding:5px 14px;border-radius:20px;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.2);color:var(--accent);font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:20px;font-family:'Share Tech Mono',monospace}
+    .hero-left h2{font-size:48px;font-weight:800;line-height:1.15;margin-bottom:16px;letter-spacing:-0.5px}
+    .hero-left h2 .g1{background:linear-gradient(135deg,var(--accent),#5ce0ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .hero-left h2 .g2{background:linear-gradient(135deg,var(--accent2),#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .hero-left p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:32px;max-width:460px}
+    .hero-btns{display:flex;gap:12px}
+    .hero-btns .btn{padding:13px 28px;font-size:15px;border-radius:12px}
+    .hero-right{flex:0 0 340px;position:relative}
+    .hero-visual{width:340px;height:340px;border-radius:24px;background:linear-gradient(135deg,rgba(0,212,255,.08),rgba(123,97,255,.06));border:1px solid var(--border);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+    .hero-visual::before{content:'';position:absolute;inset:-1px;border-radius:24px;padding:1px;background:linear-gradient(135deg,var(--accent),transparent 50%,var(--accent2));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.3}
+    .hero-visual .hv-icon{font-size:100px;position:relative;z-index:1;filter:drop-shadow(0 0 40px rgba(0,212,255,.3))}
+    .hero-visual .hv-orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:.15}
+    .hero-visual .hv-orb-1{width:160px;height:160px;top:30px;right:20px;background:var(--accent)}
+    .hero-visual .hv-orb-2{width:120px;height:120px;bottom:40px;left:30px;background:var(--accent2)}
+    /* Features */
+    .features-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:40px;padding-top:10px}
+    .feature-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:28px 22px;text-align:center;transition:all .35s;position:relative;overflow:hidden}
+    .feature-card::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:0;height:2px;background:var(--accent);transition:width .35s}
+    .feature-card:hover::after{width:60%}
+    .feature-card:hover{border-color:rgba(0,212,255,.3);transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,.3)}
+    .feature-card .fc-icon{font-size:38px;margin-bottom:14px;display:block}
+    .feature-card h4{font-size:14px;font-weight:700;margin-bottom:6px}
+    .feature-card p{font-size:11px;color:var(--text3);line-height:1.6}
+
+    @media(max-width:768px){
+      .hero{flex-direction:column;text-align:center;padding:30px 0 40px;min-height:auto;gap:30px}
+      .hero-left h2{font-size:32px}
+      .hero-left p{max-width:100%}
+      .hero-btns{justify-content:center}
+      .hero-right{flex:0 0 auto}
+      .hero-visual{width:200px;height:200px;margin:0 auto}
+      .hero-visual .hv-icon{font-size:60px}
+      .features-row{grid-template-columns:repeat(2,1fr)}
+    }
+    @media(max-width:480px){.features-row{grid-template-columns:1fr}}
+
+    /* Hidden helpers */
+    .hidden{display:none !important}
+
+    @media(max-width:768px){
+      .stats-grid{grid-template-columns:repeat(2,1fr)}
+      .main-grid{grid-template-columns:1fr}
+      .page{padding:14px 16px 40px}
+      .hero h2{font-size:26px}
+      .feature-item{width:150px;padding:16px 12px}
+    }
+    @media(max-width:480px){.stats-grid{grid-template-columns:1fr}}
+
+    .theme-toggle{position:fixed;top:20px;right:20px;z-index:100;width:40px;height:40px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;transition:all .3s}
+    .theme-toggle:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 0 16px rgba(0,212,255,.15)}
+
+    [data-theme="light"]{--bg:#eef2f8;--bg2:#f8faff;--card:#fff;--cardH:#f0f5ff;--border:rgba(100,140,220,.15);--text:#1a2848;--text2:#4a6090;--text3:#8aa0c0}
+    [data-theme="light"] .bg-grid{opacity:.06}
+
+    /* App Download Popup */
+    .dl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;backdrop-filter:blur(4px)}
+    .dl-overlay.show{display:flex}
+    .dl-modal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px 28px;max-width:380px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.5),0 0 40px rgba(0,212,255,.08)}
+    .dl-modal h3{font-size:18px;font-weight:700;margin-bottom:6px}
+    .dl-modal .dl-hint{font-size:12px;color:var(--text3);margin-bottom:16px}
+    .dl-modal .dl-qr{width:180px;height:180px;margin:0 auto 14px;background:#fff;border-radius:12px;padding:8px;display:flex;align-items:center;justify-content:center;color:#07090f;font-size:12px}
+    .dl-modal .dl-ver{font-size:13px;color:var(--text2);margin-bottom:16px;font-weight:600}
+    .dl-modal .btn{padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text2);cursor:pointer;font-family:'Syne',sans-serif;font-size:13px;font-weight:600;transition:all .25s;width:100%;margin-bottom:10px}
+    .dl-modal .btn:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 0 16px rgba(0,212,255,.1)}
+    .dl-modal .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff}
+    .dl-modal .btn.close-btn{background:transparent;border:1px solid var(--border);width:100%;margin-bottom:0}
+  </style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+<button class="theme-toggle" id="themeToggle" title="切换主题">&#9788;</button>
+
+<div class="page">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-icon"><img src="/favicon.png" alt="FMS" style="width:40px;height:40px"></div>
+      <div class="logo-text"><h1>FMS</h1><span>SYS://DASHBOARD</span></div>
+    </div>
+    <div class="header-right" id="headerRight">
+      <span style="color:var(--text3);font-size:12px">加载中...</span>
+    </div>
+  </header>
+
+  <!-- ====== VISITOR VIEW (not logged in) ====== -->
+  <div id="visitorView">
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-left">
+        <div class="badge">SYS://ON_PREMISE</div>
+        <h2><span class="g1">私有部署</span> <span class="g2">安全可控</span></h2>
+        <p>FMS 是专为企业打造的安全文件管理系统。AES-256-GCM 加密保障数据隐私，灵活的分享与权限控制，让团队协作既高效又安全。</p>
+        <div class="hero-btns">
+          <a href="/login.html" class="btn primary">&#128274; 登录系统</a>
+          <a href="/login.html?tab=register" class="btn">&#128100; 注册账号</a>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="hero-visual">
+          <div class="hv-orb hv-orb-1"></div>
+          <div class="hv-orb hv-orb-2"></div>
+          <div class="hv-icon">&#128193;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div class="features-row">
+      <div class="feature-card">
+        <span class="fc-icon">&#128274;</span><h4>端到端加密</h4><p>AES-256-GCM 加密，密钥仅您掌握</p>
+      </div>
+      <div class="feature-card">
+        <span class="fc-icon">&#128279;</span><h4>智能分享</h4><p>链接分享+提取码+下载次数限制</p>
+      </div>
+      <div class="feature-card">
+        <span class="fc-icon">&#128229;</span><h4>离线下载</h4><p>远程 HTTP 资源自动下载到您的空间</p>
+      </div>
+      <div class="feature-card" onclick="openAppDownload()" style="cursor:pointer">
+        <span class="fc-icon">&#128241;</span><h4>移动端 App</h4><p>Android 扫码下载，支持扫码登录</p>
+      </div>
+    </div>
+
+    <!-- Updates + Download -->
+    <div class="main-grid">
+      <div class="card">
+        <div class="card-header"><span class="card-title">&#128640; 最新更新</span><span class="card-badge new">v2.4.0</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>公共目录文件分享</h4><p>管理员可分享公共目录，普通用户限1天</p></div><span class="update-time">06-04</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>下载次数限制 + 首页仪表盘</h4><p>分享支持下载上限，登录前后不同内容</p></div><span class="update-time">06-05</span></div>
+        <div class="update-item"><div class="update-dot security"></div><div class="update-content"><h4>CSRF 安全防护增强</h4><p>修复扫码登录安全漏洞，加固请求防护</p></div><span class="update-time">06-04</span></div>
+        <div class="update-item"><div class="update-dot fix"></div><div class="update-content"><h4>大文件上传优化</h4><p>流式写入临时文件，最大支持 3.5GB</p></div><span class="update-time">06-04</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>离线下载支持 GitHub</h4><p>支持暂停/取消/重试，同源自动携带认证</p></div><span class="update-time">06-03</span></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">&#128241; 移动端下载</span></div>
+        <div style="text-align:center">
+          <div id="mobileDlQr" onclick="openAppDownload()" style="cursor:pointer;width:140px;height:140px;margin:0 auto 12px;background:#fff;border-radius:10px;padding:6px;display:flex;align-items:center;justify-content:center;color:#0d1117;font-size:11px">加载中...</div>
+          <a id="mobileDlLink" href="#" onclick="openAppDownload();return false" style="color:var(--accent);font-size:13px;text-decoration:none">&#128229; 下载 App</a>
+          <p style="font-size:11px;color:var(--text3);margin-top:8px">扫码下载 Android App，支持扫码登录</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== USER VIEW (logged in) ====== -->
+  <div id="userView" class="hidden">
+    <!-- Personal Stats -->
+    <div class="stats-grid" id="userStats">
+      <div class="stat-card"><div class="stat-glow" style="background:var(--accent)"></div><div class="stat-icon">&#128194;</div><div class="stat-value" style="color:var(--accent)" id="statFiles">-</div><div class="stat-label">我的文件</div></div>
+      <div class="stat-card"><div class="stat-glow" style="background:var(--accent2)"></div><div class="stat-icon">&#128279;</div><div class="stat-value" style="color:var(--accent2)" id="statShares">-</div><div class="stat-label">我的分享</div></div>
+      <div class="stat-card"><div class="stat-glow" style="background:var(--success)"></div><div class="stat-icon">&#128190;</div><div class="stat-value" style="color:var(--success)" id="statStorage">-</div><div class="stat-label">存储空间</div></div>
+      <div class="stat-card"><div class="stat-glow" style="background:var(--warning)"></div><div class="stat-icon">&#128225;</div><div class="stat-value" style="color:var(--warning)" id="statTraffic">-</div><div class="stat-label">本月流量</div></div>
+    </div>
+
+    <!-- Storage bar -->
+    <div class="card" style="margin-bottom:32px">
+      <div class="progress-label"><span>存储空间使用</span><span id="storagePercent">-</span></div>
+      <div class="progress-bar"><div class="progress-fill accent" id="storageBar" style="width:0%"></div></div>
+    </div>
+
+    <div class="main-grid">
+      <!-- Recent files -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">&#128194; 最近上传</span><a href="/home.html" class="btn" style="padding:4px 12px;font-size:11px">查看全部</a></div>
+        <div id="recentFiles"><p style="color:var(--text3);font-size:12px;text-align:center;padding:20px">加载中...</p></div>
+      </div>
+      <!-- Recent shares -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">&#128279; 最近分享</span><a href="/share-manage.html" class="btn" style="padding:4px 12px;font-size:11px">管理分享</a></div>
+        <div id="recentShares"><p style="color:var(--text3);font-size:12px;text-align:center;padding:20px">加载中...</p></div>
+      </div>
+      <!-- Quick actions -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">&#9889; 快捷功能</span></div>
+        <div class="actions-row">
+          <a href="/home.html" class="action-chip">&#128194; 文件管理</a>
+          <a href="/share-manage.html" class="action-chip">&#128279; 我的分享</a>
+          <a href="/offline.html" class="action-chip">&#128229; 离线下载</a>
+          <a href="#" class="action-chip" onclick="openAppDownload();return false">&#128241; App下载</a>
+        </div>
+      </div>
+      <!-- Updates (condensed) -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">&#128640; 更新日志</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>公共目录分享 + 下载限制</h4><p>管理员可分享公共目录，普通用户限1天/30次</p></div><span class="update-time">06-04</span></div>
+        <div class="update-item"><div class="update-dot fix"></div><div class="update-content"><h4>大文件上传 + CSRF修复</h4><p>支持3.5GB上传，修复扫码登录问题</p></div><span class="update-time">06-04</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>全新首页仪表盘</h4><p>个性化内容展示</p></div><span class="update-time">06-05</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== ADMIN VIEW (extra) ====== -->
+  <div id="adminView" class="hidden">
+    <div class="card span2" style="margin-bottom:32px">
+      <div class="card-header"><span class="card-title">&#128737; 系统运行状态</span><span class="card-badge admin">ADMIN</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+        <div>
+          <div class="status-row"><span class="status-dot on"></span>文件存储服务<span style="margin-left:auto;color:var(--success);font-size:11px">正常</span></div>
+          <div class="status-row"><span class="status-dot on"></span>Redis 缓存<span style="margin-left:auto;color:var(--success);font-size:11px">已连接</span></div>
+          <div class="status-row"><span class="status-dot on"></span>WebSocket 推送<span style="margin-left:auto;color:var(--success);font-size:11px">在线</span></div>
+        </div>
+        <div>
+          <div class="status-row"><span>总用户数</span><span style="margin-left:auto;font-size:11px" id="adminTotalUsers">-</span></div>
+          <div class="status-row"><span>总文件数</span><span style="margin-left:auto;font-size:11px" id="adminTotalFiles">-</span></div>
+          <div class="status-row"><span>活跃分享</span><span style="margin-left:auto;font-size:11px" id="adminActiveShares">-</span></div>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3)">
+          <div class="status-row"><span>SYS://UPTIME</span><span style="margin-left:auto">--</span></div>
+          <div class="status-row"><span>SYS://NODE</span><span style="margin-left:auto">v24.16</span></div>
+          <div class="status-row"><span>SYS://DB</span><span style="margin-left:auto">SQLite</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="actions-row" style="margin-bottom:32px">
+      <a href="/home.html#admin-users" class="action-chip">&#128101; 用户管理</a>
+      <a href="/home.html#admin-traffic" class="action-chip">&#128200; 流量统计</a>
+      <a href="/home.html#admin-logs" class="action-chip">&#128221; 操作日志</a>
+      <a href="/home.html#admin-version" class="action-chip">&#128230; 版本管理</a>
+      <a href="/home.html#admin-blacklist" class="action-chip">&#128683; IP黑名单</a>
+      <a href="/admin-storage.html" class="action-chip">&#128451; 存储管理</a>
+    </div>
+  </div>
+
+</div>
+
+<!-- ====== APP 下载弹窗 ====== -->
+<div class="dl-overlay" id="appDlOverlay">
+  <div class="dl-modal">
+    <h3>&#128241; 下载 FMS App</h3>
+    <p class="dl-hint">扫描二维码或点击下方按钮下载 Android 客户端</p>
+    <div class="dl-qr" id="appDlQr">加载中...</div>
+    <p class="dl-ver" id="appDlVer"></p>
+    <button class="btn primary" id="appDlBtn" style="display:none">&#128229; 直接下载 APK</button>
+    <button class="btn close-btn" onclick="document.getElementById('appDlOverlay').classList.remove('show')">关闭</button>
+  </div>
+</div>
+
+
+<script>
+(function(){
+  var theme=localStorage.getItem('theme')||'dark';
+  document.documentElement.setAttribute('data-theme',theme);
+  document.getElementById('themeToggle').addEventListener('click',function(){
+    theme=theme==='dark'?'light':'dark';
+    document.documentElement.setAttribute('data-theme',theme);
+    localStorage.setItem('theme',theme);
+  });
+
+  var user=null,isAdmin=false;
+
+  // ====== Check login & load data ======
+  axios.get('/api/auth/me',{withCredentials:true}).then(function(res){
+    if(res.data.code===0&&res.data.data&&res.data.data.user){
+      user=res.data.data.user;
+      isAdmin=user.is_admin===1||user.is_admin===true;
+      showLoggedIn();
+    }else{showVisitor()}
+  }).catch(function(){showVisitor()});
+
+  function showVisitor(){
+    document.getElementById('visitorView').classList.remove('hidden');
+    document.getElementById('headerRight').innerHTML=
+      '<a href="/login.html" class="btn primary">&#128274; 登录</a>'+
+      '<a href="/login.html?tab=register" class="btn">&#128100; 注册</a>';
+    loadMobileQR();
+    loadVisitorStats();
+  }
+
+  function showLoggedIn(){
+    document.getElementById('visitorView').classList.add('hidden');
+    document.getElementById('userView').classList.remove('hidden');
+    document.getElementById('headerRight').innerHTML=
+      '<span class="user-tag">&#128100; '+(user.nickname||user.email)+'</span>'+
+      '<a href="/home.html" class="btn primary">&#128194; 文件管理</a>'+
+      '<a href="#" class="btn" onclick="axios.post(\'/api/auth/logout\').then(function(){location.reload()})">退出</a>';
+    loadUserData();
+    if(isAdmin){document.getElementById('adminView').classList.remove('hidden');loadAdminData();}
+    loadMobileQR();
+  }
+
+  // ====== Visitor stats ======
+  function loadVisitorStats(){
+    // 这些数据可以从 API 获取，目前用占位符
+    axios.get('/api/auth/me',{withCredentials:true}).catch(function(){}); // just to check
+  }
+
+  // ====== User data ======
+  function loadUserData(){
+    // Storage quota
+    axios.get('/api/storage/quota',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&r.data.data){
+        var d=r.data.data;
+        var used=formatSize(d.used_bytes||0);
+        var total=formatSize(d.quota_bytes||0);
+        var pct=d.quota_bytes>0?Math.round(d.used_bytes/d.quota_bytes*100):0;
+        document.getElementById('statStorage').textContent=used+' / '+total;
+        document.getElementById('storagePercent').textContent=pct+'% 已使用';
+        document.getElementById('storageBar').style.width=pct+'%';
+        if(pct>80)document.getElementById('storageBar').className='progress-fill warning';
+      }
+    }).catch(function(){});
+
+    // File list
+    axios.get('/api/dirs',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&r.data.data){
+        var files=r.data.data.files||[];
+        var dirs=r.data.data.dirs||[];
+        document.getElementById('statFiles').textContent=files.length+' 文件 / '+dirs.length+' 目录';
+        // Recent files
+        var recent=files.sort(function(a,b){return (b.created_at||'')>(a.created_at||'')?1:-1}).slice(0,5);
+        var html='';
+        if(recent.length===0)html='<p style="color:var(--text3);font-size:12px;text-align:center;padding:20px">暂无文件，<a href=\"/home.html\" style=\"color:var(--accent)\">去上传</a></p>';
+        else recent.forEach(function(f){
+          var icon=f.mime_type&&f.mime_type.startsWith('image/')?'🖼':f.mime_type&&f.mime_type.startsWith('video/')?'🎬':f.mime_type&&f.mime_type.includes('pdf')?'📄':f.mime_type&&f.mime_type.includes('zip')?'📦':'📄';
+          html+='<div class="file-row"><span class="file-icon">'+icon+'</span><div class="file-info"><div class="name">'+escHtml(f.name)+'</div><div class="meta">'+formatSize(f.size)+'</div></div></div>';
+        });
+        document.getElementById('recentFiles').innerHTML=html;
+      }
+    }).catch(function(){});
+
+    // Shares
+    axios.get('/api/share',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&Array.isArray(r.data.data)){
+        var shares=r.data.data;
+        document.getElementById('statShares').textContent=shares.length+' 个分享';
+        var recent=shares.slice(0,3);
+        var html='';
+        if(recent.length===0)html='<p style="color:var(--text3);font-size:12px;text-align:center;padding:20px">暂无分享，<a href=\"/share-manage.html\" style=\"color:var(--accent)\">去创建</a></p>';
+        else recent.forEach(function(s){
+          var isExp=s.is_expired;
+          html+='<div class="file-row"><span class="file-icon">'+(isExp?'🔒':'🔗')+'</span><div class="file-info"><div class="name" style="'+(isExp?'text-decoration:line-through;opacity:.5':'')+'">'+escHtml(s.target_name)+'</div><div class="meta">'+(isExp?'已过期':s.remaining_text||'')+' &middot; 📥'+(s.download_count||0)+'</div></div></div>';
+        });
+        document.getElementById('recentShares').innerHTML=html;
+      }
+    }).catch(function(){});
+
+    // Traffic (try admin API, fallback gracefully)
+    axios.get('/api/admin/traffic/summary',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&r.data.data){
+        document.getElementById('statTraffic').textContent=formatSize(r.data.data.total_bytes||0);
+      }
+    }).catch(function(){document.getElementById('statTraffic').textContent='需管理员';});
+  }
+
+  // ====== Admin data ======
+  function loadAdminData(){
+    axios.get('/api/admin/users',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&r.data.data){
+        var users=r.data.data.users||r.data.data;
+        document.getElementById('adminTotalUsers').textContent=(Array.isArray(users)?users.length:'-')+' 人';
+      }
+    }).catch(function(){});
+    axios.get('/api/admin/files',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&r.data.data){
+        document.getElementById('adminTotalFiles').textContent=(r.data.data.total||'-')+' 个';
+      }
+    }).catch(function(){});
+    axios.get('/api/admin/shares',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&r.data.data){
+        var shares=r.data.data.shares||r.data.data;
+        document.getElementById('adminActiveShares').textContent=(Array.isArray(shares)?shares.length:'-')+' 个';
+      }
+    }).catch(function(){});
+    // 存储架构 V2 统计
+    axios.get('/api/admin/storage/pools',{withCredentials:true}).then(function(r){
+      if(r.data.code===0&&r.data.data){
+        var st=r.data.data.stats;
+        var el1=document.getElementById('adminTotalFiles');
+        if(el1&&st)el1.textContent=(st.file_count||0)+' 个 ('+formatSize(st.total_bytes||0)+')';
+      }
+    }).catch(function(){});
+  }
+
+  function formatSize(b){if(!b||b===0)return'0 B';var u=['B','KB','MB','GB','TB'],i=0;while(b>=1024&&i<u.length-1){b/=1024;i++}return b.toFixed(i===0?0:1)+' '+u[i]}
+  function escHtml(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+  // ====== Mobile QR (inline card) ======
+  function loadMobileQR(){
+    fetch('/api/version/latest').then(function(r){return r.json()}).then(function(d){
+      if(d.code===0&&d.data&&d.data.url){
+        var u=location.origin+d.data.url;
+        var link=document.getElementById('mobileDlLink');
+        if(link){link.href=d.data.url;link.textContent='📥 v'+d.data.version+' ('+Math.round(d.data.size/1024/1024)+'MB)'}
+        var qrEl=document.getElementById('mobileDlQr');
+        if(qrEl)renderQr(u,qrEl);
+      }
+    }).catch(function(){});
+    function renderQr(u,el){
+      function g(){if(window.QRCode&&window.QRCode.toDataURL){var r=window.QRCode.toDataURL(u,{width:200,margin:1,color:{dark:'#000',light:'#fff'}});if(r&&typeof r.then==='function'){r.then(function(d){el.innerHTML='<img src=\"'+d+'\" style=\"width:100%;height:100%;display:block\">'}).catch(function(){el.textContent='失败'})}else if(typeof r==='string'){el.innerHTML='<img src=\"'+r+'\" style=\"width:100%;height:100%;display:block\">'}}else{setTimeout(g,300)}}g()
+    }
+  }
+  setTimeout(loadMobileQR,800);
+
+  // ====== App Download Popup ======
+  var _appDlData = null;
+  window.openAppDownload = function(){
+    var overlay = document.getElementById('appDlOverlay');
+    var qrEl = document.getElementById('appDlQr');
+    var verEl = document.getElementById('appDlVer');
+    var btn = document.getElementById('appDlBtn');
+    overlay.classList.add('show');
+    btn.style.display = 'none';
+    qrEl.innerHTML = '加载中...';
+    verEl.textContent = '';
+    // 已有缓存数据直接显示
+    if (_appDlData) {
+      showAppDlPopup(_appDlData);
+      return;
+    }
+    fetch('/api/version/latest').then(function(r){return r.json()}).then(function(d){
+      if (d.code === 0 && d.data && d.data.url) {
+        _appDlData = d.data;
+        showAppDlPopup(d.data);
+      } else {
+        qrEl.innerHTML = '<span style="color:var(--error);font-size:12px">暂无版本</span>';
+      }
+    }).catch(function(){
+      qrEl.innerHTML = '<span style="color:var(--error);font-size:12px">加载失败</span>';
+    });
+  };
+  function showAppDlPopup(data){
+    var qrEl = document.getElementById('appDlQr');
+    var verEl = document.getElementById('appDlVer');
+    var btn = document.getElementById('appDlBtn');
+    var fullUrl = location.origin + data.url;
+    function g(){
+      if (window.QRCode && window.QRCode.toDataURL) {
+        var r = window.QRCode.toDataURL(fullUrl, { width: 200, margin: 1, color: { dark: '#000', light: '#fff' } });
+        if (r && typeof r.then === 'function') {
+          r.then(function(d){ qrEl.innerHTML = '<img src="'+d+'" style="width:100%;height:100%;display:block">' }).catch(function(){ qrEl.textContent = '生成失败' });
+        } else if (typeof r === 'string') {
+          qrEl.innerHTML = '<img src="'+r+'" style="width:100%;height:100%;display:block">';
+        } else { qrEl.textContent = '格式错误'; }
+      } else { setTimeout(g, 300); }
+    }
+    g();
+    verEl.textContent = 'v' + (data.version || '') + ' | ' + Math.round((data.size || 0) / 1024 / 1024) + 'MB';
+    btn.style.display = 'block';
+    btn.onclick = function(){
+      var a = document.createElement('a');
+      a.href = data.url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+  }
+  // 点击遮罩关闭
+  document.getElementById('appDlOverlay').addEventListener('click', function(e){
+    if (e.target === this) this.classList.remove('show');
+  });
+
+})();
+</script>
+</body>
+</html>

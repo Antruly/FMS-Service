@@ -1,0 +1,2183 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#07090f">
+  <meta name="description" content="文件管理 - 登录">
+  <title>登录 // FMS</title>
+
+  <!-- Preload -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+  <!-- Favicon -->
+  <link rel="icon" href="/favicon.png">
+
+  <!-- Axios -->
+  <script src="./axios.min.js?v=2026040303"></script>
+  <script src="./qrcode.min.js"></script>
+
+  <!-- SVG Icons (inline) -->
+  <svg style="display:none">
+    <symbol id="icon-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2"/>
+      <polyline points="22,6 12,13 2,6"/>
+    </symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </symbol>
+    <symbol id="icon-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 0-7.778 7.778 5.5 5.5 0 0 0 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+    </symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </symbol>
+    <symbol id="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+      <line x1="1" y1="1" x2="23" y2="23"/>
+    </symbol>
+  </svg>
+
+  <style>
+    :root {
+      --bg-primary: #07090f;
+      --bg-secondary: #0d1526;
+      --bg-card: #0f1a2e;
+      --bg-card-hover: #142035;
+      --bg-input: #0a1220;
+      --border: rgba(0, 212, 255, 0.12);
+      --border-accent: rgba(0, 212, 255, 0.35);
+      --accent: #00d4ff;
+      --accent-glow: rgba(0, 212, 255, 0.35);
+      --accent2: #7b61ff;
+      --accent2-glow: rgba(123, 97, 255, 0.3);
+      --text-primary: #d4e5f7;
+      --text-secondary: #7a90b5;
+      --text-muted: #3d5070;
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+    }
+
+    [data-theme="light"] {
+      --bg-primary: #eef2f8;
+      --bg-secondary: #f8faff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f0f5ff;
+      --bg-input: #edf2fa;
+      --border: rgba(100, 140, 220, 0.18);
+      --border-accent: rgba(0, 120, 224, 0.35);
+      --accent: #0070e0;
+      --accent-glow: rgba(0, 112, 224, 0.15);
+      --accent2: #6050e8;
+      --accent2-glow: rgba(96, 80, 232, 0.15);
+      --text-primary: #1a2848;
+      --text-secondary: #4a6090;
+      --text-muted: #8aa0c0;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Syne', system-ui, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+      transition: background-color 0.4s ease, color 0.4s ease;
+      -webkit-font-smoothing: antialiased;
+      padding: 20px;
+    }
+
+    /* Background */
+    .bg-scene {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--accent) 1px, transparent 1px),
+        linear-gradient(90deg, var(--accent) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.04;
+      animation: gridPulse 8s ease-in-out infinite;
+    }
+
+    @keyframes gridPulse {
+      0%, 100% { opacity: 0.04; }
+      50% { opacity: 0.08; }
+    }
+
+    .bg-orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      animation: orbFloat 20s ease-in-out infinite;
+    }
+
+    .bg-orb-1 {
+      width: 500px; height: 500px;
+      top: -200px; left: -150px;
+      background: radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%);
+    }
+
+    .bg-orb-2 {
+      width: 400px; height: 400px;
+      bottom: -150px; right: -100px;
+      background: radial-gradient(circle, rgba(123,97,255,0.07) 0%, transparent 70%);
+      animation-delay: -7s;
+    }
+
+    @keyframes orbFloat {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      25% { transform: translate(40px, -30px) scale(1.05); }
+      50% { transform: translate(-20px, 20px) scale(0.95); }
+      75% { transform: translate(30px, 10px) scale(1.02); }
+    }
+
+    .scanlines {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.025) 2px,
+        rgba(0, 0, 0, 0.025) 4px
+      );
+    }
+
+    /* Login Container */
+    .login-container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 420px;
+      animation: fadeSlideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Logo */
+    .logo-section {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .logo-icon-wrap {
+      display: inline-flex;
+      position: relative;
+      margin-bottom: 16px;
+    }
+
+    .logo-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      box-shadow: 0 0 40px var(--accent-glow), 0 8px 32px rgba(0,0,0,0.3);
+      animation: logoPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes logoPulse {
+      0%, 100% { box-shadow: 0 0 40px var(--accent-glow), 0 8px 32px rgba(0,0,0,0.3); }
+      50% { box-shadow: 0 0 60px var(--accent-glow), 0 0 100px rgba(0,212,255,0.12), 0 8px 32px rgba(0,0,0,0.3); }
+    }
+
+    .logo-ring {
+      position: absolute;
+      inset: -5px;
+      border-radius: 22px;
+      border: 1px solid var(--accent);
+      opacity: 0.25;
+      animation: ringRotate 10s linear infinite;
+    }
+
+    .logo-ring::after {
+      content: '';
+      position: absolute;
+      top: -2px; left: 50%;
+      width: 4px; height: 4px;
+      background: var(--accent);
+      border-radius: 50%;
+      transform: translateX(-50%);
+    }
+
+    @keyframes ringRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .logo-title {
+      font-size: 26px;
+      font-weight: 800;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 6px;
+      letter-spacing: 1px;
+    }
+
+    .logo-subtitle {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 3px;
+    }
+
+    /* Card */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 36px 32px;
+      box-shadow:
+        0 0 0 1px rgba(0, 212, 255, 0.04),
+        0 4px 32px rgba(0, 0, 0, 0.4),
+        0 0 40px rgba(0, 212, 255, 0.04);
+      backdrop-filter: blur(12px);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 28px;
+      background: var(--bg-input);
+      border-radius: var(--radius-sm);
+      padding: 4px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: 'Syne', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      border-radius: 7px;
+      transition: all 0.3s ease;
+      letter-spacing: 0.5px;
+    }
+
+    .tab:hover {
+      color: var(--text-secondary);
+    }
+
+    .tab.active {
+      background: var(--bg-card);
+      color: var(--accent);
+      box-shadow: 0 0 12px rgba(0, 212, 255, 0.12);
+    }
+
+    /* Form */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      letter-spacing: 0.3px;
+    }
+
+    .input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+      transition: color 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .input-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 13px 44px 13px 46px;
+      background: var(--bg-input);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      transition: all 0.3s ease;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    .form-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px rgba(0,212,255,0.06);
+      background: var(--bg-card);
+    }
+
+    .form-input:focus ~ .input-icon,
+    .input-wrap:focus-within .input-icon {
+      color: var(--accent);
+    }
+
+    /* 验证码输入框不需要右侧图标，调整右边距 */
+    .input-wrap.code-only .form-input {
+      padding-right: 16px;
+    }
+
+    .input-wrap.code-only .input-icon {
+      color: var(--accent);
+    }
+
+    /* 查看密码按钮 */
+    .toggle-password {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.25s ease;
+      border-radius: 4px;
+    }
+
+    .toggle-password:hover {
+      color: var(--accent);
+    }
+
+    .toggle-password svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .toggle-password.show-pass {
+      color: var(--accent);
+    }
+
+    .input-suffix {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    /* Code Input Row */
+    .code-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .code-row .form-input {
+      flex: 1;
+      padding-right: 14px;
+    }
+
+    .btn-code {
+      padding: 13px 16px;
+      background: transparent;
+      border: 1.5px solid var(--border-accent);
+      border-radius: var(--radius-sm);
+      color: var(--accent);
+      font-family: 'Syne', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.3s ease;
+      min-width: 110px;
+      letter-spacing: 0.3px;
+    }
+
+    .btn-code:hover:not(:disabled) {
+      background: rgba(0, 212, 255, 0.08);
+      box-shadow: 0 0 16px var(--accent-glow);
+      border-color: var(--accent);
+    }
+
+    .btn-code:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    /* Submit Button */
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      margin-top: 8px;
+      letter-spacing: 1px;
+    }
+
+    .btn-submit::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .btn-submit:hover:not(:disabled)::before {
+      opacity: 1;
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      box-shadow: 0 0 30px var(--accent-glow), 0 0 60px rgba(0,212,255,0.08);
+      transform: translateY(-2px);
+    }
+
+    .btn-submit:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-submit .btn-text {
+      transition: opacity 0.3s ease;
+      position: relative;
+      z-index: 1;
+    }
+
+    .btn-submit.loading .btn-text {
+      opacity: 0;
+    }
+
+    .btn-submit .spinner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    .btn-submit.loading .spinner {
+      display: block;
+    }
+
+    @keyframes spin {
+      to { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    /* Forgot Password */
+    .forgot-link {
+      display: block;
+      text-align: center;
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color 0.3s ease;
+    }
+
+    .forgot-link:hover {
+      color: var(--accent);
+    }
+
+    /* Error/Success Messages */
+    .message {
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      animation: shake 0.4s ease;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+
+    .message.show {
+      display: flex;
+    }
+
+    .message.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: var(--error);
+    }
+
+    .message.success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--success);
+    }
+
+    /* Password Rules */
+    .password-rules {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    .password-rules span {
+      display: inline-block;
+      margin-right: 8px;
+    }
+
+    .password-rules .met {
+      color: var(--success);
+    }
+
+    /* Theme Toggle */
+    .theme-toggle {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      transition: all 0.3s ease;
+      z-index: 100;
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+      transform: scale(1.05);
+    }
+
+    .theme-toggle .sun { display: none; }
+    .theme-toggle .moon { display: block; }
+    [data-theme="light"] .theme-toggle .sun { display: block; }
+    [data-theme="light"] .theme-toggle .moon { display: none; }
+
+    /* Responsive */
+    @media (max-width: 520px) {
+      body {
+        padding: 12px;
+        align-items: flex-start;
+        padding-top: 32px;
+      }
+
+      .card {
+        padding: 24px 20px;
+        border-radius: var(--radius-md);
+      }
+
+      .code-row {
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .code-row .form-input {
+        width: 100%;
+      }
+
+      .btn-code {
+        width: 100%;
+        padding: 13px;
+      }
+
+      .theme-toggle {
+        top: 12px;
+        right: 12px;
+        width: 38px;
+        height: 38px;
+      }
+
+      .logo-title {
+        font-size: 22px;
+      }
+
+      .logo-icon {
+        width: 56px;
+        height: 56px;
+        font-size: 28px;
+        border-radius: 14px;
+      }
+
+      .logo-ring {
+        inset: -5px;
+        border-radius: 20px;
+      }
+
+      .form-input {
+        font-size: 16px; /* 防止 iOS 缩放 */
+      }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-primary); }
+    ::-webkit-scrollbar-thumb { background: var(--border-accent); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+    /* Selection */
+    ::selection {
+      background: var(--accent-glow);
+      color: var(--accent);
+    }
+
+    /* Focus */
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    /* Hidden sections */
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Lock message */
+    .lock-message {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-secondary);
+    }
+
+    .lock-message .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .lock-message h3 {
+      font-size: 16px;
+      margin-bottom: 8px;
+      color: var(--error);
+    }
+
+    .lock-message p {
+      font-size: 13px;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    /* 二维码登录 */
+    .qr-login-section {
+      margin-top: 20px;
+    }
+
+    .qr-divider {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .qr-divider::before,
+    .qr-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .qr-divider span {
+      padding: 0 12px;
+    }
+
+    .btn-qr-login {
+      width: 100%;
+      padding: 12px;
+      background: transparent;
+      border: 1.5px dashed var(--border-accent);
+      border-radius: var(--radius-sm);
+      color: var(--accent);
+      font-family: 'Syne', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .btn-qr-login:hover {
+      background: rgba(0, 212, 255, 0.05);
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    /* 二维码面板 */
+    .qr-panel {
+      margin-top: 20px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .qr-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .qr-panel-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+    }
+
+    .qr-panel-close:hover {
+      color: var(--error);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .qr-panel-body {
+      padding: 24px;
+      text-align: center;
+    }
+
+    .qr-code-container {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto 16px;
+      background: white;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .qr-code-container canvas,
+    .qr-code-container img {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    .qr-loading {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .qr-status {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .qr-status.success {
+      color: var(--success);
+    }
+
+    .qr-tips {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .qr-expired {
+      color: var(--error);
+      cursor: pointer;
+    }
+
+    /* 隐藏二维码按钮（移动端不显示扫码登录） */
+    @media (max-width: 768px) {
+      .qr-login-section {
+        display: none;
+      }
+    }
+  
+/* ====== 卡片折角（扫码登录入口）====== */
+.card { position: relative; overflow: hidden; }
+.card-dogear { position: absolute; top: 0; right: 0; width: 48px; height: 48px; cursor: pointer; z-index: 5; transition: transform .2s; }
+.card-dogear:hover { transform: scale(1.1); }
+.card-dogear::before { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 48px 48px 0; border-color: transparent var(--accent) transparent transparent; transition: border-color .3s; }
+.card-dogear:hover::before { border-right-color: var(--accent2); }
+.card-dogear.active::before { border-right-color: var(--accent2); }
+.card-dogear::after { content: ""; position: absolute; top: 6px; right: 4px; width: 18px; height: 18px; background: repeating-linear-gradient(0deg, #fff 0px, #fff 3px, transparent 3px, transparent 6px), repeating-linear-gradient(90deg, #fff 0px, #fff 3px, transparent 3px, transparent 6px); transform: rotate(45deg); pointer-events: none; border-radius: 2px; }
+
+/* ====== 登录方式切换链接 ====== */
+.login-switcher { text-align: center; margin-top: 16px; font-size: 13px; }
+.login-switcher span, .login-switcher a { cursor: pointer; color: var(--text-muted); text-decoration: none; transition: color .25s; border-bottom: 2px solid transparent; padding-bottom: 2px; }
+.login-switcher span:hover, .login-switcher a:hover { color: var(--accent); }
+.login-switcher .switcher-active { color: var(--accent); border-bottom-color: var(--accent); }
+.switcher-divider { color: var(--border) !important; cursor: default !important; margin: 0 4px; border: none !important; }
+
+/* ====== 隐藏悬浮球 ====== */
+body.login-page #mobile-floating-ball,
+body.login-page #mobile-floating-ball-corner { display: none !important; }
+
+/* ====== 验证码弹窗 ====== */
+.captcha-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; animation: fadeIn .2s ease; backdrop-filter: blur(4px); }
+.captcha-modal-card { background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: var(--radius-lg); padding: 28px 24px 20px; width: 380px; max-width: 92vw; box-shadow: 0 0 40px rgba(0,212,255,0.12), 0 12px 40px rgba(0,0,0,0.5); }
+.captcha-modal-card h3 { font-size: 16px; margin-bottom: 4px; color: var(--text-primary); text-align: center; font-weight: 700; }
+.captcha-modal-card .captcha-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; text-align: center; }
+.captcha-svg-wrap { position: relative; width: 320px; max-width: 100%; margin: 0 auto 14px; border-radius: 10px; overflow: hidden; cursor: crosshair; border: 2px solid var(--border); user-select: none; -webkit-user-select: none; line-height: 0; background: #f0f4f8; }
+.captcha-svg-wrap img { width: 100%; display: block; pointer-events: none; }
+.captcha-svg-wrap .click-dot { position: absolute; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,180,220,0.85); border: 2px solid #fff; transform: translate(-50%,-50%); pointer-events: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; animation: dotPop .3s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+@keyframes dotPop { from { transform: translate(-50%,-50%) scale(0); opacity: 0; } to { transform: translate(-50%,-50%) scale(1); opacity: 1; } }
+.captcha-modal-card .captcha-actions { display: flex; gap: 10px; justify-content: center; }
+.captcha-modal-card .captcha-actions button { padding: 9px 20px; border-radius: var(--radius-sm); font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .25s ease; }
+.captcha-modal-card .btn-captcha-cancel { background: var(--bg-input); color: var(--text-secondary); border: 1px solid var(--border); }
+.captcha-modal-card .btn-captcha-cancel:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.captcha-modal-card .btn-captcha-refresh { background: transparent; color: var(--accent); border: 1px solid var(--border-accent); }
+.captcha-modal-card .btn-captcha-refresh:hover { background: rgba(0,212,255,0.08); box-shadow: 0 0 12px var(--accent-glow); }
+.captcha-modal-card .captcha-error { text-align: center; color: var(--error); font-size: 12px; margin-top: 10px; display: none; }
+.captcha-modal-card .captcha-error.show { display: block; animation: shake .4s ease; }
+.captcha-modal-card .captcha-success { text-align: center; color: var(--success); font-size: 13px; font-weight: 600; margin-top: 10px; display: none; }
+.captcha-modal-card .captcha-success.show { display: block; }
+</style>
+</head>
+<body class="login-page">
+
+<!-- Background -->
+<div class="bg-scene" aria-hidden="true">
+  <div class="bg-grid"></div>
+  <div class="bg-orb bg-orb-1"></div>
+  <div class="bg-orb bg-orb-2"></div>
+  <div class="scanlines"></div>
+</div>
+
+<!-- Theme Toggle -->
+<button class="theme-toggle" id="theme-toggle" aria-label="切换主题">
+  <svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+  </svg>
+  <svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="12" r="5"></circle>
+    <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+    <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+    <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+    <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></line>
+  </svg>
+</button>
+
+<!-- Login Container -->
+<div class="login-container">
+
+  <!-- Logo -->
+  <div class="logo-section">
+    <div class="logo-icon-wrap">
+      <div class="logo-icon"><img src="/favicon.png" alt="FMS" style="width:36px;height:36px"></div>
+      <div class="logo-ring"></div>
+    </div>
+    <h1 class="logo-title">FMS</h1>
+    <p class="logo-subtitle">SYS://AUTHENTICATION</p>
+  </div>
+
+  <!-- Card -->
+  <div class="card">
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="login">登录</button>
+      <button class="tab" data-tab="register">注册</button>
+    </div>
+
+    <!-- Message -->
+    <div class="card-dogear" id="card-dogear" title="扫码登录"></div>
+
+    <!-- Message -->
+    <div class="message" id="message"></div>
+
+    <!-- Login Form -->
+    <div class="tab-content active" id="login-form">
+      <div id="login-fields">
+
+        <!-- 密码登录 -->
+        <div id="login-mode-password">
+          <div class="form-group">
+            <label class="form-label">邮箱地址</label>
+            <div class="input-wrap">
+              <input type="email" class="form-input" id="login-email" placeholder="请输入邮箱" autocomplete="email">
+              <span class="input-icon"><svg><use href="#icon-mail"/></svg></span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">密码</label>
+            <div class="input-wrap">
+              <input type="password" class="form-input" id="login-password" placeholder="请输入密码" autocomplete="current-password">
+              <span class="input-icon"><svg><use href="#icon-lock"/></svg></span>
+              <button type="button" class="toggle-password" id="toggle-login-pass" aria-label="显示密码">
+                <svg class="eye-show"><use href="#icon-eye"/></svg>
+                <svg class="eye-hide" style="display:none"><use href="#icon-eye-off"/></svg>
+              </button>
+            </div>
+          </div>
+          <button class="btn-submit" id="btn-password-login"><span class="btn-text">登 录</span><span class="spinner"></span></button>
+        </div>
+
+        <!-- 验证码登录 -->
+        <div id="login-mode-code" style="display:none">
+          <div class="form-group">
+            <label class="form-label">邮箱地址</label>
+            <div class="input-wrap">
+              <input type="email" class="form-input" id="login-code-email" placeholder="请输入邮箱" autocomplete="email">
+              <span class="input-icon"><svg><use href="#icon-mail"/></svg></span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">验证码</label>
+            <div class="code-row">
+              <div class="input-wrap code-only">
+                <input type="text" class="form-input" id="login-code-code" placeholder="请输入6位验证码" autocomplete="off" maxlength="6">
+                <span class="input-icon"><svg><use href="#icon-key"/></svg></span>
+              </div>
+              <button type="button" class="btn-code" id="btn-login-code-send">发送验证码</button>
+            </div>
+          </div>
+          <button class="btn-submit" id="btn-code-login"><span class="btn-text">验 证 登 录</span><span class="spinner"></span></button>
+        </div>
+
+        <!-- 扫码登录 -->
+        <div id="login-mode-qr" style="display:none">
+          <div style="text-align:center;padding:10px 0">
+            <div class="qr-code-container" id="qr-code-container-main" style="margin:0 auto 16px">
+              <div class="qr-loading">点击刷新获取二维码</div>
+            </div>
+            <div class="qr-status" id="qr-status-main"></div>
+            <div class="qr-tips" id="qr-tips-main">请使用FMS手机App扫描</div>
+            <button class="btn-code" id="btn-qr-refresh-main" style="margin-top:12px">刷新二维码</button>
+          </div>
+        </div>
+
+        <!-- 模式切换 -->
+        <div class="login-switcher" id="login-switcher">
+          <span class="switcher-active" id="sw-password">密码登录</span>
+          <span class="switcher-divider">|</span>
+          <span id="sw-code">验证码登录</span>
+          <span class="switcher-divider">|</span>
+          <a id="forgot-link-sw">忘记密码</a>
+          <span class="switcher-divider">|</span>
+          <a id="app-download-sw">APP下载</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Register Form -->
+    <div class="tab-content" id="register-form">
+      <div class="form-group">
+        <label class="form-label">邮箱地址</label>
+        <div class="input-wrap">
+          <input type="email" class="form-input" id="reg-email" placeholder="请输入邮箱" autocomplete="email">
+          <span class="input-icon">
+            <svg><use href="#icon-mail"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <div class="input-wrap">
+          <input type="password" class="form-input" id="reg-password" placeholder="请设置密码" autocomplete="new-password">
+          <span class="input-icon">
+            <svg><use href="#icon-lock"/></svg>
+          </span>
+          <button type="button" class="toggle-password" id="toggle-reg-pass" aria-label="显示密码">
+            <svg class="eye-show"><use href="#icon-eye"/></svg>
+            <svg class="eye-hide" style="display:none"><use href="#icon-eye-off"/></svg>
+          </button>
+        </div>
+        <div class="password-rules" id="password-rules">
+          <span id="rule-length">&#9679; 至少6位</span>
+          <span id="rule-upper">&#9679; 大写字母</span>
+          <span id="rule-lower">&#9679; 小写字母</span>
+          <span id="rule-digit">&#9679; 数字</span>
+          <span id="rule-special">&#9679; 特殊字符</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">验证码</label>
+        <div class="code-row">
+          <div class="input-wrap code-only">
+            <input type="text" class="form-input" id="reg-code" placeholder="请输入验证码" autocomplete="off" maxlength="6">
+            <span class="input-icon">
+              <svg><use href="#icon-key"/></svg>
+            </span>
+          </div>
+          <button type="button" class="btn-code" id="btn-reg-code">发送验证码</button>
+        </div>
+      </div>
+
+      <button class="btn-submit" id="btn-register">
+        <span class="btn-text">注 册</span>
+        <span class="spinner"></span>
+      </button>
+    </div>
+
+    <!-- Forgot Password Form -->
+    <div class="tab-content" id="forgot-form">
+      <div class="form-group">
+        <label class="form-label">邮箱地址</label>
+        <div class="input-wrap">
+          <input type="email" class="form-input" id="forgot-email" placeholder="请输入注册邮箱" autocomplete="email">
+          <span class="input-icon">
+            <svg><use href="#icon-mail"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">新密码</label>
+        <div class="input-wrap">
+          <input type="password" class="form-input" id="forgot-password" placeholder="请设置新密码" autocomplete="new-password">
+          <span class="input-icon">
+            <svg><use href="#icon-lock"/></svg>
+          </span>
+          <button type="button" class="toggle-password" id="toggle-forgot-pass" aria-label="显示密码">
+            <svg class="eye-show"><use href="#icon-eye"/></svg>
+            <svg class="eye-hide" style="display:none"><use href="#icon-eye-off"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">验证码</label>
+        <div class="code-row">
+          <div class="input-wrap code-only">
+            <input type="text" class="form-input" id="forgot-code" placeholder="请输入验证码" autocomplete="off" maxlength="6">
+            <span class="input-icon">
+              <svg><use href="#icon-key"/></svg>
+            </span>
+          </div>
+          <button type="button" class="btn-code" id="btn-forgot-code">发送验证码</button>
+        </div>
+      </div>
+
+      <button class="btn-submit" id="btn-forgot">
+        <span class="btn-text">重置密码</span>
+        <span class="spinner"></span>
+      </button>
+
+      <a class="forgot-link" id="back-to-login">返回登录</a>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ========== 图形验证码弹窗 ========== -->
+<div class="captcha-overlay" id="captcha-overlay" style="display:none">
+  <div class="captcha-modal-card">
+    <h3>&#128274; 安全验证</h3>
+    <p class="captcha-hint">请按顺序依次点击下方图形</p>
+    <div class="captcha-svg-wrap" id="captcha-svg-wrap">
+      <img id="captcha-svg-img" src="" alt="验证码" />
+    </div>
+    <div class="captcha-error" id="captcha-error"></div>
+    <div class="captcha-success" id="captcha-success">&#10004; 验证通过，正在登录...</div>
+    <div class="captcha-actions">
+      <button class="btn-captcha-cancel" id="btn-captcha-cancel">取消</button>
+      <button class="btn-captcha-refresh" id="btn-captcha-refresh">&#8635; 换一张</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== APP下载弹窗 ========== -->
+<div class="captcha-overlay" id="app-download-overlay" style="display:none">
+  <div class="captcha-modal-card" style="text-align:center">
+    <h3>&#128241; 下载 FMS App</h3>
+    <p class="captcha-hint">扫描二维码或点击下方按钮下载</p>
+    <div class="qr-code-container" id="app-download-qr" style="margin:0 auto 14px"></div>
+    <p id="app-dl-version" style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;font-weight:600"></p>
+    <button class="btn-submit" id="btn-app-dl-direct" style="margin-bottom:12px;width:100%">
+      <span>&#128229; 直接下载 APK</span>
+    </button>
+    <button class="btn-captcha-cancel" id="btn-app-dl-close" style="width:100%">关闭</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  var theme = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+
+  // ==================== DOM Elements ====================
+  var $ = function(id) { return document.getElementById(id); };
+  var tabs = document.querySelectorAll('.tab');
+  var tabContents = document.querySelectorAll('.tab-content');
+
+  // ==================== Token 持久化 & 自动登录 ====================
+
+  // 检查原生 APP 环境
+  var isNativeApp = window.AndroidCallback && window.AndroidCallback.isNativeApp();
+
+  // 自动登录检查（原生 APP 专用）
+  function checkAutoLogin() {
+    if (!isNativeApp) return false;
+
+    var savedToken = '';
+    var savedUserId = '';
+    var savedEmail = '';
+
+    // 优先从原生获取
+    if (window.AndroidCallback.getAuthToken) {
+      savedToken = window.AndroidCallback.getAuthToken() || '';
+      savedUserId = window.AndroidCallback.getUserId() || '';
+      savedEmail = window.AndroidCallback.getUserEmail() || '';
+    }
+
+    // 如果原生没有，尝试 localStorage
+    if (!savedToken) {
+      savedToken = localStorage.getItem('_fs_auth_token') || '';
+      savedUserId = localStorage.getItem('_fs_user_id') || '';
+      savedEmail = localStorage.getItem('_fs_user_email') || '';
+    }
+
+    if (savedToken) {
+      console.log('[Login] Found saved token, validating...');
+
+      // 验证 token 是否有效
+      axios.get('/api/auth/me', {
+        headers: savedToken ? { 'Authorization': 'Bearer ' + savedToken } : {}
+      })
+        .then(function(res) {
+          if (res.data.code === 0 && res.data.data && res.data.data.user) {
+            // Token 有效，跳转到主页
+            console.log('[Login] Token valid, redirecting to home...');
+            window.location.href = '/';
+          } else {
+            // Token 无效或过期，清除
+            console.log('[Login] Token invalid or expired');
+            clearSavedAuth();
+            showLoginForm();
+          }
+        })
+        .catch(function() {
+          // 网络错误，显示登录表单
+          console.log('[Login] Network error, showing login form');
+          showLoginForm();
+        });
+      return true;
+    }
+
+    showLoginForm();
+    return false;
+  }
+
+  function clearSavedAuth() {
+    if (window.AndroidCallback && window.AndroidCallback.clearAuthInfo) {
+      window.AndroidCallback.clearAuthInfo();
+    }
+    localStorage.removeItem('_fs_auth_token');
+    localStorage.removeItem('_fs_user_id');
+    localStorage.removeItem('_fs_user_email');
+  }
+
+  function showLoginForm() {
+    // 显示登录表单
+    var loginFields = document.getElementById('login-fields');
+    var qrSection = document.getElementById('qr-login-section');
+    if (loginFields) loginFields.style.display = 'block';
+    // 移动端不显示扫码登录
+    if (qrSection && window.innerWidth > 768) qrSection.style.display = 'block';
+  }
+
+  // ==================== Theme Toggle ====================
+  $('theme-toggle').addEventListener('click', function() {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  });
+
+  // ==================== Tab Switching ====================
+  function resetPasswordToggles() {
+    // 重置所有密码输入框的可见性状态
+    ['login-password', 'reg-password', 'forgot-password'].forEach(function(id) {
+      var input = $(id);
+      var btnId = id.replace('password', '').replace('login', 'toggle-login')
+        .replace('reg', 'toggle-reg').replace('forgot', 'toggle-forgot');
+      var btn = $(btnId.replace('-pass', '-pass').replace('toggle-', 'toggle-'));
+      // 通过 inputId 映射
+    });
+
+    // 重置登录密码
+    var lp = $('login-password');
+    var lb = $('toggle-login-pass');
+    if (lp && lb) {
+      lp.type = 'password';
+      lb.classList.remove('show-pass');
+      var eyeShow = lb.querySelector('.eye-show');
+      var eyeHide = lb.querySelector('.eye-hide');
+      if (eyeShow) eyeShow.style.display = 'block';
+      if (eyeHide) eyeHide.style.display = 'none';
+    }
+    // 重置注册密码
+    var rp = $('reg-password');
+    var rb = $('toggle-reg-pass');
+    if (rp && rb) {
+      rp.type = 'password';
+      rb.classList.remove('show-pass');
+      var eyeShow = rb.querySelector('.eye-show');
+      var eyeHide = rb.querySelector('.eye-hide');
+      if (eyeShow) eyeShow.style.display = 'block';
+      if (eyeHide) eyeHide.style.display = 'none';
+    }
+    // 重置忘记密码
+    var fp = $('forgot-password');
+    var fb = $('toggle-forgot-pass');
+    if (fp && fb) {
+      fp.type = 'password';
+      fb.classList.remove('show-pass');
+      var eyeShow = fb.querySelector('.eye-show');
+      var eyeHide = fb.querySelector('.eye-hide');
+      if (eyeShow) eyeShow.style.display = 'block';
+      if (eyeHide) eyeHide.style.display = 'none';
+    }
+  }
+
+  function clearForm(formId) {
+    var form = $(formId);
+    if (!form) return;
+    var inputs = form.querySelectorAll('input');
+    inputs.forEach(function(inp) {
+      if (inp.type === 'text' || inp.type === 'email' || inp.type === 'password') {
+        inp.value = '';
+      }
+    });
+  }
+
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var tabName = this.dataset.tab;
+      tabs.forEach(function(t) { t.classList.toggle('active', t === tab); });
+      tabContents.forEach(function(tc) {
+        tc.classList.toggle('active', tc.id === tabName + '-form');
+      });
+      hideMessage();
+      resetPasswordToggles();
+      // 清空当前激活表单的内容
+      var activeForm = document.querySelector('.tab-content.active');
+      if (activeForm) clearForm(activeForm.id);
+    });
+  });
+
+  // ==================== Message ====================
+  function showMessage(msg, type) {
+    var el = $('message');
+    el.className = 'message show ' + type;
+    el.innerHTML = '<span>' + (type === 'error' ? '&#9888;' : '&#10004;') + '</span><span>' + msg + '</span>';
+  }
+
+  function hideMessage() {
+    var el = $('message');
+    el.className = 'message';
+  }
+
+  // ==================== Button Loading ====================
+  function setLoading(btn, loading) {
+    btn.classList.toggle('loading', loading);
+    btn.disabled = loading;
+    var text = btn.querySelector('.btn-text');
+    if (text) text.style.opacity = loading ? '0' : '1';
+  }
+
+  // ==================== Toggle Password Visibility ====================
+  function initTogglePassword(btnId, inputId) {
+    var btn = $(btnId);
+    var input = $(inputId);
+    if (!btn || !input) return;
+
+    btn.addEventListener('click', function() {
+      var isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      btn.classList.toggle('show-pass', isPassword);
+
+      var eyeShow = btn.querySelector('.eye-show');
+      var eyeHide = btn.querySelector('.eye-hide');
+      if (eyeShow) eyeShow.style.display = isPassword ? 'none' : 'block';
+      if (eyeHide) eyeHide.style.display = isPassword ? 'block' : 'none';
+    });
+  }
+
+  initTogglePassword('toggle-login-pass', 'login-password');
+  initTogglePassword('toggle-reg-pass', 'reg-password');
+  initTogglePassword('toggle-forgot-pass', 'forgot-password');
+
+  // ==================== Code Countdown ====================
+  function startCountdown(btn, seconds) {
+    var left = seconds;
+    btn.disabled = true;
+    btn.textContent = left + '秒后重试';
+    var timer = setInterval(function() {
+      left--;
+      if (left <= 0) {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.textContent = '发送验证码';
+      } else {
+        btn.textContent = left + '秒后重试';
+      }
+    }, 1000);
+  }
+
+  // 设置 axios 跨域携带 cookie
+  axios.defaults.withCredentials = true;
+
+  // ==================== API Call Helper ====================
+  // Browser device fingerprint (persisted in localStorage)
+  var browserDeviceId = localStorage.getItem('_fs_device_id');
+  if (!browserDeviceId) {
+    browserDeviceId = 'web_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+    localStorage.setItem('_fs_device_id', browserDeviceId);
+  }
+
+  function api(url, data, method) {
+    method = method || 'post';
+    var opts = { method: method, url: url, headers: { 'X-Device-Id': browserDeviceId } };
+    if (method === 'get') { opts.params = data; }
+    else { opts.data = data; }
+    return axios(opts);
+  }
+
+  // ==================== Password Validation ====================
+  function checkPassword(password) {
+    var rules = {
+      length: password.length >= 6,
+      upper: /[A-Z]/.test(password),
+      lower: /[a-z]/.test(password),
+      digit: /[0-9]/.test(password),
+      special: /[^a-zA-Z0-9]/.test(password)
+    };
+
+    $('rule-length').className = rules.length ? 'met' : '';
+    $('rule-upper').className = rules.upper ? 'met' : '';
+    $('rule-lower').className = rules.lower ? 'met' : '';
+    $('rule-digit').className = rules.digit ? 'met' : '';
+    $('rule-special').className = rules.special ? 'met' : '';
+
+    var varieties = [rules.upper, rules.lower, rules.digit, rules.special].filter(Boolean).length;
+    return {
+      valid: rules.length && varieties >= 3,
+      rules: rules
+    };
+  }
+
+  $('reg-password').addEventListener('input', function() {
+    checkPassword(this.value);
+  });
+
+  // ==================== Login Mode Switching ====================
+  var loginMode = 'password';
+
+  function setLoginMode(mode) {
+    loginMode = mode;
+    document.getElementById('login-mode-password').style.display = (mode === 'password') ? 'block' : 'none';
+    document.getElementById('login-mode-code').style.display = (mode === 'code') ? 'block' : 'none';
+    document.getElementById('login-mode-qr').style.display = (mode === 'qr') ? 'block' : 'none';
+    document.getElementById('sw-password').classList.toggle('switcher-active', mode === 'password');
+    document.getElementById('sw-code').classList.toggle('switcher-active', mode === 'code');
+    document.getElementById('card-dogear').classList.toggle('active', mode === 'qr');
+    document.getElementById('login-switcher').style.display = (mode === 'qr') ? 'none' : 'block';
+    if (mode === 'qr') loadQrForMode();
+    if (mode !== 'qr') closeQrForMode();
+    hideMessage();
+  }
+
+  document.getElementById('sw-password').addEventListener('click', function() { setLoginMode('password'); });
+  document.getElementById('sw-code').addEventListener('click', function() { setLoginMode('code'); });
+  document.getElementById('card-dogear').addEventListener('click', function() {
+    setLoginMode(loginMode === 'qr' ? 'password' : 'qr');
+  });
+
+  // Sync email between modes
+  document.getElementById('login-code-email').addEventListener('input', function() {
+    document.getElementById('login-email').value = this.value;
+  });
+  document.getElementById('login-email').addEventListener('input', function() {
+    document.getElementById('login-code-email').value = this.value;
+  });
+
+  // ==================== Helpers ====================
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  // ==================== Password Login ====================
+  var loginPending = false;
+
+  document.getElementById('btn-password-login').addEventListener('click', function() {
+    var email = document.getElementById('login-email').value.trim();
+    var password = document.getElementById('login-password').value;
+    if (!email || !password) { showMessage('请输入邮箱和密码', 'error'); return; }
+    if (!isValidEmail(email)) { showMessage('请输入正确的邮箱地址', 'error'); return; }
+    if (loginPending) return;
+    hideMessage();
+    var btn = this; setLoading(btn, true); loginPending = true;
+    api('/api/auth/login-error-count', { email: email }, 'get')
+      .then(function(res) {
+        if (res.data.code === 0 && res.data.data && res.data.data.needCaptcha) {
+          setLoading(btn, false); loginPending = false;
+          openCaptchaModal(function(token) { doPasswordLogin(email, password, token, btn); });
+        } else { doPasswordLogin(email, password, null, btn); }
+      }).catch(function() { doPasswordLogin(email, password, null, btn); });
+  });
+
+  function doPasswordLogin(email, password, captchaToken, btn) {
+    btn = btn || document.getElementById('btn-password-login');
+    var data = { email: email, password: password };
+    if (captchaToken) data.captchaToken = captchaToken;
+    api('/api/auth/login', data).then(function(res) {
+      setLoading(btn, false); loginPending = false;
+      if (res.data.code === 0) { handleLoginSuccess(res, email); }
+      else if (res.data.data && res.data.data.needCaptcha) {
+        showMessage(res.data.message || '需要图形验证码', 'error');
+        openCaptchaModal(function(token) { doPasswordLogin(email, password, token, btn); });
+      } else { showMessage(res.data.message || '登录失败', 'error'); }
+    }).catch(function() { setLoading(btn, false); loginPending = false; showMessage('网络错误', 'error'); });
+  }
+
+  function handleLoginSuccess(res, email) {
+    localStorage.setItem('lastUsername', email);
+    var token = res.data.data && res.data.data.token ? res.data.data.token : '';
+    var uid = res.data.data && res.data.data.user ? res.data.data.user.id : '';
+    if (token && window.AndroidCallback) { window.AndroidCallback.saveAuthToken(token); window.AndroidCallback.saveUserInfo(uid, email); }
+    var csrf = res.data.data && res.data.data.csrfToken;
+    if (csrf) localStorage.setItem('csrfToken', csrf);
+    showMessage('登录成功，正在跳转...', 'success');
+    setTimeout(function() { var u = new URLSearchParams(window.location.search).get('return'); window.location.href = u ? decodeURIComponent(u) : '/'; }, 800);
+  }
+
+  // ==================== Code Login ====================
+  document.getElementById('btn-login-code-send').addEventListener('click', function() {
+    var email = document.getElementById('login-code-email').value.trim();
+    if (!email || !isValidEmail(email)) { showMessage('请输入正确的邮箱地址', 'error'); return; }
+    sendCodeWithCaptcha(email, 'login', this);
+  });
+
+  document.getElementById('btn-code-login').addEventListener('click', function() {
+    var email = document.getElementById('login-code-email').value.trim();
+    var code = document.getElementById('login-code-code').value.trim();
+    if (!email || !code) { showMessage('请填写邮箱和验证码', 'error'); return; }
+    if (!isValidEmail(email)) { showMessage('请输入正确的邮箱地址', 'error'); return; }
+    if (code.length !== 6) { showMessage('请输入6位验证码', 'error'); return; }
+    if (loginPending) return;
+    var btn = this; setLoading(btn, true); loginPending = true;
+    api('/api/auth/login', { email: email, code: code }).then(function(res) {
+      setLoading(btn, false); loginPending = false;
+      if (res.data.code === 0) { handleLoginSuccess(res, email); }
+      else { showMessage(res.data.message || '登录失败', 'error'); }
+    }).catch(function() { setLoading(btn, false); loginPending = false; showMessage('网络错误', 'error'); });
+  });
+
+  // ==================== Send Code w/ Captcha ====================
+  function sendCodeWithCaptcha(email, type, btn, onSuccess) {
+    api('/api/auth/login-error-count', { email: email }, 'get').then(function(res) {
+      var needCaptcha = res.data.code === 0 && res.data.data && res.data.data.needCaptcha;
+      if (needCaptcha) {
+        openCaptchaModal(function(captchaToken) { doSendCode(email, type, btn, captchaToken, onSuccess); });
+      } else { doSendCode(email, type, btn, null, onSuccess); }
+    }).catch(function() { doSendCode(email, type, btn, null, onSuccess); });
+  }
+
+  function doSendCode(email, type, btn, captchaToken, onSuccess) {
+    btn.disabled = true;
+    var data = { email: email };
+    if (captchaToken) data.captchaToken = captchaToken;
+    var ep = type === 'login' ? '/api/auth/send-login-code' : (type === 'register' ? '/api/auth/send-register-code' : '/api/auth/send-reset-code');
+    api(ep, data).then(function(res) {
+      if (res.data.code === 0) {
+        showMessage('验证码已发送至邮箱', 'success'); startCountdown(btn, 60);
+        if (onSuccess) onSuccess();
+      } else if (res.data.data && res.data.data.needCaptcha) {
+        btn.disabled = false;
+        openCaptchaModal(function(token) { doSendCode(email, type, btn, token, onSuccess); });
+      } else { showMessage(res.data.message || '发送失败', 'error'); btn.disabled = false; }
+    }).catch(function() { showMessage('发送失败，请稍后重试', 'error'); btn.disabled = false; });
+  }
+
+  // ==================== QR Login ====================
+  var qrWs = null, currentQrToken = null, qrRefreshTimer = null;
+
+  function getWsUrl() { return (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws'; }
+
+  function clearQrRefreshTimer() { if (qrRefreshTimer) { clearInterval(qrRefreshTimer); qrRefreshTimer = null; } }
+
+  function loadQrCodeLib() {
+    return new Promise(function(resolve) {
+      if (window.QRCode) { resolve(); return; }
+      var s = document.createElement('script'); s.src = '/qrcode.min.js';
+      s.onload = function() { resolve(); }; document.head.appendChild(s);
+    });
+  }
+
+  function generateQrCode(container, text) {
+    container.innerHTML = '';
+    if (window.QRCode && window.QRCode.toDataURL) {
+      window.QRCode.toDataURL(text, { width: 200, margin: 2, color: { dark: '#000000', light: '#ffffff' } }, function(err, url) {
+        if (err) { container.innerHTML = '<div style="color:var(--error);font-size:12px">生成失败</div>'; return; }
+        var img = document.createElement('img'); img.src = url; img.width = 200; img.height = 200; container.appendChild(img);
+      });
+    }
+  }
+
+  function connectQrWs() {
+    if (qrWs && qrWs.readyState === WebSocket.OPEN) return Promise.resolve(qrWs);
+    return new Promise(function(resolve, reject) {
+      qrWs = new WebSocket(getWsUrl());
+      qrWs.onopen = function() { resolve(qrWs); };
+      qrWs.onerror = function(e) { reject(e); };
+      qrWs.onclose = function() { qrWs = null; };
+      qrWs.onmessage = function(event) { try { handleQrMsg(JSON.parse(event.data)); } catch(e) {} };
+    });
+  }
+
+  function handleQrMsg(msg) {
+    var st = document.getElementById('qr-status-main'), tp = document.getElementById('qr-tips-main');
+    switch (msg.type) {
+      case 'qr_login_waiting': st.textContent = '等待扫码...'; st.className = 'qr-status'; tp.textContent = '请使用手机扫描二维码'; break;
+      case 'qr_login_scanned':
+        var who = (msg.data && msg.data.scannedBy) || '用户';
+        document.getElementById('qr-code-container-main').innerHTML = '<div style="font-size:60px;padding:30px;">&#128273;</div>';
+        st.textContent = who + ' 已扫码'; st.className = 'qr-status'; tp.textContent = '请在手机上确认登录'; break;
+      case 'qr_login_success':
+        var sk = msg.data && msg.data.swapKey;
+        if (sk) {
+          st.textContent = '正在切换登录...';
+          fetch('/api/auth/qr-login/swap', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({swapKey:sk}), credentials:'include' })
+            .then(function(r){return r.json()}).then(function(d){
+              if(d.code===0){ if(d.data&&d.data.csrfToken) localStorage.setItem('csrfToken', d.data.csrfToken);
+                st.textContent = '登录成功！'; st.className = 'qr-status success'; tp.textContent = '正在跳转...';
+                setTimeout(function(){ var u=new URLSearchParams(window.location.search).get('return'); window.location.href=u?decodeURIComponent(u):'/'; },500);
+              }else{ st.textContent='登录失败: '+(d.message||''); st.className='qr-status error'; }
+            });
+        }
+        break;
+      case 'qr_login_rejected': st.textContent = '登录已取消'; st.className = 'qr-status'; tp.textContent = '请重新扫码'; currentQrToken = null; break;
+      case 'qr_login_error': case 'qr_login_cancelled': st.textContent = msg.message || '二维码已过期'; st.className = 'qr-status qr-expired'; tp.textContent = '点击刷新按钮'; currentQrToken = null; break;
+    }
+  }
+
+  function loadQrForMode() { loadQrCodeLib().then(function() { refreshQrMain(); }).catch(function() { document.getElementById('qr-status-main').textContent = '加载失败'; }); }
+
+  function closeQrForMode() { clearQrRefreshTimer(); if (currentQrToken && qrWs && qrWs.readyState === WebSocket.OPEN) { qrWs.send(JSON.stringify({ type: 'qr_login_cancel', token: currentQrToken })); } if (qrWs) { qrWs.close(); qrWs = null; } currentQrToken = null; }
+
+  function refreshQrMain() {
+    if (loginMode !== 'qr') return;
+    var c = document.getElementById('qr-code-container-main'), s = document.getElementById('qr-status-main'), t = document.getElementById('qr-tips-main');
+    c.innerHTML = '<div class="qr-loading">加载中...</div>'; s.textContent = '正在连接...'; t.textContent = '请稍候...';
+    api('/api/auth/qr-login/generate', {}, 'get').then(function(res) {
+      if (res.data.code === 0) { currentQrToken = res.data.data.token; generateQrCode(c, res.data.data.qrContent);
+        s.textContent = '等待扫码...'; s.className = 'qr-status'; t.textContent = '请使用FMS手机App扫描二维码';
+        clearQrRefreshTimer(); qrRefreshTimer = setInterval(refreshQrMain, 30000);
+        connectQrWs().then(function(ws) { ws.send(JSON.stringify({ type: 'qr_login_request', token: currentQrToken })); });
+      } else { c.innerHTML = '<div style="color:var(--error);font-size:12px">' + (res.data.message || '获取失败') + '</div>'; }
+    }).catch(function() { c.innerHTML = '<div style="color:var(--error);font-size:12px">网络错误</div>'; });
+  }
+
+  document.getElementById('btn-qr-refresh-main').addEventListener('click', function() { if (qrWs) { qrWs.close(); qrWs = null; } refreshQrMain(); });
+
+  // ==================== Forgot Password + App Download Switchers ====================
+  document.getElementById('forgot-link-sw').addEventListener('click', function() {
+    document.getElementById('login-form').classList.remove('active');
+    document.getElementById('register-form').classList.remove('active');
+    document.getElementById('forgot-form').classList.add('active');
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    hideMessage(); resetPasswordToggles();
+  });
+
+  document.getElementById('app-download-sw').addEventListener('click', function() {
+    document.getElementById('app-download-overlay').style.display = 'flex';
+    var qrContainer = document.getElementById('app-download-qr');
+    var verEl = document.getElementById('app-dl-version');
+    var dlBtn = document.getElementById('btn-app-dl-direct');
+    qrContainer.innerHTML = '<div class="qr-loading">加载中...</div>';
+    verEl.textContent = '';
+    dlBtn.style.display = 'none';
+    loadQrCodeLib().then(function() {
+      fetch('/api/version/latest').then(function(r){return r.json()}).then(function(d){
+        if(d.code===0&&d.data&&d.data.url){
+          var apkUrl = d.data.url;
+          generateQrCode(qrContainer, location.origin + apkUrl);
+          verEl.textContent = 'v' + (d.data.version||'') + ' | ' + Math.round((d.data.size||0)/1024/1024) + 'MB';
+          dlBtn.style.display = 'block';
+          dlBtn.appUrl = apkUrl;
+        } else {
+          qrContainer.innerHTML = '<div style="color:var(--error);font-size:12px">暂无版本</div>';
+          dlBtn.style.display = 'none';
+        }
+      }).catch(function(){
+        qrContainer.innerHTML = '<div style="color:var(--error);font-size:12px">加载失败</div>';
+        dlBtn.style.display = 'none';
+      });
+    });
+  });
+
+  document.getElementById('btn-app-dl-direct').addEventListener('click', function() {
+    var url = this.appUrl;
+    if (url) {
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  });
+
+  document.getElementById('btn-app-dl-close').addEventListener('click', function() {
+    document.getElementById('app-download-overlay').style.display = 'none';
+  });
+  document.getElementById('app-download-overlay').addEventListener('click', function(e) {
+    if (e.target === this) document.getElementById('app-download-overlay').style.display = 'none';
+  });
+
+  // ==================== Back to login (from forgot) ====================
+  document.getElementById('back-to-login').addEventListener('click', function() {
+    document.querySelectorAll('.tab-content').forEach(function(tc) { tc.classList.remove('active'); });
+    document.getElementById('login-form').classList.add('active');
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelector('.tab[data-tab="login"]').classList.add('active');
+    hideMessage(); resetPasswordToggles(); clearForm('forgot-form');
+  });
+
+  // ==================== Register: Send code with captcha ====================
+  (function() {
+    var btn = document.getElementById('btn-reg-code');
+    if (btn) {
+      var newBtn = btn.cloneNode(true); btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', function() {
+        var email = document.getElementById('reg-email').value.trim();
+        if (!email || !isValidEmail(email)) { showMessage('请输入正确的邮箱地址', 'error'); return; }
+        sendCodeWithCaptcha(email, 'register', this);
+      });
+    }
+  })();
+
+  // ==================== Register: Submit ====================
+  document.getElementById('btn-register').addEventListener('click', function() {
+    var email = document.getElementById('reg-email').value.trim();
+    var password = document.getElementById('reg-password').value;
+    var code = document.getElementById('reg-code').value.trim();
+    if (!email || !password) { showMessage('请输入邮箱和密码', 'error'); return; }
+    if (!isValidEmail(email)) { showMessage('请输入正确的邮箱地址', 'error'); return; }
+    if (!code) { showMessage('请输入验证码', 'error'); return; }
+    if (password.length < 6) { showMessage('密码至少6位', 'error'); return; }
+    var btn = this; setLoading(btn, true);
+    api('/api/auth/register', { email: email, password: password, code: code }).then(function(res) {
+      setLoading(btn, false);
+      if (res.data.code === 0) {
+        showMessage('注册成功！请登录', 'success');
+        document.querySelector('.tab[data-tab="login"]').click();
+      } else {
+        showMessage(res.data.message || '注册失败', 'error');
+      }
+    }).catch(function() { setLoading(btn, false); showMessage('网络错误', 'error'); });
+  });
+
+  // ==================== Forgot: Send code with captcha ====================
+  (function() {
+    var btn = document.getElementById('btn-forgot-code');
+    if (btn) {
+      var newBtn = btn.cloneNode(true); btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', function() {
+        var email = document.getElementById('forgot-email').value.trim();
+        if (!email || !isValidEmail(email)) { showMessage('请输入正确的邮箱地址', 'error'); return; }
+        sendCodeWithCaptcha(email, 'reset', this);
+      });
+    }
+  })();
+
+  // ==================== Captcha Modal ====================
+  var captchaToken = null, captchaClicks = [], captchaCallback = null;
+
+  function openCaptchaModal(cb) {
+    captchaCallback = cb || null; captchaToken = null; captchaClicks = [];
+    document.getElementById('captcha-error').classList.remove('show');
+    document.getElementById('captcha-success').classList.remove('show');
+    document.getElementById('captcha-overlay').style.display = 'flex';
+    document.getElementById('captcha-svg-wrap').querySelectorAll('.click-dot').forEach(function(d) { d.remove(); });
+    loadCaptcha();
+  }
+
+  function closeCaptchaModal() { document.getElementById('captcha-overlay').style.display = 'none'; captchaToken = null; captchaClicks = []; captchaCallback = null; }
+
+  function loadCaptcha() {
+    document.getElementById('captcha-error').classList.remove('show');
+    document.getElementById('captcha-success').classList.remove('show');
+    captchaClicks = []; captchaToken = null;
+    document.getElementById('captcha-svg-wrap').querySelectorAll('.click-dot').forEach(function(d) { d.remove(); });
+    document.getElementById('captcha-svg-img').src = '';
+    document.getElementById('captcha-svg-img').style.opacity = '0.5';
+    api('/api/auth/captcha/generate', {}, 'get').then(function(res) {
+      if (res.data.code === 0 && res.data.data) { captchaToken = res.data.data.token; document.getElementById('captcha-svg-img').src = res.data.data.svg; document.getElementById('captcha-svg-img').style.opacity = '1'; }
+      else { showCaptchaError('验证码加载失败'); }
+    }).catch(function() { showCaptchaError('网络错误'); });
+  }
+
+  function showCaptchaError(msg) { document.getElementById('captcha-error').textContent = msg; document.getElementById('captcha-error').classList.add('show'); document.getElementById('captcha-success').classList.remove('show'); captchaClicks = []; document.getElementById('captcha-svg-wrap').querySelectorAll('.click-dot').forEach(function(d) { d.remove(); }); }
+
+  document.getElementById('captcha-svg-wrap').addEventListener('click', function(e) {
+    if (!captchaToken || captchaClicks.length >= 3) return;
+    if (document.getElementById('captcha-success').classList.contains('show')) return;
+    var rect = this.getBoundingClientRect();
+    var scaleX = 320 / rect.width, scaleY = 180 / rect.height;
+    var x = (e.clientX - rect.left) * scaleX, y = (e.clientY - rect.top) * scaleY;
+    var dot = document.createElement('div'); dot.className = 'click-dot';
+    dot.textContent = '' + (captchaClicks.length + 1);
+    dot.style.left = (e.clientX - rect.left) + 'px';
+    dot.style.top = (e.clientY - rect.top) + 'px';
+    this.appendChild(dot); captchaClicks.push({ x: x, y: y });
+    if (captchaClicks.length >= 3) { document.getElementById('captcha-error').classList.remove('show'); verifyCaptcha(); }
+  });
+
+  function verifyCaptcha() {
+    if (!captchaToken || captchaClicks.length < 3) return;
+    api('/api/auth/captcha/verify', { token: captchaToken, clicks: captchaClicks }).then(function(res) {
+      if (res.data.code === 0 && res.data.data && res.data.data.success) {
+        document.getElementById('captcha-success').classList.add('show');
+        var vToken = captchaToken, cb = captchaCallback;
+        setTimeout(function() { closeCaptchaModal(); if (cb) cb(vToken); }, 400);
+      } else {
+        showCaptchaError(res.data.message || '验证失败');
+        setTimeout(function() { if (document.getElementById('captcha-overlay').style.display !== 'none' && captchaClicks.length >= 3) loadCaptcha(); }, 1500);
+      }
+    }).catch(function() { showCaptchaError('验证失败'); });
+  }
+
+  document.getElementById('btn-captcha-cancel').addEventListener('click', closeCaptchaModal);
+  document.getElementById('btn-captcha-refresh').addEventListener('click', loadCaptcha);
+  document.getElementById('captcha-overlay').addEventListener('click', function(e) { if (e.target === this) closeCaptchaModal(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && document.getElementById('captcha-overlay').style.display === 'flex') closeCaptchaModal(); });
+
+  // 恢复上次保存的用户名
+  var savedUsername = localStorage.getItem('lastUsername');
+  if (savedUsername) {
+    $('login-email').value = savedUsername;
+  }
+
+  // ==================== 初始化自动登录检查 ====================
+  // 等待 AndroidCallback 就绪
+  function waitForAndroidCallback(callback) {
+    var tries = 0;
+    var maxTries = 50; // 最多等 500ms
+    function check() {
+      tries++;
+      if (window.AndroidCallback && window.AndroidCallback.isNativeApp) {
+        callback();
+      } else if (tries < maxTries) {
+        setTimeout(check, 10);
+      } else {
+        // 始终没有 AndroidCallback，直接显示登录表单
+        showLoginForm();
+      }
+    }
+    check();
+  }
+
+  // 启动自动登录检查
+  waitForAndroidCallback(function() {
+    if (isNativeApp) {
+      checkAutoLogin();
+    } else {
+      showLoginForm();
+    }
+  });
+
+  // URL 参数支持：?tab=register 自动切换到注册页
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'register') {
+      // 等待 DOM 就绪后切换到注册 tab
+      var ready = function() {
+        var regTab = document.querySelector('.tab[data-tab="register"]');
+        if (regTab) {
+          regTab.click();
+        } else {
+          setTimeout(ready, 50);
+        }
+      };
+      setTimeout(ready, 100);
+    }
+  })();
+
+})();
+</script>
+
+<!-- 悬浮球：移动端下载入口（可拖拽、贴边隐藏、角标恢复） -->
+<style>
+#mobile-floating-ball { position:fixed; z-index:9999; user-select:none; -webkit-user-select:none; }
+#mobile-floating-ball .ball-btn { width:46px;height:46px;border-radius:50%;background:#1c2128;border:2px solid #30363d;color:#8b949e;font-size:21px;cursor:grab;box-shadow:0 4px 16px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;transition:box-shadow .2s,transform .2s; }
+#mobile-floating-ball .ball-btn:active { cursor:grabbing; }
+#mobile-floating-ball .ball-btn:hover { box-shadow:0 0 20px rgba(0,212,255,0.3);transform:scale(1.05); }
+#mobile-floating-ball .ball-panel { display:none;position:absolute;bottom:54px;right:0;background:#1c2128;border:1px solid #30363d;border-radius:12px;padding:14px;width:200px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.6); }
+#mobile-floating-ball .ball-panel.show { display:block; }
+#mobile-floating-ball .ball-panel .qr-wrap { width:120px;height:120px;margin:0 auto 10px;background:#fff;border-radius:8px;padding:4px;display:flex;align-items:center;justify-content:center;color:#0d1117;font-size:11px; }
+#mobile-floating-ball .ball-panel .dl-link { color:#58a6ff;font-size:12px;text-decoration:none;display:block;margin-bottom:8px; }
+#mobile-floating-ball .ball-panel .hide-btn { color:#666;font-size:11px;cursor:pointer;background:none;border:1px solid #333;border-radius:6px;padding:3px 10px;transition:all .2s; }
+#mobile-floating-ball .ball-panel .hide-btn:hover { color:#aaa;border-color:#555; }
+/* 角标（隐藏时显示） */
+#mobile-floating-ball-corner { display:none;position:fixed;z-index:9998;width:18px;height:40px;background:#1c2128;border:2px solid #30363d;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);transition:all .2s; }
+#mobile-floating-ball-corner:hover { border-color:var(--accent,#00d4ff);box-shadow:0 0 12px rgba(0,212,255,0.25); }
+#mobile-floating-ball-corner .corner-dot { position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px; }
+/* 贴边动画 */
+#mobile-floating-ball.hiding { transition:transform .3s ease; }
+#mobile-floating-ball.showing { transition:transform .3s ease,opacity .3s ease; }
+</style>
+<div id="mobile-floating-ball">
+  <div class="ball-btn" title="下载移动端App（可拖拽移动）">&#128241;</div>
+  <div class="ball-panel">
+    <p style="color:#e6edf3;font-size:13px;margin:0 0 8px;">扫码下载 FMS App</p>
+    <div class="qr-wrap" id="mobile-dl-qr">加载中...</div>
+    <a class="dl-link" id="mobile-dl-link" href="#">&#128229; 直接下载 APK</a>
+    <button class="hide-btn" id="mobile-dl-hide">&#9664; 隐藏悬浮球</button>
+  </div>
+</div>
+<div id="mobile-floating-ball-corner">&#128241;</div>
+<script>
+(function(){
+  var container = document.getElementById('mobile-floating-ball');
+  var ballBtn = container.querySelector('.ball-btn');
+  var panel = container.querySelector('.ball-panel');
+  var corner = document.getElementById('mobile-floating-ball-corner');
+  var hideBtn = document.getElementById('mobile-dl-hide');
+  var qrEl = document.getElementById('mobile-dl-qr');
+  var linkEl = document.getElementById('mobile-dl-link');
+
+  // 从 localStorage 恢复位置
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem('_fs_ball_pos') || '{}'); } catch(e) {}
+  var x = saved.x != null ? saved.x : (window.innerWidth - 70);
+  var y = saved.y != null ? saved.y : (window.innerHeight - 180);
+  var hidden = saved.hidden || false;
+  var cornerSide = saved.cornerSide || 'right'; // 'left'|'right'|'top'|'bottom'
+
+  // 检测是否为移动端
+  var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+  function saveState() {
+    try { localStorage.setItem('_fs_ball_pos', JSON.stringify({
+      x: x, y: y, hidden: hidden, cornerSide: cornerSide
+    })); } catch(e) {}
+  }
+
+  function position() {
+    container.style.left = x + 'px';
+    container.style.top = y + 'px';
+    container.style.right = 'auto';
+    container.style.bottom = 'auto';
+  }
+
+  function showCorner() {
+    corner.style.display = 'block';
+    corner.style.width = '18px';
+    corner.style.height = '40px';
+    if (cornerSide === 'right') {
+      corner.style.right = '0'; corner.style.top = (y + 3) + 'px';
+      corner.style.left = 'auto'; corner.style.bottom = 'auto';
+      corner.style.borderRadius = '20px 0 0 20px';
+    } else if (cornerSide === 'left') {
+      corner.style.left = '0'; corner.style.top = (y + 3) + 'px';
+      corner.style.right = 'auto'; corner.style.bottom = 'auto';
+      corner.style.borderRadius = '0 20px 20px 0';
+    } else if (cornerSide === 'bottom') {
+      corner.style.bottom = '0'; corner.style.left = (x + 13) + 'px';
+      corner.style.right = 'auto'; corner.style.top = 'auto';
+      corner.style.width = '40px'; corner.style.height = '18px';
+      corner.style.borderRadius = '20px 20px 0 0';
+    } else {
+      corner.style.top = '0'; corner.style.left = (x + 13) + 'px';
+      corner.style.right = 'auto'; corner.style.bottom = 'auto';
+      corner.style.width = '40px'; corner.style.height = '18px';
+      corner.style.borderRadius = '0 0 20px 20px';
+    }
+    container.style.display = 'none';
+  }
+
+  function showBall() {
+    container.style.display = 'block';
+    corner.style.display = 'none';
+    hidden = false;
+    // 重新计算确保在可视区域内
+    if (x < 0) x = 20;
+    if (x > window.innerWidth - 60) x = window.innerWidth - 70;
+    if (y < 0) y = 20;
+    if (y > window.innerHeight - 60) y = window.innerHeight - 70;
+    position();
+    saveState();
+  }
+
+  function hideBall() {
+    panel.classList.remove('show');
+    // 判断贴边方向
+    var distRight = window.innerWidth - (x + 46);
+    var distLeft = x;
+    var distBottom = window.innerHeight - (y + 46);
+    var distTop = y;
+    var minDist = Math.min(distRight, distLeft, distBottom, distTop);
+    if (minDist === distRight) cornerSide = 'right';
+    else if (minDist === distLeft) cornerSide = 'left';
+    else if (minDist === distBottom) cornerSide = 'bottom';
+    else cornerSide = 'top';
+    hidden = true;
+    showCorner();
+    saveState();
+  }
+
+  // 初始化位置
+  if (hidden) { showCorner(); } else { position(); }
+
+  // ========== 拖拽逻辑 ==========
+  var dragging = false, startX, startY, startOX, startOY, moved = false;
+  container.addEventListener('mousedown', onDown);
+  container.addEventListener('touchstart', onDown, {passive:false});
+
+  function onDown(e) {
+    if (e.target.closest('.ball-panel')) return; // 面板内不触发拖拽
+    if (e.target === hideBtn) return;
+    dragging = true; moved = false;
+    var pt = e.touches ? e.touches[0] : e;
+    startX = pt.clientX; startY = pt.clientY;
+    startOX = x; startOY = y;
+    container.style.transition = 'none';
+    if (e.touches) e.preventDefault(); // 仅触摸时阻止默认滚动
+  }
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var dx = e.clientX - startX, dy = e.clientY - startY;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved = true;
+    x = Math.max(-30, Math.min(window.innerWidth - 30, startOX + dx));
+    y = Math.max(-30, Math.min(window.innerHeight - 30, startOY + dy));
+    position();
+    if (panel.classList.contains('show')) panel.classList.remove('show');
+  });
+  document.addEventListener('touchmove', function(e) {
+    if (!dragging) return;
+    var dx = e.touches[0].clientX - startX, dy = e.touches[0].clientY - startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+    x = Math.max(-30, Math.min(window.innerWidth - 30, startOX + dx));
+    y = Math.max(-30, Math.min(window.innerHeight - 30, startOY + dy));
+    position();
+    if (panel.classList.contains('show')) panel.classList.remove('show');
+  }, {passive:false});
+
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchend', onUp);
+
+  function onUp(e) {
+    if (!dragging) return;
+    dragging = false;
+    container.style.transition = '';
+    // 移动距离 < 10px 视为点击
+    var totalDist = Math.sqrt(Math.pow(x-startOX,2)+Math.pow(y-startOY,2));
+    if (totalDist < 10) moved = false;
+    // 贴边检测：距离边缘 < 50px 自动隐藏（面板打开时不隐藏）
+    if (!panel.classList.contains('show')) {
+      var distRight = window.innerWidth - (x + 46);
+      var distLeft = x;
+      var distBottom = window.innerHeight - (y + 46);
+      var distTop = y;
+      var edgeThreshold = 50;
+      if (distRight < edgeThreshold || distLeft < edgeThreshold || distBottom < edgeThreshold || distTop < edgeThreshold) {
+        if (distRight < edgeThreshold) x = window.innerWidth - 5;
+        else if (distLeft < edgeThreshold) x = -41;
+        if (distBottom < edgeThreshold) y = window.innerHeight - 5;
+        else if (distTop < edgeThreshold) y = -41;
+        position();
+        setTimeout(hideBall, 300);
+        return;
+      }
+    }
+    saveState();
+  }
+
+  // ========== 点击切换面板 ==========
+  // 移动端：用 touchend 直接切换面板（避免 click 300ms 延迟 + moved 误判）
+  ballBtn.addEventListener('touchend', function(e) {
+    if (moved) return;
+    e.preventDefault();
+    e.stopPropagation();
+    panel.classList.toggle('show');
+    if (panel.classList.contains('show') && !qrEl.dataset.loaded) {
+      qrEl.dataset.loaded = '1';
+      tryRenderQr();
+    }
+  });
+
+  ballBtn.addEventListener('click', function(e) {
+    if (moved) return;
+    e.stopPropagation();
+    panel.classList.toggle('show');
+    if (panel.classList.contains('show') && !qrEl.dataset.loaded) {
+      qrEl.dataset.loaded = '1';
+      tryRenderQr();
+    }
+  });
+
+  // 点击面板外关闭
+  document.addEventListener('click', function(e) {
+    if (panel.classList.contains('show') && !container.contains(e.target) && e.target !== corner) {
+      panel.classList.remove('show');
+    }
+  });
+
+  // 面板内点击不冒泡到 document
+  panel.addEventListener('click', function(e) {
+    e.stopPropagation();
+  });
+
+  // ========== 隐藏按钮 ==========
+  hideBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    hideBall();
+  });
+
+  // ========== 角标点击恢复 ==========
+  corner.addEventListener('click', function() {
+    showBall();
+  });
+
+  // ========== 窗口大小变化时调整 ==========
+  window.addEventListener('resize', function() {
+    if (x > window.innerWidth - 30) x = window.innerWidth - 70;
+    if (y > window.innerHeight - 30) y = window.innerHeight - 70;
+    if (!hidden) position();
+    else showCorner();
+    saveState();
+  });
+
+  // 移动端也默认显示悬浮球（不自动隐藏）
+
+  // ========== QR 加载逻辑（同上） ==========
+  function tryRenderQr() {
+    fetch('/api/version/latest').then(function(r){return r.json()}).then(function(d){
+      if(d.code===0&&d.data&&d.data.url){
+        var fullUrl = location.origin + d.data.url;
+        linkEl.href = d.data.url;
+        linkEl.textContent = '📥 v'+d.data.version+' ('+Math.round(d.data.size/1024/1024)+'MB)';
+        function gen() {
+          if (window.QRCode && window.QRCode.toDataURL) {
+            var result = window.QRCode.toDataURL(fullUrl, { width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+            if (result && typeof result.then === 'function') {
+              result.then(function(dataUrl) {
+                qrEl.innerHTML = '<img src="'+dataUrl+'" style="width:100%;height:100%;display:block">';
+              }).catch(function(){ qrEl.textContent = '生成失败'; });
+            } else if (typeof result === 'string') {
+              qrEl.innerHTML = '<img src="'+result+'" style="width:100%;height:100%;display:block">';
+            } else {
+              qrEl.textContent = '格式错误';
+            }
+          } else {
+            setTimeout(gen, 300);
+          }
+        }
+        gen();
+      } else {
+        qrEl.textContent = '暂无版本';
+      }
+    }).catch(function(){ qrEl.textContent = '加载失败'; });
+  }
+})();
+</script>
+</body>
+</html>

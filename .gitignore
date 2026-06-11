@@ -1,0 +1,86 @@
+# ==================== Dependencies ====================
+node_modules/
+
+# ==================== Database files ====================
+data/
+*.db
+*.sqlite
+
+# ==================== Uploaded files storage ====================
+# 所有加密存储目录
+files/download/
+files/userdata/
+files/tmp/
+files/app/
+files/path1/
+files/path2/
+files/path3/
+files/3path1/
+
+# ==================== Environment / Secrets ====================
+.env
+!.env.example
+*.pem
+*.key
+cookies.txt
+upload.jks
+
+# ==================== Android App（独立仓库: FMS-Service-app）====================
+app/
+
+# ==================== Build outputs ====================
+app/android/app/build/
+app/android/.gradle/
+app/android/build/
+app/android/capacitor-cordova-android-plugins/
+app/android/app/capacitor.build.gradle
+*.apk
+
+# ==================== Android SDK (bundled for CI/build) ====================
+app/tools/android-sdk/
+
+# ==================== IDE / Editor ====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ==================== OS files ====================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==================== Logs ====================
+*.log
+
+# ==================== Archives ====================
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# ==================== Binary / Executable ====================
+*.bin
+*.exe
+
+# ==================== Test artifacts ====================
+screenshots/
+backend/
+test-results/
+
+# ==================== Chrome / Chromedriver ====================
+chromedriver-win64/
+chrome-win64/
+
+# ==================== Capacitor generated ====================
+app/android/app/src/main/assets/capacitor.config.json
+app/android/app/src/main/assets/capacitor.plugins.json
+
+# ==================== Temporary / Backup ====================
+* - 副本/
+* - 副本 (*)/
+release/
+
+# ==================== Claude AI assistant ====================
+.claude/

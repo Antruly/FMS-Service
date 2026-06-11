@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>诊断 - 检查当前页面</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #fff; }
+    .info { background: #0d0d1a; padding: 15px; border: 1px solid #333; margin: 10px 0; }
+    .error { color: #f55; }
+    .success { color: #5f5; }
+    .warning { color: #ffa; }
+    a { color: #00d4ff; }
+  </style>
+</head>
+<body>
+  <h1>页面诊断</h1>
+
+  <div class="info">
+    <strong>当前 URL:</strong> <span id="url"></span>
+  </div>
+
+  <div class="info" id="check-result"></div>
+
+  <div class="info" id="quick-fix"></div>
+
+  <script>
+    document.getElementById('url').textContent = window.location.href;
+
+    var result = document.getElementById('check-result');
+    var isHome = window.location.pathname.indexOf('home.html') !== -1;
+    var isLogin = window.location.pathname.indexOf('login.html') !== -1;
+    var isDiag = window.location.pathname.indexOf('diagnostic') !== -1;
+
+    if (isHome) {
+      result.innerHTML = '<span class="success">&#10004; 你现在在 home.html 页面</span>';
+      result.innerHTML += '<br>但 DOM 元素不存在说明页面加载有问题。';
+
+      // Check scripts
+      var hasAxios = typeof axios !== 'undefined';
+      var hasFm = typeof window.__fm !== 'undefined';
+      var hasMainView = document.getElementById('main-view') !== null;
+
+      if (!hasAxios) {
+        result.innerHTML += '<br><span class="error">&#10008; axios 未加载！</span>';
+      } else {
+        result.innerHTML += '<br><span class="success">&#10004; axios 已加载</span>';
+      }
+
+      if (!hasFm) {
+        result.innerHTML += '<br><span class="error">&#10008; app.js 未加载 (window.__fm 不存在)！</span>';
+      } else {
+        result.innerHTML += '<br><span class="success">&#10004; app.js 已加载</span>';
+      }
+
+      if (!hasMainView) {
+        result.innerHTML += '<br><span class="error">&#10008; #main-view 不存在！这说明 HTML 结构有问题。</span>';
+      } else {
+        result.innerHTML += '<br><span class="success">&#10004; #main-view 存在</span>';
+      }
+
+    } else if (isLogin) {
+      result.innerHTML = '<span class="warning">你目前在 login.html 页面</span>';
+      result.innerHTML += '<br>请先登录，然后才能访问 home.html';
+
+    } else if (isDiag) {
+      result.innerHTML = '<span class="warning">你目前在 diagnostic.html 页面</span>';
+      result.innerHTML += '<br>这个页面只是诊断工具，不是主页。<br>你需要打开 <strong>home.html</strong> 来查看文件管理器。';
+
+    } else {
+      result.innerHTML = '<span class="warning">当前页面不是 home.html</span>';
+      result.innerHTML += '<br>请打开 <a href="/home.html">home.html</a>';
+    }
+
+    // Quick fix buttons
+    var fix = document.getElementById('quick-fix');
+    fix.innerHTML = '<h3>快速操作</h3>';
+    fix.innerHTML += '<a href="/home.html"><button style="padding:10px 20px;margin:5px;background:#00d4ff;color:#000;border:none;cursor:pointer;">打开 home.html</button></a>';
+    fix.innerHTML += '<a href="/login.html"><button style="padding:10px 20px;margin:5px;background:#4a5568;color:#fff;border:none;cursor:pointer;">打开登录页</button></a>';
+    fix.innerHTML += '<button onclick="location.reload()" style="padding:10px 20px;margin:5px;background:#fbbf24;color:#000;border:none;cursor:pointer;">刷新页面</button>';
+  </script>
+</body>
+</html>

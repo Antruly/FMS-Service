@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07090f">
+  <meta name="description" content="我的分享 - 文件管理">
+  <title>我的分享 // FMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="icon" href="/favicon.png">
+  <link rel="stylesheet" href="./style.css?v=2026040801">
+  <script src="./axios.min.js?v=2026040303"></script>
+<script>
+  // axios 跨域携带 cookie
+  axios.defaults.withCredentials = true;
+</script>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<header class="top-bar" id="topBar">
+  <div class="top-bar-left">
+    <div class="logo" onclick="location.href='/home.html'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>FMS</span>
+    </div>
+    <span class="top-bar-divider">/</span>
+    <span class="top-bar-title">我的分享</span>
+  </div>
+  <div class="top-bar-right">
+    <button class="tool-btn" id="btnBackHome">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>返回主页</span>
+    </button>
+  </div>
+</header>
+
+<!-- 主内容 -->
+<div class="main-container">
+
+  <!-- 工具栏 -->
+  <div class="tool-bar">
+    <div class="tool-bar-left">
+      <span class="tool-bar-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        我的分享
+      </span>
+    </div>
+    <div class="tool-bar-right">
+      <!-- 搜索框 -->
+      <div class="share-search-box">
+        <input type="text" class="share-search-input" id="shareSearchInput" placeholder="搜索分享...">
+        <button class="share-search-btn" id="shareSearchBtn" title="搜索">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </div>
+      <button class="tool-btn" id="btnRefresh">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        <span>刷新</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 分享列表 -->
+  <div class="file-list" id="shareList">
+    <div class="file-item header-item">
+      <div class="file-name">分享内容</div>
+      <div class="file-size">类型</div>
+      <div class="file-time">有效期</div>
+      <div class="file-actions">操作</div>
+    </div>
+    <div id="shareContainer"></div>
+  </div>
+
+  <!-- 空状态 -->
+  <div class="empty-state" id="emptyState" style="display:none">
+    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    <h3>暂无分享记录</h3>
+    <p>在文件列表中，选择文件或文件夹，点击"分享"按钮即可创建分享链接</p>
+    <button class="btn-primary" onclick="location.href='/home.html'">去分享文件</button>
+  </div>
+
+</div>
+
+<!-- 分享记录行模板 -->
+<!-- 不使用模板，直接JS生成 -->
+
+<!-- 删除确认弹窗 -->
+<div class="modal-overlay" id="deleteModal" style="display:none">
+  <div class="modal-card">
+    <h3>确认删除</h3>
+    <p id="deleteDesc">确定要删除此分享链接吗？</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="btnCancelDelete">取消</button>
+      <button class="btn-danger" id="btnConfirmDelete">删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 日志弹窗 -->
+<div class="modal-overlay" id="logModal" style="display:none">
+  <div class="modal-card" id="logModalCard">
+    <h3 id="logModalTitle">访问日志</h3>
+    <div class="log-modal-content">
+      <div id="logListContainer"></div>
+    </div>
+    <div class="log-pagination" id="logPagination"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="btnCloseLog">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 二维码弹窗 -->
+<div class="modal-overlay" id="qrModal" style="display:none">
+  <div class="modal-card modal-qr">
+    <h3 id="qrTitle">分享二维码</h3>
+    <div class="qr-content" id="qrContent">
+      <img id="qrImg" src="" alt="二维码">
+      <div class="qr-url-box">
+        <input type="text" id="shareUrlInput" class="copy-input" readonly>
+        <button class="btn-copy" id="btnCopyUrl">复制</button>
+      </div>
+      <div class="qr-code-text" id="qrCodeText" style="display:none"></div>
+    </div>
+    <button class="btn-secondary" id="btnCloseQr" style="margin-top:16px">关闭</button>
+  </div>
+</div>
+
+<style>
+.tool-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.tool-bar-left {
+  display: flex;
+  align-items: center;
+}
+.tool-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 8px 14px;
+  color: var(--text-secondary, #7a8194);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tool-btn:hover {
+  background: rgba(0,212,255,0.1);
+  border-color: rgba(0,212,255,0.3);
+  color: var(--accent, #00d4ff);
+}
+
+.share-search-box {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.share-search-box:focus-within {
+  border-color: var(--accent, #00d4ff);
+  box-shadow: 0 0 0 2px rgba(0,212,255,0.1);
+}
+.share-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px 12px;
+  color: var(--text-primary, #e8eaf0);
+  font-size: 13px;
+  width: 200px;
+}
+.share-search-input::placeholder {
+  color: var(--text-tertiary, #4a5568);
+}
+.share-search-btn {
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--text-secondary, #7a8194);
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+.share-search-btn:hover {
+  color: var(--accent, #00d4ff);
+}
+
+.tool-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #e8eaf0);
+}
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  min-width: 200px;
+}
+.action-btn {
+  background: none;
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--accent, #00d4ff);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.action-btn:hover {
+  background: rgba(0,212,255,0.1);
+  border-color: var(--accent, #00d4ff);
+}
+.action-btn.danger {
+  color: #ff4d6a;
+  border-color: rgba(255,77,106,0.3);
+}
+.action-btn.danger:hover {
+  background: rgba(255,77,106,0.1);
+  border-color: #ff4d6a;
+}
+.action-btn.disabled {
+  color: var(--text-tertiary, #4a5568);
+  border-color: rgba(255,255,255,0.1);
+  cursor: not-allowed;
+}
+.share-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.share-type-badge.dir {
+  background: rgba(255,193,7,0.15);
+  color: #ffc107;
+}
+.share-type-badge.file {
+  background: rgba(33,150,243,0.15);
+  color: #2196f3;
+}
+.share-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.share-status.active {
+  background: rgba(76,175,80,0.15);
+  color: #4caf50;
+}
+.share-status.expired {
+  background: rgba(255,77,106,0.15);
+  color: #ff4d6a;
+}
+.share-status.invalid {
+  background: rgba(255,152,0,0.15);
+  color: #ff9800;
+}
+.expire-text {
+  font-size: 12px;
+  color: var(--text-secondary, #7a8194);
+}
+.expire-text.expired { color: #ff4d6a; }
+.has-password-icon {
+  color: #ff9800;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+/* 二维码弹窗 */
+.modal-qr {
+  max-width: 360px;
+  text-align: center;
+}
+.qr-content { margin: 20px 0; }
+.qr-url-box {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.copy-input {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text-primary, #e8eaf0);
+  font-size: 13px;
+  font-family: monospace;
+  outline: none;
+}
+.btn-copy {
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #07090f;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-copy:hover { box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 24px;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  color: #07090f;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 16px;
+}
+.btn-danger {
+  background: linear-gradient(135deg, #ff4d6a, #cc3355);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-secondary {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 10px 24px;
+  color: var(--text-primary, #e8eaf0);
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.1); }
+#qrImg { max-width: 200px; border-radius: 8px; border: 1px solid rgba(0,212,255,0.2); }
+#qrCodeText {
+  font-family: monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: var(--accent, #00d4ff);
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(0,212,255,0.05);
+  border: 1px solid rgba(0,212,255,0.2);
+  border-radius: 8px;
+}
+
+/* 日志弹窗 */
+#logModal {
+  max-width: 900px;
+}
+.log-modal-content {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.log-list {
+  margin: 16px 0;
+}
+.log-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.log-item:last-child {
+  border-bottom: none;
+}
+.log-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.log-icon.view { background: rgba(33,150,243,0.2); color: #2196f3; }
+.log-icon.download { background: rgba(76,175,80,0.2); color: #4caf50; }
+.log-icon.browse { background: rgba(156,39,176,0.2); color: #9c27b0; }
+.log-info {
+  flex: 1;
+  min-width: 0;
+}
+.log-action {
+  font-size: 13px;
+  color: var(--text-primary, #e8eaf0);
+  margin-bottom: 4px;
+}
+.log-meta {
+  font-size: 11px;
+  color: var(--text-tertiary, #4a5568);
+}
+.log-empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary, #7a8194);
+}
+.log-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.log-pagination button {
+  background: rgba(0,212,255,0.1);
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--accent, #00d4ff);
+  font-size: 12px;
+  cursor: pointer;
+}
+.log-pagination button:hover:not(:disabled) {
+  background: rgba(0,212,255,0.2);
+}
+.log-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.log-pagination .page-info {
+  font-size: 12px;
+  color: var(--text-secondary, #7a8194);
+}
+</style>
+
+<script>
+// ========== 状态 ==========
+var state = {
+  shares: [],
+  allShares: [],  // 保存原始数据用于搜索
+  selectedId: null,
+  loading: true
+};
+
+// 将 state 暴露到全局，供 app.js 的 window.__fm 函数访问
+window.__shareManageState = state;
+
+// ========== 日志状态 ==========
+var logState = {
+  shareId: null,
+  shareName: '',
+  page: 1,
+  total: 0,
+  limit: 20
+};
+
+// ========== 工具函数 ==========
+function getShareUrl(share) {
+  var url = window.location.origin + '/share/' + share.hash;
+  if (share.has_password_bool && share.extraction_code) {
+    url += '?extraction_code=' + share.extraction_code;
+  }
+  return url;
+}
+
+function formatTime(isoString) {
+  if (!isoString) return '永久';
+  var d = new Date(isoString);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+// ========== 搜索功能 ==========
+function doSearch() {
+  var keyword = document.getElementById('shareSearchInput').value.trim().toLowerCase();
+  if (!keyword) {
+    state.shares = state.allShares.slice();
+  } else {
+    state.shares = state.allShares.filter(function(share) {
+      return share.target_name.toLowerCase().indexOf(keyword) !== -1 ||
+             (share.hash && share.hash.toLowerCase().indexOf(keyword) !== -1);
+    });
+  }
+  renderShares();
+}
+
+// ========== 日志功能 ==========
+function showShareLog(shareId) {
+  console.log('[share-manage] showShareLog called, shareId=', shareId);
+  var share = state.shares.find(function(s) { return s.id === shareId; });
+  if (!share) {
+    console.log('[share-manage] share not found, state.shares=', state.shares.length);
+    return;
+  }
+
+  logState.shareId = shareId;
+  logState.shareName = share.target_name;
+  logState.page = 1;
+
+  document.getElementById('logModalTitle').textContent = share.target_name + ' - 访问日志';
+  document.getElementById('logModal').style.display = 'flex';
+
+  loadShareLogs();
+}
+
+function loadShareLogs() {
+  console.log('[share-manage] loadShareLogs, shareId=', logState.shareId);
+  var container = document.getElementById('logListContainer');
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载中...</div>';
+
+  axios.get('/api/share/' + logState.shareId + '/logs', {
+    params: { page: logState.page, limit: logState.limit }
+  })
+    .then(function(res) {
+      console.log('[share-manage] logs response:', res.data);
+      if (res.data.code !== 0) {
+        container.innerHTML = '<div class="log-empty">加载失败: ' + res.data.message + '</div>';
+        return;
+      }
+      logState.total = res.data.data.total || 0;
+      renderShareLogs(res.data.data.logs || []);
+      renderLogPagination();
+    })
+    .catch(function(err) {
+      console.error('[share-manage] logs error:', err);
+      container.innerHTML = '<div class="log-empty">加载失败，请重试</div>';
+    });
+}
+
+function renderShareLogs(logs) {
+  var container = document.getElementById('logListContainer');
+
+  if (logs.length === 0) {
+    container.innerHTML = '<div class="log-empty">暂无访问记录</div>';
+    return;
+  }
+
+  var html = '<div class="log-list">';
+  logs.forEach(function(log) {
+    var actionText = log.action_type === 'view' ? '浏览' :
+                     log.action_type === 'download' ? '下载' :
+                     log.action_type === 'browse' ? '浏览目录' : log.action_type;
+    var iconClass = log.action_type === 'view' ? 'view' :
+                    log.action_type === 'download' ? 'download' : 'browse';
+    var iconSvg = log.action_type === 'view' ?
+                  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' :
+                  log.action_type === 'download' ?
+                  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' :
+                  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+
+    html += '<div class="log-item">';
+    html += '<div class="log-icon ' + iconClass + '">' + iconSvg + '</div>';
+    html += '<div class="log-info">';
+    html += '<div class="log-action">' + actionText + '</div>';
+    html += '<div class="log-meta">';
+    html += '<span>' + (log.user_email || '访客') + '</span>';
+    html += ' · <span>' + log.ip + '</span>';
+    html += ' · <span>' + formatLogTime(log.created_at) + '</span>';
+    if (log.file_name) {
+      html += '<br><span style="color:var(--accent)">文件: ' + log.file_name + '</span>';
+    }
+    html += '</div></div></div>';
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+function formatLogTime(isoString) {
+  if (!isoString) return '-';
+  var d = new Date(isoString);
+  var now = new Date();
+  var diff = now - d;
+  var seconds = Math.floor(diff / 1000);
+  var minutes = Math.floor(seconds / 60);
+  var hours = Math.floor(minutes / 60);
+  var days = Math.floor(hours / 24);
+
+  if (days > 0) return days + '天前';
+  if (hours > 0) return hours + '小时前';
+  if (minutes > 0) return minutes + '分钟前';
+  if (seconds > 10) return seconds + '秒前';
+  return '刚刚';
+}
+
+function renderLogPagination() {
+  var container = document.getElementById('logPagination');
+  var totalPages = Math.ceil(logState.total / logState.limit);
+
+  if (totalPages <= 1) {
+    container.innerHTML = '<span class="page-info">共 ' + logState.total + ' 条</span>';
+    return;
+  }
+
+  var html = '';
+  html += '<button onclick="prevLogPage()" ' + (logState.page <= 1 ? 'disabled' : '') + '>上一页</button>';
+  html += '<span class="page-info">第 ' + logState.page + ' / ' + totalPages + ' 页，共 ' + logState.total + ' 条</span>';
+  html += '<button onclick="nextLogPage()" ' + (logState.page >= totalPages ? 'disabled' : '') + '>下一页</button>';
+
+  container.innerHTML = html;
+}
+
+function prevLogPage() {
+  if (logState.page > 1) {
+    logState.page--;
+    loadShareLogs();
+  }
+}
+
+function nextLogPage() {
+  var totalPages = Math.ceil(logState.total / logState.limit);
+  if (logState.page < totalPages) {
+    logState.page++;
+    loadShareLogs();
+  }
+}
+
+function closeLogModal() {
+  document.getElementById('logModal').style.display = 'none';
+}
+
+// ========== 初始化 ==========
+document.getElementById('btnBackHome').onclick = function() { location.href = '/home.html'; };
+document.getElementById('btnRefresh').onclick = loadShares;
+document.getElementById('btnCancelDelete').onclick = closeDeleteModal;
+document.getElementById('btnConfirmDelete').onclick = confirmDelete;
+document.getElementById('btnCloseQr').onclick = closeQrModal;
+document.getElementById('btnCopyUrl').onclick = copyShareUrl;
+document.getElementById('btnCloseLog').onclick = closeLogModal;
+
+// 搜索功能
+document.getElementById('shareSearchBtn').onclick = doSearch;
+document.getElementById('shareSearchInput').onkeydown = function(e) {
+  if (e.key === 'Enter') doSearch();
+};
+
+// 点击弹窗背景关闭
+document.getElementById('logModal').onclick = function(e) {
+  if (e.target === this) closeLogModal();
+};
+
+loadShares();
+
+function loadShares() {
+  showLoading(true);
+  axios.get('/api/share')
+    .then(function(res) {
+      showLoading(false);
+      if (res.data.code !== 0) {
+        if (res.data.code === 401) {
+          location.href = '/login.html?redirect=/share-manage.html';
+          return;
+        }
+        alert('加载失败: ' + res.data.message);
+        return;
+      }
+      state.allShares = res.data.data || [];
+      state.shares = state.allShares.slice();  // 深拷贝用于筛选
+      renderShares();
+    })
+    .catch(function() {
+      showLoading(false);
+      alert('加载失败，请检查网络');
+    });
+}
+
+function showLoading(show) {
+  var el = document.getElementById('shareContainer');
+  if (show) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary,#7a8194)">加载中...</div>';
+  }
+}
+
+// ========== 渲染 ==========
+function renderShares() {
+  var container = document.getElementById('shareContainer');
+  var emptyState = document.getElementById('emptyState');
+  var shareList = document.getElementById('shareList');
+
+  if (state.shares.length === 0) {
+    container.innerHTML = '';
+    emptyState.style.display = 'flex';
+    shareList.style.display = 'none';
+    return;
+  }
+
+  emptyState.style.display = 'none';
+  shareList.style.display = 'block';
+
+  var html = '';
+  state.shares.forEach(function(share) {
+    var isExpired = share.is_expired;
+    var isInvalid = !!share.invalid_reason && !isExpired;
+    var isActive = !isExpired && !isInvalid;
+
+    var typeClass = share.target_type === 'dir' ? 'dir' : 'file';
+    var typeText = share.target_type === 'dir' ? '文件夹' : '文件';
+
+    var statusHtml = '';
+    if (isExpired) {
+      statusHtml = '<span class="share-status expired">已过期</span>';
+    } else if (isInvalid) {
+      statusHtml = '<span class="share-status invalid">已失效</span>';
+    } else {
+      statusHtml = '<span class="share-status active">有效</span>';
+    }
+
+    var expireText = share.remaining_text || (isExpired ? '已过期' : '永久');
+    var expireClass = isExpired ? 'expired' : '';
+
+    html += '<div class="file-item" data-id="' + share.id + '" data-hash="' + share.hash + '">';
+    html += '<div class="file-name">';
+    html += '<span class="file-icon">' + getTypeIcon(share.target_type) + '</span>';
+    html += '<span class="file-name-text" title="' + share.target_name + '">' + share.target_name + '</span>';
+    if (share.has_password_bool) {
+      html += '<span class="has-password-icon" title="有提取码">*</span>';
+    }
+    html += '</div>';
+    html += '<div class="file-size">';
+    html += '<span class="share-type-badge ' + typeClass + '">' + typeText + '</span>';
+    html += '<br><span style="font-size:11px;color:var(--text-tertiary,#4a5568)">' + share.item_count + '个项目</span>';
+    html += '</div>';
+    html += '<div class="file-time">';
+    html += '<span class="expire-text ' + expireClass + '">' + expireText + '</span>';
+    html += '<br><span style="font-size:11px;color:var(--text-tertiary,#4a5568)">创建于 ' + formatTime(share.created_at) + '</span>';
+    html += '</div>';
+    html += '<div class="file-actions">';
+
+    if (isActive) {
+      html += '<button class="action-btn" onclick="viewShare(' + share.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>查看</button>';
+      html += '<button class="action-btn" onclick="copyShare(' + share.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>复制</button>';
+      html += '<button class="action-btn" onclick="showQr(' + share.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>二维码</button>';
+      html += '<button class="action-btn" onclick="showShareLog(' + share.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>日志</button>';
+    } else {
+      html += '<span style="font-size:12px;color:var(--text-tertiary,#4a5568)">' + statusHtml.replace('class="share-status ', 'style="display:inline-block;margin-top:4px" class="share-status ') + '</span>';
+      html += '<button class="action-btn" onclick="showShareLog(' + share.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>日志</button>';
+    }
+
+    html += '<button class="action-btn danger" onclick="deleteShare(' + share.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>删除</button>';
+    html += '</div></div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function getTypeIcon(type) {
+  if (type === 'dir') return '<svg width="20" height="20" viewBox="0 0 24 24" fill="#ffc107" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>';
+  return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#90a4ae" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+}
+
+// ========== 操作 ==========
+function viewShare(id) {
+  var share = state.shares.find(function(s) { return s.id === id; });
+  if (!share) return;
+  window.open(getShareUrl(share), '_blank');
+}
+
+function copyShare(id) {
+  var share = state.shares.find(function(s) { return s.id === id; });
+  if (!share) { showToast('分享数据加载中，请稍后重试', '&#9888;'); return; }
+  var url = getShareUrl(share);
+  if (!url) { showToast('复制失败', '&#9888;'); return; }
+
+  // 复制完整信息（分享人、链接、提取码、有效期）
+  var ownerText = share.owner ? '分享人: ' + share.owner + '\n' : '';
+  var codeText = share.extraction_code ? '\n提取码: ' + share.extraction_code : '';
+  var expiresText = share.expires_at ? '\n有效期: ' + formatTime(share.expires_at) : '\n有效期: 永久';
+  var copyText = ownerText + '分享链接: ' + url + codeText + expiresText + '\n来自 FMS 文件管理系统';
+
+  // 优先使用 Clipboard API（现代标准，HTTPS 环境正常工作）
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(copyText).then(function() {
+      showToast('已复制');
+    }).catch(function() {
+      _execCommandCopyShare(copyText);
+    });
+  } else {
+    _execCommandCopyShare(copyText);
+  }
+}
+
+function _execCommandCopyShare(text) {
+  try {
+    var inp = document.createElement('textarea');
+    inp.style.cssText = 'position:fixed;top:0;left:0;opacity:0;width:1px;height:1px;overflow:hidden;word-wrap:break-word';
+    inp.value = text;
+    inp.readOnly = true;
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(inp);
+    if (ok) showToast('已复制');
+    else showToast('复制失败，请手动复制', '&#9888;');
+  } catch(e) {
+    showToast('复制失败，请手动复制', '&#9888;');
+  }
+}
+
+function showQr(id) {
+  var share = state.shares.find(function(s) { return s.id === id; });
+  if (!share) return;
+  state.selectedId = id;
+
+  var url = getShareUrl(share);
+  document.getElementById('qrTitle').textContent = share.target_name + ' - 二维码';
+  document.getElementById('shareUrlInput').value = url;
+
+  // 生成二维码（使用一个免费的二维码API）
+  var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
+  document.getElementById('qrImg').src = qrUrl;
+
+  // 如果有提取码，也显示出来
+  var codeTextEl = document.getElementById('qrCodeText');
+  if (share.has_password_bool && share._extractionCode) {
+    codeTextEl.style.display = 'block';
+    codeTextEl.textContent = '提取码: ' + share._extractionCode;
+  } else {
+    codeTextEl.style.display = 'none';
+  }
+
+  document.getElementById('qrModal').style.display = 'flex';
+}
+
+function copyShareUrl() {
+  var input = document.getElementById('shareUrlInput');
+  var text = input ? input.value : '';
+  if (!text) { showToast('复制失败'); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast('链接已复制');
+    }).catch(function() {
+      _execCommandCopyShare(text);
+    });
+  } else {
+    _execCommandCopyShare(text);
+  }
+}
+
+function _execCommandCopyShare(text) {
+  try {
+    var inp = document.createElement('textarea');
+    inp.style.cssText = 'position:fixed;top:0;left:0;opacity:0;width:1px;height:1px;overflow:hidden;word-wrap:break-word';
+    inp.value = text;
+    inp.readOnly = true;
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(inp);
+    showToast(ok ? '已复制' : '复制失败，请手动复制');
+  } catch(e) {
+    showToast('复制失败，请手动复制', '&#9888;');
+  }
+}
+
+function closeQrModal() {
+  document.getElementById('qrModal').style.display = 'none';
+}
+
+function deleteShare(id) {
+  var share = state.shares.find(function(s) { return s.id === id; });
+  if (!share) return;
+  state.selectedId = id;
+  document.getElementById('deleteDesc').textContent = '确定要删除 "' + share.target_name + '" 的分享链接吗？该操作不可恢复。';
+  document.getElementById('deleteModal').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+  document.getElementById('deleteModal').style.display = 'none';
+  state.selectedId = null;
+}
+
+function confirmDelete() {
+  if (!state.selectedId) return;
+  var id = state.selectedId;
+  closeDeleteModal();
+
+  axios.delete('/api/share/' + id)
+    .then(function(res) {
+      if (res.data.code !== 0) {
+        alert('删除失败: ' + res.data.message);
+        return;
+      }
+      showToast('分享已删除');
+      state.shares = state.shares.filter(function(s) { return s.id !== id; });
+      renderShares();
+    })
+    .catch(function() {
+      alert('删除失败，请重试');
+    });
+}
+
+// ========== Toast ==========
+function showToast(msg) {
+  var existing = document.getElementById('toastEl');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.id = 'toastEl';
+  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,212,255,0.9);color:#07090f;padding:10px 24px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;transition:opacity 0.3s;';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(function() {
+    toast.style.opacity = '0';
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 2000);
+}
+
+// 点击弹窗背景关闭
+document.getElementById('qrModal').onclick = function(e) {
+  if (e.target === this) closeQrModal();
+};
+document.getElementById('deleteModal').onclick = function(e) {
+  if (e.target === this) closeDeleteModal();
+};
+</script>
+</body>
+</html>

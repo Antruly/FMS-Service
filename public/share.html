@@ -1,0 +1,2472 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07090f">
+  <meta name="description" content="分享 - 文件管理">
+  <title>分享 // FMS</title>
+  <link rel="icon" href="/favicon.png">
+  <link rel="stylesheet" href="/style.css?v=2026040903">
+  <script src="/axios.min.js?v=2026040303"></script>
+</head>
+<body>
+
+<!-- ==================== 背景动效 ==================== -->
+<div class="bg-scene" aria-hidden="true">
+  <div class="bg-grid"></div>
+  <div class="bg-orb bg-orb-1"></div>
+  <div class="bg-orb bg-orb-2"></div>
+  <div class="scanlines"></div>
+</div>
+
+<!-- ==================== 主布局 ==================== -->
+<div class="share-layout">
+
+  <!-- ==================== 顶部 Header ==================== -->
+  <header class="share-header" id="shareHeader">
+    <!-- 左侧：返回 + Logo -->
+    <div class="share-header-left">
+      <button class="share-back-btn" id="shareBackBtn" title="返回上级" onclick="shareGoBack()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        <span>返回</span>
+      </button>
+      <a class="share-logo" href="/" title="返回首页">
+        <div class="share-logo-icon"><img src="/favicon.png" alt="FMS" style="width:40px;height:40px"></div>
+        <div class="share-logo-text">
+          <span class="logo-title">FMS</span>
+          <span class="logo-subtitle">文件管理系统</span>
+        </div>
+      </a>
+      <span class="share-header-sep">/</span>
+      <span class="share-header-title" id="shareHeaderTitle">加载中...</span>
+    </div>
+
+    <!-- 搜索框（居中） -->
+    <div class="share-header-center">
+      <div class="share-search-box" id="shareSearchBox">
+        <input type="text" id="shareSearchInput" placeholder="搜索文件..." autocomplete="off" spellcheck="false" aria-label="搜索文件">
+        <button class="share-search-btn" id="shareSearchBtn" title="搜索">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 右侧：视图切换 + 主题 -->
+    <div class="share-header-right">
+      <!-- 视图切换 -->
+      <div class="share-view-toggle" role="group" aria-label="视图切换">
+        <button class="share-view-btn active" data-view="grid" id="shareViewGridBtn" title="网格视图 (G)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+          </svg>
+        </button>
+        <button class="share-view-btn" data-view="list" id="shareViewListBtn" title="列表视图 (L)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 用户下拉菜单 -->
+      <div class="share-user-dropdown" id="shareUserDropdown" style="display:none">
+        <button class="share-user-btn" id="shareUserBtn" aria-label="用户菜单" aria-expanded="false">
+          <div class="share-user-avatar" id="shareUserAvatar">U</div>
+          <span class="share-user-name" id="shareUserName"></span>
+          <svg class="share-user-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="share-user-menu" id="shareUserMenu">
+          <div class="share-user-menu-info">
+            <div class="share-user-menu-avatar" id="shareUserMenuAvatar">U</div>
+            <div class="share-user-menu-detail">
+              <span class="share-user-menu-email" id="shareUserMenuEmail">-</span>
+              <span class="share-user-menu-role" id="shareUserMenuRole">&#128100; 普通用户</span>
+            </div>
+          </div>
+          <div class="share-user-menu-divider"></div>
+          <button class="share-user-menu-item" onclick="window.location.href='/'">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            返回主页
+          </button>
+          <div class="share-user-menu-divider"></div>
+          <button class="share-user-menu-item logout" id="shareLogoutBtn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            退出登录
+          </button>
+        </div>
+      </div>
+
+      <!-- 未登录时：显示登录/注册按钮 -->
+      <div id="shareGuestActions">
+        <button class="share-topbar-btn" id="shareBtnLogin" title="登录">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          登录
+        </button>
+      </div>
+
+      <!-- 主题切换 -->
+      <button class="share-theme-btn" id="shareThemeBtn" title="切换主题 (T)">
+        <svg class="share-moon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+        <svg class="share-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== 提示栏 ==================== -->
+  <div class="share-stats-bar" id="shareStatsBar" role="status" aria-live="polite">
+    <span class="share-stat-online"><span class="share-stat-dot"></span> ONLINE</span>
+    <span class="share-stat-version">&#128640; v1.0.0</span>
+    <span class="share-stat-count" id="shareStatsCount">&#128193; 0 文件夹 | &#128462; 0 文件</span>
+    <span class="share-stat-shortcuts">
+      <span style="color:var(--text-muted)">快捷键: </span>
+      <kbd>G</kbd>网格 <kbd>L</kbd>列表 <kbd>T</kbd>主题 <kbd>Ctrl+K</kbd>搜索
+    </span>
+  </div>
+
+  <!-- ==================== 验证页面（输入提取码） ==================== -->
+  <div class="share-verify-wrap" id="verifyPage">
+    <div class="share-verify-card">
+      <div class="share-verify-icon">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h2 id="verifyTitle">请输入提取码</h2>
+      <p class="share-verify-desc" id="verifyDesc">此分享设置了访问密码，请输入提取码查看内容</p>
+      <div class="share-verify-form">
+        <input type="text" id="extractionCodeInput" class="share-code-input" placeholder="输入4位提取码" maxlength="6" autocomplete="off" spellcheck="false">
+        <button class="share-btn-verify" id="btnVerify">验证</button>
+      </div>
+      <div class="share-paste-bar">
+        <button class="share-paste-btn" id="btnPaste" title="粘贴分享文本，自动解析链接和提取码">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+          粘贴分享文本
+        </button>
+      </div>
+      <p class="share-verify-error" id="verifyError"></p>
+    </div>
+  </div>
+
+  <!-- ==================== 失效页面 ==================== -->
+  <div class="share-expired-wrap" id="expiredPage">
+    <div class="share-expired-card">
+      <div class="share-expired-icon">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <h2>链接已失效</h2>
+      <p id="expiredReason">此分享已过期或已被删除</p>
+      <a href="/" class="share-btn-home">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        前往首页
+      </a>
+    </div>
+  </div>
+
+  <!-- ==================== 主内容区 ==================== -->
+  <div class="share-main" id="shareMain" style="display:none">
+
+    <!-- 分享信息条 -->
+    <div class="share-info-bar" id="shareInfoBar">
+      <div class="share-info-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </div>
+      <div class="share-info-text">
+        <span class="share-info-name" id="shareInfoName">加载中...</span>
+        <span class="share-badge" id="shareTypeBadge">文件夹</span>
+        <span class="share-meta-tag" id="shareOwner"></span>
+        <span class="share-meta-tag" id="shareExpire"></span>
+      </div>
+      <div class="share-info-actions" id="shareInfoActions">
+        <button class="share-btn-action primary" id="btnDownloadAll" title="下载全部" onclick="shareDownloadAll()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>下载</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 面包屑（子目录导航） -->
+    <div class="share-breadcrumb" id="shareBreadcrumb" style="display:none">
+      <button class="crumb-back" id="btnBreadcrumbBack">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="crumb-nav" id="crumbNav"></div>
+    </div>
+
+    <!-- 文件容器（网格/列表切换区） -->
+    <div class="share-file-wrap" id="shareFileWrap">
+      <div id="fileContainer" class="share-file-container"></div>
+      <div class="share-empty" id="emptyState">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+        <h3>文件夹为空</h3>
+        <p>该分享目录下没有任何文件</p>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- ==================== 底部批量操作栏 ==================== -->
+<div class="share-sel-bar" id="shareSelBar">
+  <div class="share-sel-bar-inner">
+    <div class="share-sel-bar-left">
+      <button class="share-sel-all-btn" id="shareSelAllBtn" title="全选/取消全选">
+        <span id="shareSelAllLabel">全选</span>
+      </button>
+      <span class="share-sel-count">已选 <strong id="shareSelNum">0</strong> 项</span>
+    </div>
+    <div class="share-sel-actions">
+      <button class="share-sel-btn share-sel-btn-dl" id="shareSelDlBtn" title="下载选中文件">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        下载
+      </button>
+      <button class="share-sel-btn share-sel-btn-save" id="shareSelSaveBtn" title="保存到我的文件">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        保存
+      </button>
+      <button class="share-sel-btn share-sel-btn-cancel" id="shareSelCancelBtn" title="取消选择">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 右键菜单（三点菜单） ==================== -->
+<div class="share-context-menu" id="shareContextMenu"></div>
+
+<!-- ==================== Toast 提示 ==================== -->
+<div class="toast" id="toast" style="display:none">
+  <span class="toast-message" id="toastMessage"></span>
+</div>
+
+<!-- ==================== Loading 遮罩 ==================== -->
+<div class="share-loading" id="shareLoading" style="display:none">
+  <div class="share-spinner"></div>
+  <span class="share-loading-text" id="shareLoadingText">加载中...</span>
+</div>
+
+<!-- ==================== 转存弹窗 ==================== -->
+<div class="save-modal-wrap" id="saveModal" style="display:none">
+  <div class="save-modal">
+    <div class="save-modal-header">
+      <h3 id="saveModalTitle">保存到我的文件</h3>
+      <button class="save-modal-close" id="saveModalClose">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="save-modal-body" id="saveModalBody"></div>
+  </div>
+</div>
+
+<style>
+/* ========== 页面整体布局 ========== */
+.share-layout {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========== Header ========== */
+.share-header {
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+  gap: 16px;
+}
+
+.share-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.share-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: rgba(0,212,255,0.08);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.share-back-btn:hover { background: rgba(0,212,255,0.15); box-shadow: 0 0 12px var(--accent-glow); }
+
+.share-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.share-logo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.share-logo-text { display: flex; flex-direction: column; line-height: 1; }
+.logo-title { font-size: 13px; font-weight: 800; font-family: 'Syne', sans-serif; color: var(--text-primary); letter-spacing: 2px; }
+.logo-subtitle { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: var(--text-muted); letter-spacing: 1px; }
+
+.share-header-sep { color: var(--text-muted); font-size: 14px; flex-shrink: 0; }
+.share-header-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.share-header-center {
+  flex: 1;
+  max-width: 400px;
+  display: flex;
+  justify-content: center;
+}
+.share-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 4px 0 12px;
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+}
+.share-search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 16px var(--accent-glow); }
+.share-search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 8px 0;
+  font-family: 'Share Tech Mono', monospace;
+}
+.share-search-box input::placeholder { color: var(--text-muted); }
+.share-search-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-normal);
+  flex-shrink: 0;
+}
+.share-search-btn:hover { color: var(--accent); background: rgba(0,212,255,0.08); }
+
+.share-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.share-view-toggle {
+  display: flex;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.share-view-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+.share-view-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+.share-view-btn.active { color: var(--accent); background: rgba(0,212,255,0.12); }
+
+.share-theme-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-normal);
+}
+.share-theme-btn:hover { border-color: var(--border-accent); color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+.share-moon { display: block; }
+.share-sun { display: none; }
+[data-theme="light"] .share-moon { display: none; }
+[data-theme="light"] .share-sun { display: block; }
+
+/* ========== 用户下拉菜单 ========== */
+.share-user-dropdown { position: relative; }
+.share-user-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: 'Share Tech Mono', monospace;
+}
+.share-user-btn:hover { border-color: var(--border-accent); }
+.share-user-avatar {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  color: #07090f;
+  flex-shrink: 0;
+}
+.share-user-name { max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-user-arrow { color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; }
+.share-user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  box-shadow: var(--shadow-lg);
+  z-index: 9999;
+  display: none;
+  animation: fadeInMenu 0.15s ease;
+}
+.share-user-menu.show { display: block; }
+.share-user-menu-info { display: flex; align-items: center; gap: 10px; padding: 8px 10px 10px; }
+.share-user-menu-avatar {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+  color: #07090f;
+  flex-shrink: 0;
+}
+.share-user-menu-detail { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.share-user-menu-email { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-user-menu-role { font-size: 11px; color: var(--text-secondary); }
+.share-user-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+.share-user-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--text-secondary);
+  background: transparent; border: none; cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  box-sizing: border-box;
+  font-family: 'Share Tech Mono', monospace;
+}
+.share-user-menu-item:hover { background: rgba(0,212,255,0.06); color: var(--text-primary); }
+.share-user-menu-item.logout { color: #ff4d6a; }
+.share-user-menu-item.logout:hover { background: rgba(239,68,68,0.08); }
+
+/* 登录按钮 */
+.share-topbar-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--accent);
+  background: transparent;
+  border: 1px solid rgba(0,212,255,0.25);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Share Tech Mono', monospace;
+}
+.share-topbar-btn:hover { background: rgba(0,212,255,0.08); border-color: rgba(0,212,255,0.4); }
+
+/* ========== 提示栏 ========== */
+.share-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.share-stat-online { display: flex; align-items: center; gap: 4px; color: var(--success); }
+.share-stat-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.share-stat-version { color: var(--text-muted); }
+.share-stat-count { color: var(--text-secondary); }
+.share-stat-shortcuts { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.share-stat-shortcuts kbd {
+  padding: 2px 5px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--text-secondary);
+}
+
+/* ========== 主内容区 ========== */
+.share-main {
+  flex: 1;
+  padding: 16px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ========== 分享信息条 ========== */
+.share-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+.share-info-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(0,212,255,0.1);
+  border: 1px solid rgba(0,212,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.share-info-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.share-info-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Syne', sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+.share-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255,193,7,0.12);
+  color: #ffc107;
+  border: 1px solid rgba(255,193,7,0.2);
+  white-space: nowrap;
+}
+.share-badge.file-badge { background: rgba(33,150,243,0.12); color: #2196f3; border-color: rgba(33,150,243,0.2); }
+.share-meta-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.share-info-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.share-btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  border: 1px solid rgba(0,212,255,0.3);
+  background: rgba(0,212,255,0.08);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.share-btn-action:hover { background: rgba(0,212,255,0.18); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,255,0.2); }
+.share-btn-action.primary { background: linear-gradient(135deg,var(--accent),var(--accent2)); color: #07090f; border-color: transparent; }
+.share-btn-action.primary:hover { box-shadow: 0 6px 24px rgba(0,212,255,0.35); }
+
+/* ========== 面包屑 ========== */
+.share-breadcrumb { display: flex; align-items: center; gap: 6px; }
+.crumb-back {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.crumb-back:hover { background: rgba(0,212,255,0.08); color: var(--accent); border-color: rgba(0,212,255,0.3); }
+.crumb-nav { display: flex; align-items: center; gap: 2px; overflow-x: auto; flex: 1; }
+.crumb-nav::-webkit-scrollbar { display: none; }
+.crumb-item { font-size: 12px; color: var(--text-secondary); white-space: nowrap; cursor: pointer; padding: 3px 6px; border-radius: 5px; transition: all 0.15s; }
+.crumb-item:hover { color: var(--accent); background: rgba(0,212,255,0.06); }
+.crumb-sep { color: var(--text-muted); font-size: 11px; }
+
+/* ========== 文件容器 ========== */
+.share-file-wrap { flex: 1; min-height: 0; }
+.share-file-container { width: 100%; display: block; box-sizing: border-box; }
+
+/* ========== 空状态 ========== */
+.share-empty {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  color: var(--text-muted);
+}
+.share-empty svg { margin-bottom: 16px; }
+.share-empty h3 { font-size: 16px; margin: 0 0 6px; color: var(--text-secondary); }
+.share-empty p { font-size: 13px; margin: 0; }
+
+/* ========== 底部批量操作栏 ========== */
+.share-sel-bar {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 800;
+  padding: 0 16px 16px;
+}
+.share-sel-bar.show { display: block; }
+.share-sel-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-accent);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -4px 30px rgba(0,0,0,0.4), 0 0 20px var(--accent-glow);
+  animation: selBarUp 0.3s ease;
+}
+@keyframes selBarUp { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: translateY(0); } }
+.share-sel-bar-left { display: flex; align-items: center; gap: 12px; }
+.share-sel-all-btn {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  font-family: 'Share Tech Mono', monospace;
+}
+.share-sel-all-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(0,212,255,0.06); }
+.share-sel-count { font-size: 14px; color: var(--accent); font-weight: 700; font-family: 'Share Tech Mono', monospace; }
+.share-sel-count strong { font-size: 18px; }
+.share-sel-actions { display: flex; align-items: center; gap: 8px; }
+.share-sel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all var(--transition-normal);
+  font-family: 'Syne', sans-serif;
+  white-space: nowrap;
+}
+.share-sel-btn:hover { transform: translateY(-1px); }
+.share-sel-btn-dl { background: rgba(0,212,255,0.1); color: var(--accent); border-color: rgba(0,212,255,0.3); }
+.share-sel-btn-dl:hover { background: rgba(0,212,255,0.2); }
+.share-sel-btn-save { background: rgba(123,97,255,0.1); color: #a78bfa; border-color: rgba(123,97,255,0.3); }
+.share-sel-btn-save:hover { background: rgba(123,97,255,0.2); }
+.share-sel-btn-cancel { padding: 8px 10px; border-color: rgba(239,68,68,0.3); color: #ff4d6a; background: rgba(239,68,68,0.08); }
+.share-sel-btn-cancel:hover { background: rgba(239,68,68,0.15); }
+
+/* ========== 右键/三点菜单 ========== */
+.share-context-menu {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  box-shadow: var(--shadow-lg);
+  min-width: 160px;
+  animation: fadeInMenu 0.15s ease;
+}
+.share-context-menu.show { display: block; }
+@keyframes fadeInMenu { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+.share-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+  transition: all 0.12s;
+  font-family: 'Syne', sans-serif;
+}
+.share-ctx-item:hover { background: rgba(0,212,255,0.08); color: var(--text-primary); }
+.share-ctx-item.danger { color: #ff4d6a; }
+.share-ctx-item.danger:hover { background: rgba(239,68,68,0.08); }
+.share-ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* ========== Toast ========== */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  padding: 10px 22px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-primary);
+  z-index: 9999;
+  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-lg);
+  white-space: nowrap;
+  font-family: 'Share Tech Mono', monospace;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ========== Loading ========== */
+.share-loading {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  gap: 16px;
+}
+.share-spinner { width: 44px; height: 44px; border: 3px solid rgba(0,212,255,0.15); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.share-loading-text { color: var(--text-secondary); font-size: 14px; font-family: 'Share Tech Mono', monospace; }
+
+/* ========== 转存弹窗 ========== */
+.save-modal-wrap {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(4px);
+}
+.save-modal {
+  background: var(--card-bg);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-lg);
+  width: 90%;
+  max-width: 440px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.25s ease;
+  overflow: hidden;
+}
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.save-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.save-modal-header h3 { font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0; font-family: 'Syne', sans-serif; }
+.save-modal-close {
+  width: 30px; height: 30px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.save-modal-close:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: #ff4d6a; }
+.save-modal-body { overflow-y: auto; padding: 16px; flex: 1; }
+.save-dir-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 4px;
+}
+.save-dir-item:hover { background: rgba(0,212,255,0.06); }
+.save-dir-item.selected { background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.25); }
+.save-dir-name { font-size: 13px; color: var(--text-primary); font-family: 'Share Tech Mono', monospace; }
+.save-modal-footer {
+  padding: 12px 20px 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.save-confirm-btn {
+  padding: 9px 22px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  background: linear-gradient(135deg,var(--accent),var(--accent2));
+  color: #07090f;
+  font-family: 'Syne', sans-serif;
+  transition: all 0.2s;
+}
+.save-confirm-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,255,0.3); }
+.save-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ========== 验证页 ========== */
+.share-verify-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 60px - 33px);
+  padding: 20px;
+}
+.share-verify-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-accent);
+  border-radius: 20px;
+  padding: 48px 40px;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-glow);
+  animation: slideUp 0.4s ease;
+}
+.share-verify-icon { margin-bottom: 24px; }
+.share-verify-card h2 { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px; font-family: 'Syne', sans-serif; }
+.share-verify-desc { color: var(--text-secondary); font-size: 14px; margin: 0 0 28px; line-height: 1.6; font-family: 'Share Tech Mono', monospace; }
+.share-verify-form { display: flex; gap: 10px; }
+.share-paste-bar { display: flex; justify-content: center; margin-top: 14px; }
+.share-paste-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px dashed var(--border-accent);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Share Tech Mono', monospace;
+}
+.share-paste-btn:hover { background: rgba(0,212,255,0.06); border-color: var(--accent); color: var(--accent); }
+.share-code-input {
+  flex: 1;
+  padding: 13px 16px;
+  background: rgba(0,212,255,0.06);
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 18px;
+  font-family: monospace;
+  letter-spacing: 6px;
+  text-align: center;
+  text-transform: uppercase;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.share-code-input:focus { border-color: var(--accent); box-shadow: 0 0 20px rgba(0,212,255,0.15); }
+.share-code-input::placeholder { letter-spacing: 0; text-transform: none; color: var(--text-muted); font-family: sans-serif; }
+.share-btn-verify {
+  padding: 13px 24px;
+  background: linear-gradient(135deg,var(--accent),var(--accent2));
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #07090f;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  font-family: 'Syne', sans-serif;
+}
+.share-btn-verify:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,212,255,0.35); }
+.share-verify-error { color: #ff4d6a; font-size: 13px; margin: 16px 0 0; min-height: 18px; font-family: 'Share Tech Mono', monospace; }
+
+/* ========== 失效页 ========== */
+.share-expired-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 60px - 33px);
+  padding: 20px;
+}
+.share-expired-card {
+  background: var(--card-bg);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 20px;
+  padding: 56px 48px;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  backdrop-filter: blur(20px);
+  animation: slideUp 0.4s ease;
+}
+.share-expired-icon { margin-bottom: 28px; }
+.share-expired-card h2 { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px; font-family: 'Syne', sans-serif; }
+.share-expired-card p { color: var(--text-secondary); font-size: 14px; margin: 0 0 24px; font-family: 'Share Tech Mono', monospace; }
+.share-btn-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  background: linear-gradient(135deg,var(--accent),var(--accent2));
+  border-radius: var(--radius-sm);
+  color: #07090f;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+  font-family: 'Syne', sans-serif;
+}
+.share-btn-home:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,212,255,0.35); }
+
+/* ========== 网格视图卡片 ========== */
+.share-file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  animation: fadeSlideUp 0.4s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.share-file-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 12px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
+.share-file-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0,212,255,0.08) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}
+.share-file-card:hover { border-color: var(--border-accent); transform: translateY(-4px); box-shadow: var(--shadow-card), 0 8px 30px rgba(0,0,0,0.2); }
+.share-file-card:hover::before { opacity: 1; }
+.share-file-card.selected { border-color: var(--accent); background: rgba(0,212,255,0.06); }
+.share-file-card .hover-shimmer {
+  position: absolute;
+  top: 0; left: -100%;
+  width: 60%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  transition: left 0.6s ease;
+  pointer-events: none;
+  border-radius: var(--radius-md);
+}
+.share-file-card:hover .hover-shimmer { left: 150%; }
+.share-card-check {
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--border-accent);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+.share-file-card:hover .share-card-check,
+.share-file-card.selected .share-card-check { opacity: 1; }
+.share-card-check.checked { background: var(--accent); border-color: var(--accent); }
+.share-card-check.checked::after {
+  content: '';
+  position: absolute;
+  left: 5px; top: 1px;
+  width: 5px; height: 9px;
+  border: 2px solid #07090f;
+  border-top: none; border-left: none;
+  transform: rotate(45deg);
+}
+.share-card-icon-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 56px;
+  margin-bottom: 10px;
+  position: relative;
+}
+.share-card-icon { font-size: 44px; transition: transform var(--transition-normal); filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3)); }
+.share-file-card:hover .share-card-icon { transform: scale(1.12) translateY(-3px); }
+.share-card-badge {
+  position: absolute;
+  top: 8px; right: 8px;
+  font-size: 10px;
+  font-family: 'Share Tech Mono', monospace;
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+.share-file-card:hover .share-card-badge { opacity: 0.85; }
+.share-card-menu {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  background: rgba(128,128,128,0.6);
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all var(--transition-normal);
+  z-index: 5;
+}
+.share-file-card:hover .share-card-menu { opacity: 1; }
+.share-card-menu:hover { background: rgba(128,128,128,0.9); }
+.share-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  word-break: break-all;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color var(--transition-normal);
+  width: 100%;
+}
+.share-file-card:hover .share-card-name { color: var(--accent); }
+.share-card-meta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+.type-folder { color: #f0c040; }
+.type-image { color: #4fc3f7; }
+.type-video { color: #ef5350; }
+.type-audio { color: #ab47bc; }
+.type-pdf { color: #ef5350; }
+.type-doc { color: #42a5f5; }
+.type-archive { color: #ffca28; }
+.type-code { color: #66bb6a; }
+.type-generic { color: #90a4ae; }
+
+/* ========== 列表视图表格 ========== */
+.share-file-table-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  animation: fadeSlideUp 0.4s ease;
+  box-shadow: var(--shadow-card);
+  width: 100%;
+}
+.share-file-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.share-file-table thead tr { background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
+.share-file-table th {
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+  white-space: nowrap;
+  user-select: none;
+  font-family: 'Share Tech Mono', monospace;
+}
+.share-file-table th.th-check { width: 48px; text-align: center; }
+.share-file-table th.th-icon { width: 52px; text-align: center; }
+.share-file-table th.th-name { text-align: left; }
+.share-file-table th.th-size { width: 100px; text-align: right; }
+.share-file-table th.th-date { width: 120px; }
+.share-file-table th.th-op { width: 52px; text-align: center; }
+.share-file-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.share-file-table tbody tr:last-child { border-bottom: none; }
+.share-file-table tbody tr:hover { background: rgba(0,212,255,0.04); }
+.share-file-table tbody tr.selected { background: rgba(0,212,255,0.08); }
+.share-file-table td {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  vertical-align: middle;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.share-file-table td.td-check { text-align: center; }
+.share-file-table td.td-icon { text-align: center; font-size: 18px; }
+.share-file-table td.td-name { font-weight: 600; font-size: 13px; }
+.share-file-table td.td-size { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-muted); font-family: 'Share Tech Mono', monospace; }
+.share-file-table td.td-date { font-size: 12px; color: var(--text-muted); font-family: 'Share Tech Mono', monospace; }
+.share-file-table td.td-op { text-align: center; }
+.share-tbl-check {
+  display: inline-flex;
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--border-accent);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  vertical-align: middle;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+}
+.share-tbl-check.checked { background: var(--accent); border-color: var(--accent); }
+.share-tbl-check.checked::after {
+  content: '';
+  position: absolute;
+  left: 5px; top: 1px;
+  width: 5px; height: 9px;
+  border: 2px solid #07090f;
+  border-top: none; border-left: none;
+  transform: rotate(45deg);
+}
+.share-tbl-row-menu {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.15s;
+}
+.share-tbl-row-menu:hover { background: rgba(0,212,255,0.08); border-color: rgba(0,212,255,0.2); color: var(--accent); }
+
+/* ========== 移动端适配 ========== */
+@media (max-width: 768px) {
+  .share-header { padding: 0 12px; gap: 8px; height: 56px; }
+  .share-logo-text { display: none; }
+  .share-header-sep { display: none; }
+  .share-header-title { max-width: 120px; }
+  .share-search-box { max-width: 200px; }
+  .share-stats-bar { padding: 5px 12px; font-size: 10px; gap: 10px; }
+  .share-stat-shortcuts { display: none; }
+  .share-main { padding: 12px 12px 80px; }
+  .share-info-bar { padding: 12px; }
+  .share-info-name { font-size: 14px; max-width: 150px; }
+  .share-btn-action span { display: none; }
+  .share-btn-action { padding: 8px 12px; }
+  .share-file-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+  .share-card-icon { font-size: 36px; }
+  .share-card-icon-wrap { height: 48px; }
+  .share-card-name { font-size: 11px; }
+  .share-card-meta { font-size: 10px; }
+  .share-file-table th.th-size,
+  .share-file-table td.td-size,
+  .share-file-table th.th-date,
+  .share-file-table td.td-date { display: none; }
+  .share-file-table th.th-size { width: auto; }
+  .share-sel-bar-inner { padding: 10px 14px; }
+  .share-sel-btn span { display: none; }
+}
+@media (max-width: 480px) {
+  .share-file-grid { grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); gap: 8px; }
+  .share-card-icon { font-size: 30px; }
+  .share-file-card { padding: 12px 8px; }
+}
+/* ========== 登录引导弹窗 ========== */
+.share-login-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.65);
+  z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  animation: shareLoginOverlayIn 0.25s ease;
+}
+@keyframes shareLoginOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.share-login-dialog {
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border, rgba(0,212,255,0.15));
+  border-radius: 16px;
+  padding: 36px 32px 28px;
+  max-width: 420px; width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  animation: shareLoginDialogIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes shareLoginDialogIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.share-login-dialog-icon {
+  width: 72px; height: 72px; margin: 0 auto 20px;
+  background: linear-gradient(135deg, #1976D2, #2196F3);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 36px; box-shadow: 0 8px 30px rgba(25,118,210,0.35);
+}
+.share-login-dialog h3 { color: var(--text-primary, #e0e0e0); margin-bottom: 10px; font-size: 20px; }
+.share-login-dialog p { color: var(--text-secondary, #999); margin-bottom: 8px; font-size: 14px; line-height: 1.6; }
+.share-login-dialog .share-file-info {
+  background: var(--bg, rgba(255,255,255,0.03));
+  border-radius: 10px; padding: 12px 16px; margin: 16px 0;
+  display: flex; align-items: center; gap: 10px;
+  text-align: left;
+}
+.share-file-info-icon { font-size: 28px; flex-shrink: 0; }
+.share-file-info-text { flex: 1; min-width: 0; }
+.share-file-info-name { color: var(--text-primary, #e0e0e0); font-size: 14px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-file-info-size { color: var(--accent, #2196F3); font-size: 13px; margin-top: 2px; }
+.share-login-dialog-btns {
+  display: flex; gap: 12px; margin-top: 24px;
+}
+.share-login-dialog-btns .btn {
+  flex: 1; padding: 13px 20px; border-radius: 10px; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; border: none;
+}
+.share-login-dialog-btns .btn-cancel {
+  background: rgba(255,255,255,0.06); color: var(--text-secondary, #999);
+}
+.share-login-dialog-btns .btn-cancel:hover { background: rgba(255,255,255,0.1); }
+.share-login-dialog-btns .btn-login {
+  background: linear-gradient(135deg, #1976D2, #2196F3);
+  color: white; box-shadow: 0 4px 15px rgba(25,118,210,0.35);
+}
+.share-login-dialog-btns .btn-login:hover {
+  transform: translateY(-1px); box-shadow: 0 6px 20px rgba(25,118,210,0.5);
+}
+.share-login-dialog .share-login-close {
+  position: absolute; top: 12px; right: 14px;
+  background: none; border: none; color: #666; font-size: 20px;
+  cursor: pointer; padding: 4px 8px; border-radius: 6px;
+}
+.share-login-close:hover { color: #ccc; background: rgba(255,255,255,0.06); }
+</style>
+
+<script>
+// ==================== 状态 ====================
+var state = {
+  hash: null,
+  shareInfo: null,
+  verified: false,
+  extractionCode: null,
+  selectedItems: [],
+  allItems: [],
+  currentDirId: null,
+  rootDirId: null,
+  currentPath: [],
+  user: null,
+  contentLoaded: false,
+  showExpiredCalled: false,
+  viewMode: 'grid',
+  searchQuery: '',
+  isSelectionMode: false,
+};
+
+// ==================== 工具函数 ====================
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '-';
+  var units = ['B','KB','MB','GB','TB'];
+  var i = 0;
+  while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+  return bytes.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+}
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escapeAttr(str) {
+  if (!str) return '';
+  return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function getFileExt(name) {
+  if (!name) return '';
+  var parts = String(name).split('.');
+  return parts.length > 1 ? '.' + parts[parts.length - 1].toLowerCase() : '';
+}
+function safeMimeType(mime) { return mime && typeof mime === 'string' ? mime : 'application/octet-stream'; }
+function getTypeClass(mime) {
+  mime = safeMimeType(mime);
+  if (mime.startsWith('image/')) return 'type-image';
+  if (mime.startsWith('video/')) return 'type-video';
+  if (mime.startsWith('audio/')) return 'type-audio';
+  if (mime === 'application/pdf') return 'type-pdf';
+  if (mime.includes('word') || mime.includes('document')) return 'type-doc';
+  if (mime.includes('sheet') || mime.includes('excel')) return 'type-doc';
+  if (mime.includes('zip') || mime.includes('rar') || mime.includes('tar')) return 'type-archive';
+  if (mime.includes('javascript') || mime.includes('json') || mime.includes('html') || mime.includes('css')) return 'type-code';
+  return 'type-generic';
+}
+function getIcon(mime, isDir) {
+  if (isDir) return '<svg width="44" height="44" viewBox="0 0 24 24" fill="#f0c040" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>';
+  mime = safeMimeType(mime);
+  if (mime.startsWith('image/')) return '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  if (mime.startsWith('video/')) return '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ef5350" stroke-width="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+  if (mime.startsWith('audio/')) return '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ab47bc" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+  if (mime === 'application/pdf') return '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ef5350" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
+  if (mime.includes('zip') || mime.includes('rar') || mime.includes('tar')) return '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ffca28" stroke-width="1.5"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>';
+  if (mime.includes('javascript') || mime.includes('json') || mime.includes('html') || mime.includes('css')) return '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#66bb6a" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
+  return '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#90a4ae" stroke-width="1.5"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>';
+}
+
+// ==================== Loading / Toast ====================
+function showLoading(text) {
+  var el = document.getElementById('shareLoading');
+  if (!el) return;
+  var txt = document.getElementById('shareLoadingText');
+  if (txt) txt.textContent = text || '加载中...';
+  el.style.display = 'flex';
+}
+function hideLoading() {
+  var el = document.getElementById('shareLoading');
+  if (el) el.style.display = 'none';
+}
+function showToast(msg, duration) {
+  var toast = document.getElementById('toast');
+  var msgEl = document.getElementById('toastMessage');
+  if (!toast || !msgEl) return;
+  msgEl.textContent = msg;
+  toast.style.display = 'block';
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() { toast.classList.add('show'); });
+  });
+  setTimeout(function() {
+    toast.classList.remove('show');
+    setTimeout(function() { toast.style.display = 'none'; }, 350);
+  }, duration || 2500);
+}
+
+// axios 跨域携带 cookie
+axios.defaults.withCredentials = true;
+
+// ==================== 主题 ====================
+function applyTheme(theme) {
+  if (!theme) theme = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('theme', theme);
+}
+function toggleTheme() {
+  var current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+document.getElementById('shareThemeBtn').onclick = toggleTheme;
+
+// ==================== 视图切换 ====================
+function setViewMode(mode) {
+  state.viewMode = mode;
+  localStorage.setItem('shareViewMode', mode);
+  document.getElementById('shareViewGridBtn').classList.toggle('active', mode === 'grid');
+  document.getElementById('shareViewListBtn').classList.toggle('active', mode === 'list');
+  renderFileList();
+}
+document.getElementById('shareViewGridBtn').onclick = function() { setViewMode('grid'); };
+document.getElementById('shareViewListBtn').onclick = function() { setViewMode('list'); };
+var savedView = localStorage.getItem('shareViewMode');
+if (savedView) state.viewMode = savedView;
+setViewMode(state.viewMode);
+
+// ==================== 搜索 ====================
+var searchInput = document.getElementById('shareSearchInput');
+if (searchInput) {
+  searchInput.addEventListener('input', function() {
+    state.searchQuery = this.value.trim().toLowerCase();
+    renderFileList();
+  });
+  searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      this.value = '';
+      state.searchQuery = '';
+      renderFileList();
+      this.blur();
+    }
+  });
+}
+
+// ==================== 下载链接 ====================
+function getDownloadUrl(fileId) {
+  var url = '/api/share/download/' + state.hash + '/' + fileId;
+  var params = [];
+  if (state.extractionCode) params.push('extraction_code=' + encodeURIComponent(state.extractionCode));
+  if (state.currentDirId) params.push('sub_dir=' + state.currentDirId);
+  if (params.length) url += '?' + params.join('&');
+  return url;
+}
+
+// ==================== 初始化 ====================
+(function init() {
+  applyTheme();
+
+  // 从 URL 路径提取 hash
+  var pathParts = window.location.pathname.split('/');
+  var hash = pathParts[pathParts.length - 1];
+  if (!hash || hash === 'share.html' || hash === 'share') hash = pathParts[pathParts.length - 2];
+  state.hash = hash;
+
+  // URL 参数提取码
+  var urlParams = new URLSearchParams(window.location.search);
+  var urlCode = urlParams.get('extraction_code');
+  if (urlCode) state.extractionCode = urlCode.trim().toUpperCase();
+
+  loadShareInfo();
+})();
+
+// ==================== 加载分享信息 ====================
+function loadShareInfo() {
+  showLoading('加载分享信息...');
+  var url = '/api/share/public/' + state.hash;
+  if (state.extractionCode) url += '?extraction_code=' + encodeURIComponent(state.extractionCode);
+  axios.get(url, { withCredentials: true }).then(function(res) {
+    hideLoading();
+    if (res.data.code !== 0) { showExpired(res.data.message || '分享不存在'); return; }
+    var info = res.data.data;
+    state.shareInfo = info;
+    document.getElementById('shareHeaderTitle').textContent = info.target_name;
+    document.title = info.target_name + ' // FMS';
+    if (!info.is_valid) {
+      var reason = info.invalid_reason === 'expired' ? '此分享已过期' : '分享目标已被删除';
+      showExpired(reason); return;
+    }
+    if (info.has_password && !state.verified) {
+      showVerifyPage(info); return;
+    }
+    loadShareContent();
+  }).catch(function() {
+    hideLoading();
+    showExpired('加载分享信息失败，请检查链接是否正确');
+  });
+}
+
+// ==================== 验证提取码 ====================
+function showVerifyPage(info) {
+  document.getElementById('verifyPage').style.display = 'flex';
+  document.getElementById('expiredPage').style.display = 'none';
+  document.getElementById('shareMain').style.display = 'none';
+  document.getElementById('shareStatsBar').style.display = 'none';
+  document.getElementById('shareHeaderTitle').textContent = '密码验证';
+
+  var btn = document.getElementById('btnVerify');
+  var inp = document.getElementById('extractionCodeInput');
+  var errEl = document.getElementById('verifyError');
+
+  if (state.extractionCode) {
+    inp.value = state.extractionCode;
+    btn.disabled = true; btn.textContent = '验证中...';
+    showLoading('验证提取码...');
+    axios.post('/api/share/verify/' + state.hash, { extraction_code: state.extractionCode }, { withCredentials: true }).then(function(res) {
+      hideLoading(); btn.disabled = false; btn.textContent = '验证';
+      if (res.data.code !== 0) { errEl.textContent = res.data.message || '提取码错误'; return; }
+      state.verified = true;
+      loadShareContent();
+    }).catch(function() {
+      hideLoading(); btn.disabled = false; btn.textContent = '验证';
+      errEl.textContent = '验证失败，请稍后重试';
+    });
+    return;
+  }
+
+  btn.onclick = function() {
+    var code = (inp.value || '').trim().toUpperCase();
+    if (!code) { errEl.textContent = '请输入提取码'; return; }
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = '验证中...';
+    showLoading('验证提取码...');
+    axios.post('/api/share/verify/' + state.hash, { extraction_code: code }, { withCredentials: true }).then(function(res) {
+      hideLoading(); btn.disabled = false; btn.textContent = '验证';
+      if (res.data.code !== 0) { errEl.textContent = res.data.message || '提取码错误'; return; }
+      state.extractionCode = code;
+      state.verified = true;
+      loadShareContent();
+    }).catch(function() {
+      hideLoading(); btn.disabled = false; btn.textContent = '验证';
+      errEl.textContent = '验证失败，请稍后重试';
+    });
+  };
+  inp.onkeydown = function(e) { if (e.key === 'Enter') btn.click(); };
+  inp.focus();
+
+  // 粘贴解析功能
+  document.getElementById('btnPaste').onclick = function() {
+    navigator.clipboard.readText().then(function(text) {
+      if (!text) { showToast('剪贴板为空'); return; }
+      var parsed = parseShareText(text);
+      if (parsed.code) {
+        inp.value = parsed.code.toUpperCase();
+        inp.dispatchEvent(new Event('input'));
+        showToast('已提取提取码: ' + parsed.code.toUpperCase());
+      }
+      if (parsed.url && parsed.url !== window.location.href) {
+        var confirmGo = confirm('检测到分享链接，是否跳转到该链接？\n\n' + parsed.url);
+        if (confirmGo) {
+          window.location.href = parsed.url;
+          return;
+        }
+      }
+      if (!parsed.code && !parsed.url) {
+        showToast('未识别到分享链接或提取码');
+      }
+    }).catch(function() {
+      showToast('无法访问剪贴板，请手动粘贴');
+    });
+  };
+}
+
+function showExpired(reason) {
+  if (state.contentLoaded) return;
+  document.getElementById('verifyPage').style.display = 'none';
+  document.getElementById('expiredPage').style.display = 'flex';
+  document.getElementById('shareMain').style.display = 'none';
+  document.getElementById('shareStatsBar').style.display = 'none';
+  var el = document.getElementById('expiredReason');
+  if (el) el.textContent = reason || '此分享已过期或已被删除';
+}
+
+// ==================== 加载分享内容 ====================
+var loadingContent = false;
+function loadShareContent(subDirId) {
+  if (loadingContent) return;
+  loadingContent = true;
+  showLoading('加载内容...');
+  var url = '/api/share/content/' + state.hash;
+  var params = [];
+  if (subDirId) params.push('sub_dir=' + subDirId);
+  if (state.extractionCode) params.push('extraction_code=' + encodeURIComponent(state.extractionCode));
+  if (params.length) url += '?' + params.join('&');
+  axios.get(url, { withCredentials: true }).then(function(res) {
+    hideLoading(); loadingContent = false;
+    if (res.data.code === 401) { showVerifyPage(state.shareInfo); return; }
+    if (res.data.code !== 0) { showExpired(res.data.message || '加载失败'); return; }
+    showShareContent(res.data.data);
+  }).catch(function(err) {
+    hideLoading(); loadingContent = false;
+    if (state.contentLoaded) return;
+    showExpired('加载分享内容失败');
+  });
+}
+
+// ==================== 显示分享内容 ====================
+function showShareContent(data) {
+  state.contentLoaded = true;
+  state.allItems = data.items || [];
+  state.rootDirId = data.target_id;
+
+  document.getElementById('verifyPage').style.display = 'none';
+  document.getElementById('expiredPage').style.display = 'none';
+  document.getElementById('shareMain').style.display = 'flex';
+  document.getElementById('shareStatsBar').style.display = 'flex';
+
+  var isDir = data.target_type === 'dir' || (data.target_type === 'public' && data.is_directory);
+  var isMixed = data.target_type === 'mixed';
+
+  // 顶部标题
+  document.getElementById('shareHeaderTitle').textContent = data.target_name;
+  document.getElementById('shareInfoName').textContent = data.target_name;
+
+  // 标签
+  var badge = document.getElementById('shareTypeBadge');
+  badge.className = 'share-badge' + (isDir || isMixed ? '' : ' file-badge');
+  badge.innerHTML = (isDir || isMixed
+    ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' + (isMixed ? '批量分享' : '文件夹')
+    : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/></svg>文件');
+
+  document.getElementById('shareOwner').textContent = '&#128100; ' + data.owner;
+  document.getElementById('shareExpire').textContent = '&#128337; ' + data.remaining_text;
+
+  // 更新统计
+  updateStats(data.items || []);
+  // 面包屑
+  updateBreadcrumb(data);
+  // 渲染文件
+  renderFileList();
+  // 更新返回按钮
+  updateBackBtn();
+}
+
+// ==================== 更新统计 ====================
+function updateStats(items) {
+  var folders = items.filter(function(i) { return i.isDirectory; }).length;
+  var files = items.filter(function(i) { return !i.isDirectory; }).length;
+  var el = document.getElementById('shareStatsCount');
+  if (el) el.innerHTML = '&#128193; ' + folders + ' 文件夹 | &#128462; ' + files + ' 文件';
+}
+
+// ==================== 更新返回按钮 ====================
+function updateBackBtn() {
+  var backBtn = document.getElementById('shareBackBtn');
+  var inSubDir = state.currentPath && state.currentPath.length > 0;
+  if (backBtn) backBtn.style.display = inSubDir ? 'flex' : 'none';
+}
+
+function shareGoBack() {
+  if (state.currentPath.length === 0) return;
+  state.currentPath.pop();
+  var targetId = state.currentPath.length > 0 ? state.currentPath[state.currentPath.length - 1].id : null;
+  state.currentDirId = targetId;
+  loadShareContent(targetId);
+}
+
+// ==================== 面包屑 ====================
+function updateBreadcrumb(data) {
+  var bc = document.getElementById('shareBreadcrumb');
+  var nav = document.getElementById('crumbNav');
+  var crumbs = [{ id: null, name: data.target_name }];
+  if (state.currentPath && state.currentPath.length > 0) {
+    state.currentPath.forEach(function(p) { crumbs.push(p); });
+  }
+  var isRoot = !data.current_dir_id || data.current_dir_id == data.target_id;
+
+  if (state.currentPath.length > 0) {
+    bc.style.display = 'flex';
+    document.getElementById('btnBreadcrumbBack').onclick = shareGoBack;
+  } else {
+    bc.style.display = 'none';
+  }
+
+  var html = '';
+  crumbs.forEach(function(c, i) {
+    if (i > 0) html += '<span class="crumb-sep">/</span>';
+    html += '<span class="crumb-item" onclick="crumbClick(' + (c.id === null ? 'null' : "'" + c.id + "'") + ')">' + escapeHtml(c.name) + '</span>';
+  });
+  nav.innerHTML = html;
+}
+
+function crumbClick(dirId) {
+  if (dirId === null) {
+    state.currentPath = [];
+    state.currentDirId = null;
+    loadShareContent();
+  } else {
+    var idx = state.currentPath.findIndex(function(p) { return p.id === dirId; });
+    if (idx >= 0) {
+      state.currentPath = state.currentPath.slice(0, idx + 1);
+    } else {
+      state.currentPath.push({ id: dirId, name: '' });
+    }
+    state.currentDirId = dirId;
+    loadShareContent(dirId);
+  }
+}
+
+// ==================== 下载全部 ====================
+function shareDownloadAll() {
+  var files = state.allItems.filter(function(i) { return !i.isDirectory; });
+  if (files.length === 0) { showToast('没有可下载的文件'); return; }
+  smartShareDownloadAll();
+}
+
+// ==================== 选择状态 ====================
+function toggleSelectionMode() {
+  state.isSelectionMode = !state.isSelectionMode;
+  if (!state.isSelectionMode) {
+    state.selectedItems = [];
+    $$('.share-file-card, .share-file-table tbody tr').forEach(function(el) {
+      el.classList.remove('selected');
+    });
+    $$('.share-card-check, .share-tbl-check').forEach(function(el) {
+      el.classList.remove('checked');
+    });
+  }
+  updateSelBar();
+}
+
+function toggleItemSelection(id, isDir) {
+  var idx = state.selectedItems.findIndex(function(i) { return i.id === id; });
+  if (idx === -1) {
+    state.selectedItems.push({ id: id, isDir: isDir });
+  } else {
+    state.selectedItems.splice(idx, 1);
+  }
+  // 同步 DOM
+  var card = document.querySelector('.share-file-card[data-id="' + id + '"]');
+  var row = document.querySelector('.share-file-table tbody tr[data-id="' + id + '"]');
+  var checked = idx === -1;
+  if (card) {
+    card.classList.toggle('selected', checked);
+    var cb = card.querySelector('.share-card-check');
+    if (cb) cb.classList.toggle('checked', checked);
+  }
+  if (row) {
+    row.classList.toggle('selected', checked);
+    var cb2 = row.querySelector('.share-tbl-check');
+    if (cb2) cb2.classList.toggle('checked', checked);
+  }
+  updateSelBar();
+}
+
+function selectAllItems() {
+  var allIds = state.allItems.map(function(i) { return i.id; });
+  var allSelected = allIds.every(function(id) {
+    return state.selectedItems.some(function(s) { return s.id === id; });
+  });
+  if (allSelected) {
+    // 取消全选
+    state.selectedItems = [];
+  } else {
+    // 全选
+    state.selectedItems = state.allItems.map(function(i) { return { id: i.id, isDir: i.isDirectory }; });
+  }
+  $$('.share-file-card, .share-file-table tbody tr').forEach(function(el) {
+    var id = el.dataset.id;
+    var checked = state.selectedItems.some(function(s) { return s.id == id; });
+    el.classList.toggle('selected', checked);
+  });
+  $$('.share-card-check, .share-tbl-check').forEach(function(el) {
+    var parent = el.closest('.share-file-card') || el.closest('tr');
+    if (parent) {
+      var id = parent.dataset.id;
+      var checked = state.selectedItems.some(function(s) { return s.id == id; });
+      el.classList.toggle('checked', checked);
+    }
+  });
+  updateSelBar();
+}
+
+function updateSelBar() {
+  var bar = document.getElementById('shareSelBar');
+  var numEl = document.getElementById('shareSelNum');
+  var allLabel = document.getElementById('shareSelAllLabel');
+  var allBtn = document.getElementById('shareSelAllBtn');
+
+  var count = state.selectedItems.length;
+  if (numEl) numEl.textContent = count;
+  if (bar) bar.classList.toggle('show', count > 0 || state.isSelectionMode);
+
+  var allIds = state.allItems.map(function(i) { return i.id; });
+  var allSelected = allIds.length > 0 && allIds.every(function(id) {
+    return state.selectedItems.some(function(s) { return s.id == id; });
+  });
+  if (allLabel) allLabel.textContent = allSelected ? '取消全选' : '全选';
+  if (allBtn) allBtn.classList.toggle('active', allSelected);
+}
+
+// ==================== 批量下载 ====================
+document.getElementById('shareSelDlBtn').onclick = function() {
+  var files = state.selectedItems.filter(function(i) { return !i.isDir; });
+  if (files.length === 0) { showToast('请先选择文件'); return; }
+  // 智能下载：检查是否有超出访客限制的大文件
+  if (isGuestUser()) {
+    var largeFiles = [];
+    var smallFiles = [];
+    files.forEach(function(f) {
+      if ((f.size || 0) > GUEST_DOWNLOAD_LIMIT) largeFiles.push(f);
+      else smallFiles.push(f);
+    });
+    smallFiles.forEach(function(f) { window.open(getDownloadUrl(f.id), '_blank'); });
+    if (largeFiles.length > 0) {
+      var totalSize = largeFiles.reduce(function(s, f) { return s + (f.size || 0); }, 0);
+      var names = largeFiles.map(function(f) { return f.name; }).join(', ');
+      showLoginPrompt(largeFiles.length === 1 ? names : (largeFiles.length + ' 个文件'), totalSize);
+    }
+  } else {
+    files.forEach(function(f) { window.open(getDownloadUrl(f.id), '_blank'); });
+  }
+};
+
+// ==================== 登录检查 ====================
+function checkLogin(callback) {
+  axios.get('/api/share/me', { withCredentials: true }).then(function(res) {
+    if (res.data.code === 0 && res.data.data && res.data.data.user) {
+      state.user = res.data.data.user;
+      updateShareUserUI();
+      callback(true);
+    } else {
+      state.user = null;
+      updateShareUserUI();
+      callback(false);
+    }
+  }).catch(function() {
+    state.user = null;
+    updateShareUserUI();
+    callback(false);
+  });
+}
+
+// ==================== 用户 UI 更新 ====================
+function updateShareUserUI() {
+  var dropdown = document.getElementById('shareUserDropdown');
+  var guest = document.getElementById('shareGuestActions');
+  if (state.user) {
+    if (dropdown) dropdown.style.display = 'block';
+    if (guest) guest.style.display = 'none';
+    var name = state.user.nickname || (state.user.email ? state.user.email.split('@')[0] : '用户');
+    var initials = name.charAt(0).toUpperCase();
+    var email = state.user.email || '';
+    var nameEl = document.getElementById('shareUserName');
+    var avatarEl = document.getElementById('shareUserAvatar');
+    var menuAvatarEl = document.getElementById('shareUserMenuAvatar');
+    var menuEmailEl = document.getElementById('shareUserMenuEmail');
+    var menuRoleEl = document.getElementById('shareUserMenuRole');
+    if (nameEl) nameEl.textContent = name.length > 8 ? name.substring(0, 8) + '...' : name;
+    if (avatarEl) avatarEl.textContent = initials;
+    if (menuAvatarEl) menuAvatarEl.textContent = initials;
+    if (menuEmailEl) menuEmailEl.textContent = email;
+    if (menuRoleEl) menuRoleEl.innerHTML = state.user.is_admin ? '&#128737; 管理员' : '&#128100; 普通用户';
+  } else {
+    if (dropdown) dropdown.style.display = 'none';
+    if (guest) guest.style.display = 'flex';
+  }
+}
+
+// 初始化时检查登录态
+checkLogin(function() {});
+
+// 用户下拉菜单切换
+function toggleShareUserMenu() {
+  var menu = document.getElementById('shareUserMenu');
+  if (!menu) return;
+  var isOpen = menu.classList.contains('show');
+  menu.classList.toggle('show', !isOpen);
+  if (!isOpen) {
+    setTimeout(function() {
+      document.addEventListener('click', function closeMenu(e) {
+        if (!menu.contains(e.target) && !document.getElementById('shareUserBtn').contains(e.target)) {
+          menu.classList.remove('show');
+          document.removeEventListener('click', closeMenu);
+        }
+      });
+    }, 0);
+  }
+}
+document.getElementById('shareUserBtn').onclick = toggleShareUserMenu;
+
+// 退出登录
+document.getElementById('shareLogoutBtn').onclick = function() {
+  axios.post('/api/auth/logout', {}, { withCredentials: true }).then(function() {
+    state.user = null;
+    updateShareUserUI();
+    showToast('已退出登录');
+    // 清除选择状态
+    state.selectedItems = [];
+    state.isSelectionMode = false;
+    updateSelBar();
+  }).catch(function() {
+    state.user = null;
+    updateShareUserUI();
+    showToast('已退出登录');
+  });
+};
+
+// 登录按钮跳转
+document.getElementById('shareBtnLogin').onclick = function() {
+  var returnUrl = encodeURIComponent(window.location.href);
+  window.location.href = '/login.html?return=' + returnUrl;
+};
+
+// ==================== 批量保存 ====================
+document.getElementById('shareSelSaveBtn').onclick = function() {
+  var files = state.selectedItems.filter(function(i) { return !i.isDir; });
+  if (files.length === 0) { showToast('请先选择文件'); return; }
+  checkLogin(function(ok) {
+    if (!ok) {
+      showToast('请先登录后再保存文件');
+      setTimeout(function() {
+        var returnUrl = encodeURIComponent(window.location.href);
+        window.location.href = '/login.html?return=' + returnUrl;
+      }, 1500);
+      return;
+    }
+    showSaveModal(files.map(function(f) { return f.id; }));
+  });
+};
+document.getElementById('shareSelCancelBtn').onclick = function() {
+  toggleSelectionMode();
+  updateSelBar();
+};
+document.getElementById('shareSelAllBtn').onclick = selectAllItems;
+
+// ==================== 转存弹窗 ====================
+function showSaveModal(fileIds) {
+  var modal = document.getElementById('saveModal');
+  var body = document.getElementById('saveModalBody');
+  var title = document.getElementById('saveModalTitle');
+  title.textContent = (fileIds.length > 1 ? fileIds.length + ' 个文件' : '保存文件') + ' 到我的文件';
+  body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;color:var(--text-secondary)"><div class="share-spinner" style="width:24px;height:24px;border-width:2px"></div><span>加载目录...</span></div>';
+  modal.style.display = 'flex';
+
+  axios.get('/api/files/dirs', { withCredentials: true }).then(function(res) {
+    if (res.data.code !== 0) { body.innerHTML = '<p style="color:#ff4d6a;text-align:center;padding:20px">加载目录失败</p>'; return; }
+    var dirs = res.data.data || [];
+    var saveDirId = 0;
+    var otherDirs = [];
+    dirs.forEach(function(d) {
+      if (d.name === '我的转存') saveDirId = d.id;
+      else otherDirs.push(d);
+    });
+    var html = '<div style="font-size:12px;color:var(--text-secondary);padding:4px 2px 8px;font-family:\'Share Tech Mono\',monospace">选择保存位置</div>';
+    html += '<div class="save-dir-item selected" data-id="' + saveDirId + '" onclick="selectSaveDir(this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="#ffc107"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg><span class="save-dir-name">&#128203; 我的转存</span></div>';
+    html += '<div class="save-dir-item" data-id="0" onclick="selectSaveDir(this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="#ffc107"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg><span class="save-dir-name">根目录</span></div>';
+    otherDirs.forEach(function(d) {
+      html += '<div class="save-dir-item" data-id="' + d.id + '" onclick="selectSaveDir(this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="#ffc107"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg><span class="save-dir-name">' + escapeHtml(d.name) + '</span></div>';
+    });
+    body.innerHTML = html;
+    state._saveTargetDirId = saveDirId;
+    state._saveFileIds = fileIds;
+  }).catch(function() {
+    body.innerHTML = '<p style="color:#ff4d6a;text-align:center;padding:20px">加载失败</p>';
+  });
+}
+function selectSaveDir(el) {
+  $$('.save-dir-item').forEach(function(e) { e.classList.remove('selected'); });
+  el.classList.add('selected');
+  state._saveTargetDirId = parseInt(el.dataset.id);
+}
+document.getElementById('saveModalClose').onclick = function() { document.getElementById('saveModal').style.display = 'none'; };
+document.getElementById('saveModal').onclick = function(e) { if (e.target === this) this.style.display = 'none'; };
+
+// ==================== 确认保存 ====================
+function doSaveConfirm() {
+  var fileIds = state._saveFileIds || [];
+  var targetDirId = state._saveTargetDirId || 0;
+  var btn = document.getElementById('saveConfirmBtn');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'saveConfirmBtn';
+    btn.className = 'save-confirm-btn';
+    btn.textContent = '确认保存';
+    btn.onclick = doSaveConfirm;
+    document.querySelector('.save-modal-footer').appendChild(btn);
+  }
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+  // 使用存储架构 V2 的转存 API（引用计数 vs 独立复制）
+  axios.post('/api/share/save/' + state.hash, {
+    dir_id: targetDirId,
+    extraction_code: state.extractionCode || '',
+    file_ids: fileIds
+  }, { withCredentials: true }).then(function(res) {
+    btn.disabled = false;
+    btn.textContent = '确认保存';
+    if (res.data.code !== 0) { showToast(res.data.message || '保存失败'); return; }
+    var saved = res.data.data.saved || [];
+    document.getElementById('saveModal').style.display = 'none';
+    showToast('已保存 ' + saved.length + ' 个文件到「我的转存」');
+    state.selectedItems = [];
+    state.isSelectionMode = false;
+    updateSelBar();
+  }).catch(function() {
+    btn.disabled = false;
+    btn.textContent = '确认保存';
+    showToast('保存失败，请重试');
+  });
+}
+
+// 添加保存按钮到 footer
+(function addSaveBtn() {
+  var footer = document.createElement('div');
+  footer.className = 'save-modal-footer';
+  footer.innerHTML = '<button class="save-confirm-btn" id="saveConfirmBtn" onclick="doSaveConfirm()">确认保存</button>';
+  document.querySelector('.save-modal').appendChild(footer);
+})();
+
+// ==================== 渲染文件列表 ====================
+function renderFileList() {
+  var container = document.getElementById('fileContainer');
+  var empty = document.getElementById('emptyState');
+  if (!container) return;
+
+  // 过滤
+  var items = state.allItems;
+  if (state.searchQuery) {
+    var q = state.searchQuery.toLowerCase();
+    items = items.filter(function(i) { return i.name.toLowerCase().indexOf(q) !== -1; });
+  }
+
+  if (!items || items.length === 0) {
+    container.innerHTML = '';
+    if (empty) empty.style.display = 'flex';
+    if (state.searchQuery) empty.querySelector('h3').textContent = '没有找到文件';
+    else empty.querySelector('h3').textContent = '文件夹为空';
+    updateSelBar();
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  // 排序：目录在前，文件在后
+  items.sort(function(a, b) {
+    if (a.isDirectory && !b.isDirectory) return -1;
+    if (!a.isDirectory && b.isDirectory) return 1;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN');
+  });
+
+  if (state.viewMode === 'grid') {
+    renderGrid(items);
+  } else {
+    renderTable(items);
+  }
+  updateSelBar();
+}
+
+// ==================== 网格视图 ====================
+function renderGrid(items) {
+  var container = document.getElementById('fileContainer');
+  var html = '<div class="share-file-grid">';
+  items.forEach(function(item, i) {
+    var isDir = !!item.isDirectory;
+    var mime = safeMimeType(item.mime_type);
+    var typeClass = isDir ? 'type-folder' : getTypeClass(mime);
+    var icon = getIcon(mime, isDir);
+    var ext = !isDir ? getFileExt(item.name) : '';
+    var sizeStr = isDir ? '&#128193;' : formatFileSize(item.size);
+    var isSelected = state.selectedItems.some(function(s) { return s.id == item.id; });
+    var selectedCls = isSelected ? ' selected' : '';
+    html +=
+      '<div class="share-file-card' + selectedCls + '" data-id="' + item.id + '" data-isdir="' + isDir + '" style="animation-delay:' + (i * 0.04) + 's" onclick="onCardClick(event, \'' + escapeAttr(item.id) + '\', ' + isDir + ')">' +
+        '<div class="hover-shimmer"></div>' +
+        (ext ? '<div class="share-card-badge">' + escapeHtml(ext) + '</div>' : '') +
+        '<div class="share-card-check' + (isSelected ? ' checked' : '') + '" onclick="event.stopPropagation();toggleItemSelection(\'' + escapeAttr(item.id) + '\', ' + isDir + ')" title="选择"></div>' +
+        '<div class="share-card-icon-wrap"><span class="share-card-icon ' + typeClass + '">' + icon + '</span></div>' +
+        '<div class="share-card-name" title="' + escapeAttr(item.name) + '">' + escapeHtml(item.name) + '</div>' +
+        '<div class="share-card-meta">' + sizeStr + '</div>' +
+        '<div class="share-card-menu" onclick="event.stopPropagation();showCardMenu(event, \'' + escapeAttr(item.id) + '\', ' + isDir + ')" title="更多操作">&#8942;</div>' +
+      '</div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ==================== 列表视图 ====================
+function renderTable(items) {
+  var container = document.getElementById('fileContainer');
+  var html =
+    '<div class="share-file-table-wrap">' +
+    '<table class="share-file-table"><thead><tr>' +
+    '<th class="th-check"></th>' +
+    '<th class="th-icon">类型</th>' +
+    '<th class="th-name">名称</th>' +
+    '<th class="th-size">大小</th>' +
+    '<th class="th-date">日期</th>' +
+    '<th class="th-op"></th>' +
+    '</tr></thead><tbody>';
+  items.forEach(function(item) {
+    var isDir = !!item.isDirectory;
+    var mime = safeMimeType(item.mime_type);
+    var typeClass = isDir ? 'type-folder' : getTypeClass(mime);
+    var icon = isDir
+      ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="#f0c040" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
+      : getIcon(mime, false).replace(/width="44" height="44"/g, 'width="20" height="20"');
+    var sizeStr = isDir ? '-' : formatFileSize(item.size);
+    var dateStr = item.created_at ? item.created_at.split('T')[0] : '-';
+    var isSelected = state.selectedItems.some(function(s) { return s.id == item.id; });
+    var selectedCls = isSelected ? ' selected' : '';
+    html +=
+      '<tr class="' + selectedCls + '" data-id="' + item.id + '" data-isdir="' + isDir + '" onclick="onCardClick(event, \'' + escapeAttr(item.id) + '\', ' + isDir + ')">' +
+        '<td class="td-check"><div class="share-tbl-check' + (isSelected ? ' checked' : '') + '" onclick="event.stopPropagation();toggleItemSelection(\'' + escapeAttr(item.id) + '\', ' + isDir + ')"></div></td>' +
+        '<td class="td-icon"><span class="' + typeClass + '">' + icon + '</span></td>' +
+        '<td class="td-name"><span class="' + typeClass + '">' + escapeHtml(item.name) + '</span></td>' +
+        '<td class="td-size">' + sizeStr + '</td>' +
+        '<td class="td-date">' + dateStr + '</td>' +
+        '<td class="td-op"><button class="share-tbl-row-menu" onclick="event.stopPropagation();showCardMenu(event, \'' + escapeAttr(item.id) + '\', ' + isDir + ')" title="更多操作">&#8942;</button></td>' +
+      '</tr>';
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+// ==================== 卡片/行点击（目录进、文件下） ====================
+function onCardClick(e, id, isDir) {
+  // 如果点击了勾选框或菜单按钮，不触发目录/下载
+  if (e.target.closest('.share-card-check') || e.target.closest('.share-card-menu') ||
+      e.target.closest('.share-tbl-check') || e.target.closest('.share-tbl-row-menu')) return;
+
+  if (isDir) {
+    enterDir(id);
+  } else {
+    var item = state.allItems.find(function(i) { return i.id == id; });
+    smartShareDownload(id, item ? item.name : '', item ? (item.size || 0) : 0);
+  }
+}
+
+// ==================== 进入子目录 ====================
+function enterDir(dirId) {
+  var item = state.allItems.find(function(i) { return i.id == dirId; });
+  state.currentPath.push({ id: dirId, name: item ? item.name : '' });
+  state.currentDirId = dirId;
+  loadShareContent(dirId);
+}
+
+// ==================== 三点菜单 ====================
+function showCardMenu(e, id, isDir) {
+  closeMenu();
+  var menu = document.getElementById('shareContextMenu');
+  if (isDir) {
+    menu.innerHTML =
+      '<button class="share-ctx-item" onclick="ctxEnterDir(' + id + ')">&#128194; 进入目录</button>';
+  } else {
+    menu.innerHTML =
+      '<button class="share-ctx-item" onclick="ctxDownload(' + id + ')">&#128229; 下载</button>' +
+      '<button class="share-ctx-item" onclick="ctxSave(' + id + ')">&#128203; 保存到我的文件</button>';
+  }
+
+  var isMobile = window.innerWidth <= 768;
+  if (isMobile) {
+    menu.style.left = '8px';
+    menu.style.right = '8px';
+    menu.style.top = 'auto';
+    menu.style.bottom = '0';
+    menu.style.width = 'auto';
+    menu.style.borderRadius = '16px 16px 12px 12px';
+  } else {
+    var menuW = 180;
+    var menuH = 120;
+    var left = Math.min(e.clientX, window.innerWidth - menuW);
+    var top = Math.min(e.clientY, window.innerHeight - menuH);
+    menu.style.left = Math.max(0, left) + 'px';
+    menu.style.top = Math.max(0, top) + 'px';
+    menu.style.width = menuW + 'px';
+    menu.style.bottom = 'auto';
+    menu.style.borderRadius = '12px';
+  }
+  menu.classList.add('show');
+  setTimeout(function() { document.addEventListener('click', closeMenu); }, 0);
+  if (isMobile) {
+    document.addEventListener('touchstart', function onTouch(ev) {
+      var m = document.getElementById('shareContextMenu');
+      if (m && !m.contains(ev.target)) { closeMenu(); document.removeEventListener('touchstart', onTouch); }
+    });
+  }
+}
+
+function closeMenu() {
+  var m = document.getElementById('shareContextMenu');
+  if (m) m.classList.remove('show');
+  document.removeEventListener('click', closeMenu);
+}
+
+function ctxEnterDir(id) { closeMenu(); enterDir(id); }
+function ctxDownload(id) {
+  closeMenu();
+  var item = state.allItems.find(function(i) { return i.id == id; });
+  smartShareDownload(id, item ? item.name : '', item ? (item.size || 0) : 0);
+}
+function ctxSave(id) {
+  closeMenu();
+  var item = state.allItems.find(function(i) { return i.id == id; });
+  if (!item || item.isDirectory) return;
+  checkLogin(function(ok) {
+    if (!ok) {
+      showToast('请先登录后再保存文件');
+      setTimeout(function() {
+        var returnUrl = encodeURIComponent(window.location.href);
+        window.location.href = '/login.html?return=' + returnUrl;
+      }, 1500);
+      return;
+    }
+    showSaveModal([id]);
+  });
+}
+
+// ==================== 键盘快捷键 ====================
+document.addEventListener('keydown', function(e) {
+  // 忽略输入框/弹窗内
+  var tag = document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (document.querySelector('.save-modal-wrap') && document.querySelector('.save-modal-wrap').style.display !== 'none') return;
+
+  var key = e.key.toLowerCase();
+  if (key === 'g') { setViewMode('grid'); return; }
+  if (key === 'l') { setViewMode('list'); return; }
+  if (key === 't') { toggleTheme(); return; }
+  if ((e.ctrlKey || e.metaKey) && key === 'k') {
+    e.preventDefault();
+    var inp = document.getElementById('shareSearchInput');
+    if (inp) inp.focus();
+  }
+});
+
+// ==================== 辅助函数 ====================
+function $$(sel, ctx) { ctx = ctx || document; return Array.prototype.slice.call(ctx.querySelectorAll(sel)); }
+
+// ==================== 分享文本解析 ====================
+// 支持格式：
+// - http://xxx/share/xxxxx
+// - 分享链接: http://xxx/share/xxxxx
+// - 提取码: XXXX
+// - 提取码 XXXX
+// - 来自 FMS 文件管理系统
+function parseShareText(text) {
+  var result = { url: null, code: null };
+  if (!text) return result;
+
+  // 提取链接
+  var urlPatterns = [
+    /https?:\/\/[^\s\u4e00-\u9fa5]+/gi,      // URL（含 /share/ 的链接）
+    /分享链接[\s:：]+(https?:\/\/[^\s]+)/i,    // 分享链接: xxx
+    /(https?:\/\/[^\s]+share\/[a-zA-Z0-9]+)/i // 含 share/ 的 URL
+  ];
+  for (var i = 0; i < urlPatterns.length; i++) {
+    var matches = text.match(urlPatterns[i]);
+    if (matches) {
+      for (var j = 0; j < matches.length; j++) {
+        var url = matches[j].replace(/[\s\r\n]+$/, '');
+        if (url.indexOf('/share/') !== -1) {
+          result.url = url.split('?')[0]; // 去掉参数
+          break;
+        }
+      }
+      if (result.url) break;
+    }
+  }
+
+  // 提取提取码（4位字母数字，大写）
+  var codePatterns = [
+    /(?:提取码|密码|口令|code)[\s:：]+([A-Za-z0-9]{4})/i,
+    /(?:提取码|密码|口令|code)[\s:：]*([A-Za-z0-9]{4})/i,
+    /提取码[:：\s]*([A-Za-z0-9]{4})/i,
+    /提取码\s+([A-Za-z0-9]{4})/i,
+    /([A-Za-z0-9]{4})\s*提取码/i,
+  ];
+  for (var k = 0; k < codePatterns.length; k++) {
+    var m = text.match(codePatterns[k]);
+    if (m && m[1]) {
+      result.code = m[1].toUpperCase();
+      break;
+    }
+  }
+
+  return result;
+}
+
+// ==================== 登录引导弹窗 ====================
+var GUEST_DOWNLOAD_LIMIT = 100 * 1024 * 1024; // 100MB
+
+// 检查当前用户是否为访客
+function isGuestUser() {
+  return !state.user || !state.user.id;
+}
+
+// 显示登录引导弹窗
+function showLoginPrompt(fileName, fileSize) {
+  // 移除已有的弹窗
+  var existing = document.querySelector('.share-login-overlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.className = 'share-login-overlay';
+  overlay.innerHTML =
+    '<div class="share-login-dialog" onclick="event.stopPropagation()">' +
+      '<div class="share-login-dialog-icon">&#128274;</div>' +
+      '<h3>需要登录才能下载</h3>' +
+      '<p>文件超过 100MB，登录后可不限速下载完整文件</p>' +
+      '<div class="share-file-info">' +
+        '<span class="share-file-info-icon">&#128196;</span>' +
+        '<div class="share-file-info-text">' +
+          '<div class="share-file-info-name">' + escapeHtml(fileName || '') + '</div>' +
+          '<div class="share-file-info-size">文件大小: ' + formatFileSize(fileSize || 0) + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="share-login-dialog-btns">' +
+        '<button class="btn btn-cancel" id="loginPromptCancel">以后再说</button>' +
+        '<button class="btn btn-login" id="loginPromptConfirm">&#128640; 立即登录</button>' +
+      '</div>' +
+    '</div>';
+
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+
+  var closeBtn = document.getElementById('loginPromptCancel');
+  var confirmBtn = document.getElementById('loginPromptConfirm');
+
+  closeBtn.addEventListener('click', function() { overlay.remove(); });
+  confirmBtn.addEventListener('click', function() {
+    overlay.remove();
+    // 跳转到登录页，登录后返回当前分享页面
+    var returnUrl = encodeURIComponent(window.location.href);
+    window.location.href = '/login.html?return=' + returnUrl;
+  });
+
+  // ESC 关闭
+  var escHandler = function(e) {
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+  };
+  document.addEventListener('keydown', escHandler);
+}
+
+// 智能下载：访客检查文件大小，超过 100MB 弹出登录引导
+function smartShareDownload(fileId, fileName, fileSize) {
+  // 已登录用户直接下载
+  if (!isGuestUser()) {
+    window.open(getDownloadUrl(fileId), '_blank');
+    return;
+  }
+
+  // 访客：检查文件大小
+  if (fileSize > GUEST_DOWNLOAD_LIMIT) {
+    showLoginPrompt(fileName, fileSize);
+    return;
+  }
+
+  // 小文件直接下载
+  window.open(getDownloadUrl(fileId), '_blank');
+}
+
+// 批量下载（智能检查每个文件）
+function smartShareDownloadAll() {
+  if (!isGuestUser()) {
+    shareDownloadAll();
+    return;
+  }
+
+  var largeFiles = [];
+  var smallFiles = [];
+  state.allItems.forEach(function(item) {
+    if (!item.isDirectory) {
+      if ((item.size || 0) > GUEST_DOWNLOAD_LIMIT) {
+        largeFiles.push(item);
+      } else {
+        smallFiles.push(item);
+      }
+    }
+  });
+
+  // 先下载小文件
+  smallFiles.forEach(function(f) { window.open(getDownloadUrl(f.id), '_blank'); });
+
+  // 如果有大文件，弹出登录引导
+  if (largeFiles.length > 0) {
+    var totalSize = largeFiles.reduce(function(s, f) { return s + (f.size || 0); }, 0);
+    var names = largeFiles.map(function(f) { return f.name; }).join(', ');
+    var displayName = largeFiles.length === 1 ? names : (largeFiles.length + ' 个文件');
+    showLoginPrompt(displayName, totalSize);
+  }
+}
+</script>
+
+<!-- 登录引导弹窗容器 -->
+<div id="shareLoginPromptContainer"></div>
+
+</body>
+</html>

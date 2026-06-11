@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>存储管理 — FMS</title>
+<script src="/axios.min.js"></script>
+<style>
+/* ====== CSS Variables — 匹配 FMS 主题 ====== */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap');
+
+:root {
+  --bg-primary: #07090f; --bg-secondary: #0d1526;
+  --bg-card: #0f1a2e; --bg-card-hover: #142035; --bg-input: #0a1220;
+  --border: rgba(0, 212, 255, 0.1); --border-accent: rgba(0, 212, 255, 0.4);
+  --accent: #00d4ff; --accent-glow: rgba(0, 212, 255, 0.3);
+  --accent2: #7b61ff; --accent2-glow: rgba(123, 97, 255, 0.25);
+  --text-primary: #d4e5f7; --text-secondary: #7a90b5; --text-muted: #4a6080;
+  --success: #10b981; --error: #ef4444; --warning: #f59e0b; --info: #3b82f6;
+  --purple: #8b5cf6;
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 212, 255, 0.1);
+  --shadow-glow: 0 0 30px rgba(0, 212, 255, 0.08);
+  --radius-xs: 4px; --radius-sm: 8px; --radius: 8px; --radius-md: 12px; --radius-lg: 16px;
+  --transition-fast: 0.15s ease; --transition-normal: 0.25s ease;
+}
+[data-theme="light"] {
+  --bg-primary: #eef2f8; --bg-secondary: #f8fafc;
+  --bg-card: #ffffff; --bg-card-hover: #f5f8ff; --bg-input: #edf2f9;
+  --border: rgba(100, 140, 220, 0.12); --border-accent: rgba(0, 112, 224, 0.35);
+  --accent: #0070e0; --accent-glow: rgba(0, 112, 224, 0.18);
+  --accent2: #6050e8; --accent2-glow: rgba(96, 80, 232, 0.18);
+  --text-primary: #1a2848; --text-secondary: #4a6090; --text-muted: #8aa0c0;
+  --shadow-card: 0 2px 16px rgba(0, 30, 80, 0.08), 0 1px 3px rgba(0, 60, 160, 0.04);
+  --shadow-glow: 0 4px 24px rgba(0, 112, 224, 0.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font:14px/1.6 'Syne', sans-serif;
+  background:var(--bg-primary);color:var(--text-primary);
+  min-height:100vh;overflow-x:hidden;
+}
+.mono, code, pre, .log-viewer, .mirror-path{font-family:'Share Tech Mono', monospace}
+input:focus,button:focus{outline:none;box-shadow:0 0 0 2px var(--accent-glow)}
+a{color:var(--accent);text-decoration:none;transition:color var(--transition-fast)}
+a:hover{color:var(--text-primary)}
+
+/* ====== Header ====== */
+header{
+  background:var(--bg-secondary);backdrop-filter:blur(20px) saturate(1.8);
+  -webkit-backdrop-filter:blur(20px) saturate(1.8);
+  padding:0 20px;display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;height:56px;
+}
+header h1{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text-primary);font-family:'Syne',sans-serif}
+header nav{display:flex;gap:12px;align-items:center;font-size:13px}
+.theme-toggle{
+  cursor:pointer;background:var(--bg-card);border:1px solid var(--border);
+  color:var(--text-secondary);padding:6px 12px;border-radius:var(--radius-sm);
+  font-size:13px;font-family:'Syne',sans-serif;font-weight:600;
+  transition:all var(--transition-normal);
+}
+.theme-toggle:hover{border-color:var(--border-accent);color:var(--accent);box-shadow:0 0 12px var(--accent-glow)}
+
+/* ====== Layout ====== */
+main{max-width:1440px;margin:0 auto;padding:20px 24px}
+
+/* ====== Stats ====== */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{
+  background:var(--bg-card);padding:16px;border-radius:var(--radius-md);
+  border:1px solid var(--border);text-align:center;
+  transition:all var(--transition-normal);position:relative;overflow:hidden;
+}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity var(--transition-normal)}
+.stat-card:hover{box-shadow:var(--shadow-glow);border-color:var(--border-accent)}
+.stat-card:hover::before{opacity:1}
+.stat-val{
+  font-size:28px;font-weight:700;color:var(--accent);
+  font-family:'Share Tech Mono',monospace;text-shadow:0 0 20px var(--accent-glow);
+}
+.stat-label{font-size:10px;color:var(--text-muted);margin-top:4px;text-transform:uppercase;letter-spacing:1px;font-weight:600}
+
+/* ====== Tabs ====== */
+.tabs{display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);overflow-x:auto}
+.tab-btn{
+  padding:10px 20px;background:none;border:none;color:var(--text-muted);
+  font-size:13px;font-weight:600;cursor:pointer;font-family:'Syne',sans-serif;
+  border-bottom:2px solid transparent;margin-bottom:-1px;transition:all var(--transition-fast);
+  white-space:nowrap;display:flex;align-items:center;gap:6px;
+}
+.tab-btn:hover{color:var(--text-secondary)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);text-shadow:0 0 12px var(--accent-glow)}
+.tab-badge{
+  background:rgba(0,212,255,0.15);color:var(--accent);
+  font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;
+  font-family:'Share Tech Mono',monospace;
+}
+
+/* ====== Panel ====== */
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ====== Cards & Sections ====== */
+.section{
+  background:var(--bg-card);border-radius:var(--radius-md);padding:20px;
+  margin-bottom:16px;border:1px solid var(--border);
+  box-shadow:var(--shadow-card);transition:box-shadow var(--transition-normal);
+}
+.section:hover{box-shadow:var(--shadow-card),var(--shadow-glow)}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.section-header h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text-primary);font-family:'Syne',sans-serif}
+
+/* ====== Buttons ====== */
+.btn{
+  padding:7px 14px;border-radius:var(--radius-sm);cursor:pointer;
+  font-size:12.5px;font-weight:600;transition:all var(--transition-fast);
+  display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+  font-family:'Syne',sans-serif;border:1px solid var(--border);
+  background:var(--bg-card);color:var(--text-secondary);
+}
+.btn:hover:not(:disabled){border-color:var(--border-accent);color:var(--accent);box-shadow:0 0 12px var(--accent-glow)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;
+  font-weight:700;box-shadow:0 0 20px var(--accent-glow);
+}
+.btn-primary:hover:not(:disabled){filter:brightness(1.15);box-shadow:0 0 30px var(--accent-glow)}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text-secondary)}
+.btn-outline:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn-danger{background:transparent;border:1px solid rgba(239,68,68,.4);color:var(--error)}
+.btn-danger:hover:not(:disabled){background:rgba(239,68,68,.15);box-shadow:0 0 16px rgba(239,68,68,.3)}
+.btn-warn{background:transparent;border:1px solid rgba(245,158,11,.4);color:var(--warning)}
+.btn-warn:hover:not(:disabled){background:rgba(245,158,11,.12);box-shadow:0 0 16px rgba(245,158,11,.3)}
+.btn-info{background:transparent;border:1px solid rgba(59,130,246,.4);color:var(--info)}
+.btn-info:hover:not(:disabled){background:rgba(59,130,246,.12);box-shadow:0 0 16px rgba(59,130,246,.3)}
+.btn-sm{padding:5px 10px;font-size:11px}.btn-xs{padding:3px 8px;font-size:10px;border-radius:var(--radius-xs)}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ====== Group Cards ====== */
+.group-card{
+  border:1px solid var(--border);border-radius:var(--radius-md);
+  margin-bottom:10px;overflow:hidden;transition:all var(--transition-normal);
+  background:var(--bg-card);
+}
+.group-card:hover{box-shadow:var(--shadow-glow);border-color:var(--border-accent)}
+.group-header{
+  padding:12px 16px;background:var(--bg-card-hover);display:flex;
+  justify-content:space-between;align-items:center;cursor:pointer;user-select:none;
+  gap:12px;flex-wrap:wrap;transition:background var(--transition-fast);
+}
+.group-header:hover{background:rgba(0,212,255,0.06)}
+.group-title{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.group-title strong{font-size:14px;white-space:nowrap;color:var(--text-primary);font-family:'Share Tech Mono',monospace}
+.group-title .name{color:var(--text-secondary);font-size:12px}
+.group-meta{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text-muted);flex-shrink:0}
+.group-actions{display:flex;gap:5px;flex-shrink:0}
+.group-arrow{font-size:18px;color:var(--text-muted);transition:transform .2s;flex-shrink:0}
+.group-arrow.open{transform:rotate(180deg)}
+.group-body{padding:16px;display:none;border-top:1px solid var(--border)}
+.group-body.open{display:block}
+
+/* ====== Badges ====== */
+.badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;font-family:'Share Tech Mono',monospace}
+.badge-ok{background:rgba(16,185,129,.12);color:#10b981}
+.badge-warn{background:rgba(245,158,11,.12);color:#f59e0b}
+.badge-err{background:rgba(239,68,68,.12);color:#ef4444}
+.badge-info{background:rgba(59,130,246,.12);color:#3b82f6}
+.badge-purple{background:rgba(139,92,246,.12);color:#8b5cf6}
+.badge-gray{background:rgba(139,143,163,.12);color:var(--text-muted)}
+
+/* ====== Mirror Rows ====== */
+.mirror-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;border-radius:var(--radius-sm);margin-bottom:6px;
+  background:var(--bg-primary);border:1px solid transparent;gap:12px;
+  transition:all var(--transition-fast);
+}
+.mirror-row:hover{border-color:var(--border);background:var(--bg-card-hover)}
+.mirror-info{flex:1;min-width:0}
+.mirror-name{font-weight:600;font-size:13px;color:var(--text-primary)}
+.mirror-path{font-size:11px;color:var(--text-muted);word-break:break-all}
+.mirror-status{display:flex;align-items:center;gap:6px;font-size:11px;flex-shrink:0}
+.mirror-actions{display:flex;gap:4px;flex-shrink:0}
+
+/* ====== Weight Control ====== */
+.weight-control{display:inline-flex;align-items:center;gap:3px}
+.weight-control button{
+  width:24px;height:24px;border:1px solid var(--border);background:var(--bg-card);
+  color:var(--text-secondary);border-radius:var(--radius-xs);cursor:pointer;
+  font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;
+  transition:all var(--transition-fast);
+}
+.weight-control button:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 0 8px var(--accent-glow)}
+.weight-val{font-weight:700;min-width:20px;text-align:center;font-size:13px;color:var(--accent);font-family:'Share Tech Mono',monospace}
+
+/* ====== Tables ====== */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  text-align:left;padding:10px 12px;font-weight:700;font-size:10px;text-transform:uppercase;
+  color:var(--text-muted);border-bottom:1px solid var(--border-accent);
+  white-space:nowrap;letter-spacing:.5px;font-family:'Share Tech Mono',monospace;
+}
+td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--text-secondary)}
+tr:hover td{background:rgba(0,212,255,0.03)}
+
+/* ====== Search & Filters ====== */
+.search-bar{display:flex;gap:8px;margin-bottom:12px}
+.search-bar input, .search-bar select{
+  flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--bg-input);color:var(--text-primary);font-size:13px;
+  font-family:'Share Tech Mono',monospace;transition:border-color var(--transition-fast);
+}
+.search-bar input:focus, .search-bar select:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow);outline:none}
+
+/* ====== Progress ====== */
+.progress-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin:4px 0}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .4s ease;box-shadow:0 0 10px var(--accent-glow)}
+.progress-fill.warn{background:linear-gradient(90deg,var(--warning),#fbbf24)}
+.progress-fill.err{background:linear-gradient(90deg,var(--error),#f87171)}
+
+/* ====== Pagination ====== */
+.pagination{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px;font-size:13px}
+
+/* ====== Modal ====== */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;
+  align-items:center;justify-content:center;z-index:1000;backdrop-filter:blur(4px);
+}
+.modal-overlay.show{display:flex}
+.modal{
+  background:var(--bg-card);border-radius:var(--radius-lg);padding:24px;
+  max-width:520px;width:90%;border:1px solid var(--border-accent);
+  box-shadow:var(--shadow-card),0 0 40px var(--accent-glow);
+  max-height:85vh;overflow-y:auto;
+}
+.modal.wide{max-width:700px}
+.modal h3{margin-bottom:14px;font-size:17px;font-weight:700;color:var(--text-primary);font-family:'Syne',sans-serif}
+.modal label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;margin-top:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.modal input,.modal select{
+  width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--bg-input);color:var(--text-primary);font-size:13px;
+  font-family:'Share Tech Mono',monospace;transition:all var(--transition-fast);
+}
+.modal input:focus,.modal select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.modal-hint{font-size:11px;color:var(--text-muted);margin-top:4px}
+
+/* ====== Toast ====== */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:2000;display:flex;flex-direction:column;gap:8px}
+.toast{
+  padding:10px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;
+  font-family:'Syne',sans-serif;box-shadow:var(--shadow-card);
+  animation:slideIn .25s ease;max-width:400px;
+}
+.toast-ok{background:#10b981;color:#fff}
+.toast-err{background:#ef4444;color:#fff}
+.toast-info{background:#3b82f6;color:#fff}
+.toast-warn{background:#f59e0b;color:#000}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ====== Empty State ====== */
+.empty{text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px}
+.empty-icon{font-size:40px;margin-bottom:8px}
+
+/* ====== Log Viewer ====== */
+.log-viewer{
+  background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:10px;max-height:350px;overflow:auto;font-size:11px;line-height:1.7;
+}
+.log-line{padding:2px 0;border-bottom:1px solid rgba(0,212,255,.03)}
+.log-time{color:var(--text-muted);margin-right:8px}
+.log-error{color:var(--error)}.log-warn{color:var(--warning)}.log-info{color:var(--text-muted)}
+
+/* ====== Repair Section ====== */
+.repair-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.repair-grid{grid-template-columns:1fr}}
+
+/* ====== Responsive ====== */
+@media(max-width:768px){
+  main{padding:12px}
+  .group-header{flex-direction:column;align-items:flex-start}
+  .group-meta{flex-wrap:wrap}
+  .group-actions{width:100%;justify-content:flex-end}
+  .mirror-row{flex-direction:column;align-items:flex-start}
+  .mirror-actions{width:100%;justify-content:flex-end}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .tabs{overflow-x:auto}
+}
+</style>
+<style>
+/* 嵌入模式：隐藏 header，适配主应用 iframe */
+body.embed-mode header { display: none !important; }
+body.embed-mode main { padding-top: 8px; }
+body.embed-mode { background: transparent; }
+body.embed-mode .section { box-shadow: none; }
+body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><img src="/favicon.png" alt="FMS" style="width:24px;height:24px"> 存储管理</h1>
+  <nav>
+    <button class="theme-toggle" onclick="toggleTheme()" title="切换主题">🌓</button>
+    <a href="/home.html" style="font-size:13px;color:var(--text-muted)">← 返回首页</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- Stats -->
+<div class="stats" id="stats-panel">
+  <div class="stat-card"><div class="stat-val" id="stat-files">-</div><div class="stat-label">文件实体</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-refs">-</div><div class="stat-label">总引用数</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-bytes">-</div><div class="stat-label">总容量</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-groups">-</div><div class="stat-label">存储组</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-tasks">-</div><div class="stat-label">活跃任务</div></div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="tabs" id="tab-nav">
+  <button class="tab-btn active" data-tab="groups">📦 存储组</button>
+  <button class="tab-btn" data-tab="files">📁 文件引用</button>
+  <button class="tab-btn" data-tab="repair">🔧 修复工具</button>
+  <button class="tab-btn" data-tab="migration">🔄 文件迁移</button>
+  <button class="tab-btn" data-tab="upgrade">🔐 加密升级 <span class="tab-badge" id="upgrade-badge" style="display:none">0</span></button>
+  <button class="tab-btn" data-tab="tasks">⚙️ 异步任务 <span class="tab-badge" id="task-badge" style="display:none">0</span></button>
+</div>
+
+<!-- ======================== TAB 1: 存储组 ======================== -->
+<div class="tab-panel active" id="panel-groups">
+  <div class="section">
+    <div class="section-header">
+      <h2>📦 文件存储组</h2>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="loadPools()">🔄 刷新</button>
+        <button class="btn btn-primary" onclick="openAddGroupModal()">+ 新增存储组</button>
+      </div>
+    </div>
+    <div id="groups-container"><div class="empty">加载中...</div></div>
+  </div>
+</div>
+
+<!-- ======================== TAB 2: 文件引用 ======================== -->
+<div class="tab-panel" id="panel-files">
+  <div class="section">
+    <div class="section-header">
+      <h2>📁 文件引用浏览器</h2>
+      <button class="btn btn-outline btn-sm" onclick="loadDuplicates()">📋 查看重复文件</button>
+    </div>
+    <div class="search-bar">
+      <input type="text" id="file-search" placeholder="搜索哈希值或UUID..." onkeyup="if(event.key==='Enter')loadFiles(0)">
+      <button class="btn btn-primary btn-sm" onclick="loadFiles(0)">🔍 搜索</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>UUID</th><th>相对路径</th><th>组</th><th>大小</th><th>引用</th><th>引用用户</th><th>操作</th></tr></thead>
+        <tbody id="file-table-body"><tr><td colspan="8" class="empty">点击搜索查看文件</td></tr></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="file-pagination"></div>
+    <!-- 重复文件 -->
+    <div id="duplicates-container" style="margin-top:16px"></div>
+  </div>
+</div>
+
+<!-- ======================== TAB 3: 修复工具 ======================== -->
+<div class="tab-panel" id="panel-repair">
+  <div class="repair-grid">
+    <!-- Auto Repair -->
+    <div class="section">
+      <div class="section-header"><h2>🔧 自动修复</h2></div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">扫描所有活跃存储池目录，查找UUID匹配的物理文件并恢复数据库引用。</p>
+      <button class="btn btn-primary" onclick="startRepair()" id="btn-auto-repair">🔍 开始自动修复</button>
+      <div id="auto-repair-result" style="margin-top:12px;font-size:12px"></div>
+    </div>
+
+    <!-- Manual Repair -->
+    <div class="section">
+      <div class="section-header"><h2>🖐 手动修复</h2></div>
+      <label>扫描目录路径</label>
+      <input type="text" id="manual-repair-path" placeholder="如 D:/data/backup" style="width:100%;margin-bottom:8px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;margin-bottom:8px">
+        <input type="checkbox" id="chk-verify-hash" checked> 哈希校验模式（解密文件验证，慢但准确）
+      </label>
+      <button class="btn btn-outline" onclick="startManualRepair()">▶ 开始手动修复</button>
+      <div id="manual-repair-result" style="margin-top:12px;font-size:12px"></div>
+    </div>
+  </div>
+
+  <!-- Lost & Orphan Files -->
+  <div class="section">
+    <div class="section-header">
+      <h2>📋 丢失/损坏文件</h2>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="loadOrphanFiles()">📋 逻辑丢失(无路径)</button>
+        <button class="btn btn-outline btn-sm" onclick="loadLostFiles()">⚠️ 物理丢失(文件不在)</button>
+      </div>
+    </div>
+    <div id="orphan-files-list"></div>
+    <div id="lost-files-container"></div>
+  </div>
+</div>
+
+<!-- ======================== TAB 4: 文件迁移 ======================== -->
+<div class="tab-panel" id="panel-migration">
+  <div class="section">
+    <div class="section-header"><h2>🔄 文件迁移状态</h2></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+      <div class="stat-card"><div class="stat-val" id="mig-total" style="color:var(--info)">-</div><div class="stat-label">总文件</div></div>
+      <div class="stat-card"><div class="stat-val" id="mig-done" style="color:var(--accent)">-</div><div class="stat-label">已迁移</div></div>
+      <div class="stat-card"><div class="stat-val" id="mig-pending" style="color:var(--warn)">-</div><div class="stat-label">待迁移</div></div>
+      <div class="stat-card"><div class="stat-val" id="mig-failed" style="color:var(--danger)">-</div><div class="stat-label">失败</div></div>
+    </div>
+    <div class="progress-bar" style="height:10px;margin-bottom:4px"><div class="progress-fill" id="mig-progress" style="width:0%"></div></div>
+    <p style="font-size:11px;color:var(--text-muted)">进度: <strong id="mig-pct">0</strong>%</p>
+    <div class="btn-group" style="margin-top:12px">
+      <button class="btn btn-primary" id="btn-migrate" onclick="startMigration()">📦 批量迁移 (10个)</button>
+      <button class="btn btn-info" id="btn-auto-migrate" onclick="startAutoMigration()">🚀 自动迁移全部</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== TAB 5: 加密升级 ======================== -->
+<div class="tab-panel" id="panel-upgrade">
+  <div class="section" style="overflow:visible">
+    <div class="section-header">
+      <h2>🔐 V1 加密升级</h2>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="loadUpgradeStats()">🔄 刷新</button>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">旧格式文件拖动视频播放/大文件Range请求会失败，升级到 V1 分块加密格式后即可正常使用。</p>
+    <!-- Stats -->
+    <div class="stats" style="margin-bottom:12px">
+      <div class="stat-card"><div class="stat-val" id="up-pending" style="color:var(--warning)">-</div><div class="stat-label">待升级文件</div></div>
+      <div class="stat-card"><div class="stat-val" id="up-users">-</div><div class="stat-label">涉及用户</div></div>
+    </div>
+    <!-- Actions -->
+    <div class="btn-group" style="margin-bottom:12px">
+      <button class="btn btn-primary btn-sm" onclick="upgradeNextFile(1)">▶ 升级下一个</button>
+      <button class="btn btn-info btn-sm" onclick="upgradeNextFile(10)">📦 批量升级10个</button>
+      <button class="btn btn-info btn-sm" onclick="upgradeNextFile(50)">📦 批量升级50个</button>
+      <button class="btn btn-warn btn-sm" id="btn-auto-upgrade" onclick="startAutoUpgradeAll()">🚀 自动升级全部</button>
+      <span style="font-size:11px;color:var(--text-muted)">自动升级将作为异步任务在后台执行</span>
+    </div>
+    <!-- File List -->
+    <div id="up-list-container"><div class="empty">点击刷新加载待升级文件...</div></div>
+    <div class="pagination" id="up-pager"></div>
+    <!-- Log -->
+    <div id="up-log" style="display:none;margin-top:12px">
+      <div class="log-viewer" id="up-log-content" style="max-height:150px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== TAB 6: 异步任务 ======================== -->
+<div class="tab-panel" id="panel-tasks">
+  <div class="section">
+    <div class="section-header">
+      <h2>⚙️ 异步任务列表</h2>
+      <div class="btn-group">
+        <select id="task-filter" onchange="loadTasks()" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:12px;font-family:'Share Tech Mono',monospace">
+          <option value="all">全部</option>
+          <option value="running">运行中</option>
+          <option value="pending">等待中</option>
+          <option value="completed">已完成</option>
+          <option value="error">错误</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadTasks()">🔄 刷新</button>
+        <button class="btn btn-warn btn-sm" onclick="unlockAllPools()">🔓 强制解锁</button>
+      </div>
+    </div>
+    <div id="tasks-container"><div class="empty">加载中...</div></div>
+  </div>
+</div>
+
+</main>
+
+<!-- ======================== MODALS ======================== -->
+
+<!-- Add Group Modal -->
+<div class="modal-overlay" id="modal-add-group">
+  <div class="modal">
+    <h3>📦 新增存储组</h3>
+    <label>存储组名称</label>
+    <input type="text" id="new-group-name" placeholder="如: 主存储组">
+    <div class="modal-hint">留空则自动生成 "存储组#N"</div>
+
+    <label>权重 (1-10，默认5)</label>
+    <div style="display:flex;align-items:center;gap:8px">
+      <input type="range" id="new-group-weight" min="1" max="10" value="5" style="flex:1" oninput="$('new-group-weight-val').textContent=this.value">
+      <span id="new-group-weight-val" style="font-weight:700;min-width:20px;text-align:center">5</span>
+    </div>
+    <div class="modal-hint">权重越高，写入分配概率越大。创建后需手动添加镜像路径。</div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-group')">取消</button>
+      <button class="btn btn-primary" onclick="submitAddGroup()">创建存储组</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Mirror Modal -->
+<div class="modal-overlay" id="modal-add-mirror">
+  <div class="modal">
+    <h3>🪞 添加镜像路径</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">存储组 <strong id="mirror-group-label"></strong></p>
+    <label>镜像名称</label>
+    <input type="text" id="mirror-name" placeholder="如: 异地备份A">
+    <label>镜像路径</label>
+    <input type="text" id="mirror-path" placeholder="如 E:/data/mirror1">
+    <div class="modal-hint">新镜像初始状态为"已停用/未同步"，需要停用存储组后执行数据同步。</div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-mirror')">取消</button>
+      <button class="btn btn-primary" onclick="submitAddMirror()">添加镜像</button>
+    </div>
+  </div>
+</div>
+
+<!-- File Detail Modal -->
+<div class="modal-overlay" id="modal-file-detail">
+  <div class="modal wide">
+    <h3>📄 文件详情</h3>
+    <div id="file-detail-content"><div class="empty">加载中...</div></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modal-file-detail')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task Detail Modal -->
+<div class="modal-overlay" id="modal-task-detail">
+  <div class="modal wide">
+    <h3>📋 任务详情</h3>
+    <div id="task-detail-content"><div class="empty">加载中...</div></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modal-task-detail')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ==================== UTILS ====================
+function $(id){return document.getElementById(id)}
+function api(url,data,method){
+  method=method||'get';
+  var opts={method:method,url:url,withCredentials:true,headers:{'X-Device-Id':localStorage.getItem('_fs_device_id')||'web_admin'}};
+  if(method==='get')opts.params=data;else opts.data=data;
+  return axios(opts).then(function(r){return r.data}).catch(function(e){
+    var msg=e.response&&e.response.data?e.response.data.message||'请求失败':e.message;
+    toast(msg,'err');throw e;
+  })
+}
+function toast(msg,type){
+  type=type||'info';
+  var c=$('toast-container');
+  var el=document.createElement('div');
+  el.className='toast toast-'+type;
+  el.textContent=msg;
+  c.appendChild(el);
+  setTimeout(function(){el.style.opacity='0';el.style.transition='opacity .3s';setTimeout(function(){el.remove()},300)},3000);
+}
+function formatBytes(b){
+  if(!b||b===0)return '0 B';var u=['B','KB','MB','GB','TB'],i=0;
+  while(b>=1024&&i<u.length-1){b/=1024;i++}
+  return b.toFixed(2)+' '+u[i]
+}
+function fmtDate(d){return d?new Date(d).toLocaleString():'-'}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function openModal(id){$(id).classList.add('show')}
+function closeModal(id){$(id).classList.remove('show')}
+
+// ==================== THEME ====================
+function toggleTheme(){
+  var h=document.documentElement;
+  var t=h.getAttribute('data-theme')==='dark'?'light':'dark';
+  applyTheme(t);
+  // 通知父窗口同步主题
+  if(window.parent!==window){
+    try{window.parent.postMessage({type:'theme-change',theme:t},'*')}catch(e){}
+  }
+}
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  localStorage.setItem('_fs_theme',t);
+}
+(function(){
+  var t=localStorage.getItem('_fs_theme');
+  if(t)document.documentElement.setAttribute('data-theme',t);
+  // 嵌入模式：从父窗口继承主题
+  if(window.location.search.indexOf('embed=1')!==-1&&window.parent!==window){
+    try{
+      var pt=window.parent.document.documentElement.getAttribute('data-theme');
+      if(pt)document.documentElement.setAttribute('data-theme',pt);
+    }catch(e){}
+  }
+  // 监听父窗口主题变更
+  window.addEventListener('message',function(e){
+    if(e.data&&e.data.type==='theme-change'){
+      applyTheme(e.data.theme);
+    }
+  });
+})();
+
+// ==================== TABS ====================
+document.getElementById('tab-nav').addEventListener('click',function(e){
+  var btn=e.target.closest('.tab-btn');
+  if(!btn)return;
+  var tab=btn.getAttribute('data-tab');
+  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active')});
+  document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});
+  btn.classList.add('active');
+  var panel=$('panel-'+tab);
+  if(panel)panel.classList.add('active');
+  // Load data on switch
+  if(tab==='groups')loadPools();
+  else if(tab==='files')loadFiles(0);
+  else if(tab==='upgrade')loadUpgradeStats();
+  else if(tab==='tasks')loadTasks();
+  else if(tab==='migration')loadMigrationStatus();
+  // 更新 URL 参数以便刷新保持
+  updateTabParam(tab);
+});
+
+// 支持 ?tab=xxx 参数预选标签
+function switchToTab(tab){
+  var btn=document.querySelector('.tab-btn[data-tab="'+tab+'"]');
+  if(btn)btn.click();
+}
+function updateTabParam(tab){
+  var url=new URL(window.location.href);
+  url.searchParams.set('tab',tab);
+  try{window.history.replaceState({},'',url.toString())}catch(e){}
+}
+
+// ==================== STORAGE GROUPS ====================
+var groupData=null;
+
+function loadPools(){
+  api('/api/admin/storage/pools').then(function(r){
+    if(r.code!==0){toast(r.message,'err');return}
+    var d=r.data;groupData=d;
+    $('stat-files').textContent=d.stats.file_count||0;
+    $('stat-refs').textContent=d.stats.total_refs||0;
+    $('stat-bytes').textContent=formatBytes(d.stats.total_bytes||0);
+    $('stat-groups').textContent=d.groups.length;
+    renderGroups(d.groups);
+  }).catch(function(){});
+}
+
+// 保存展开状态
+function saveGroupOpenState(){
+  var open={};
+  document.querySelectorAll('.group-body.open').forEach(function(b){var c=b.closest('.group-card');if(c)open[c.getAttribute('data-group')]=true});
+  return open;
+}
+function restoreGroupOpenState(open){
+  Object.keys(open).forEach(function(gid){
+    var c=document.querySelector('.group-card[data-group="'+gid+'"]');
+    if(c){var b=c.querySelector('.group-body');if(b)b.classList.add('open');var a=c.querySelector('.group-arrow');if(a)a.classList.add('open')}
+  });
+}
+
+function renderGroups(groups){
+  var open=saveGroupOpenState();
+  var html='';
+  if(!groups||groups.length===0){
+    html='<div class="empty"><div class="empty-icon">📦</div>暂无存储组<br><span style="font-size:12px">点击"新增存储组"创建第一个</span></div>';
+  }else{
+    groups.forEach(function(g){
+      var isDefault=(g.group_id===0);
+      var noPaths=(g.paths.length===0);
+      var groupStopped=(g.group_status==='stopped');
+      var allActive=!noPaths&&g.paths.every(function(p){return p.status==='active'});
+      var hasSyncing=g.paths.some(function(p){return p.status==='syncing'});
+      var hasProcessing=g.paths.some(function(p){return p.status==='processing'});
+      var hasDegraded=g.paths.some(function(p){return p.status==='degraded'});
+      var hasError=g.paths.some(function(p){return p.status==='error'});
+      var hasActivePaths=g.paths.some(function(p){return p.status==='active'});
+      var hasStoppedPaths=g.paths.some(function(p){return p.status==='stopped'||p.status==='disabled'||p.status==='degraded'});
+
+      // 徽章：基于 group_status + 镜像状态
+      var badge='';
+      if(hasError)badge='<span class="badge badge-err">故障</span>';
+      else if(hasSyncing)badge='<span class="badge badge-info">同步中</span>';
+      else if(hasProcessing)badge='<span class="badge badge-warn">处理中</span>';
+      else if(noPaths)badge='<span class="badge badge-warn">无镜像</span>';
+      else if(groupStopped)badge='<span class="badge badge-err">已停用</span>';
+      else if(hasDegraded)badge='<span class="badge badge-warn">降级</span>';
+      else if(allActive)badge='<span class="badge badge-ok">正常</span>';
+      else badge='<span class="badge badge-gray">部分停用</span>';
+
+      var locked=hasSyncing||hasProcessing;
+
+      html+='<div class="group-card" data-group="'+g.group_id+'">';
+      html+='<div class="group-header" onclick="toggleGroup(this)">';
+      html+='<div class="group-title">';
+      html+='<strong>#'+g.group_id+'</strong>';
+      html+='<span class="name">'+(g.group_name?escHtml(g.group_name):'存储组')+(isDefault?' <span style="font-size:10px;color:var(--text-muted)">(默认)</span>':'')+'</span>';
+      html+=badge;
+      html+='</div>';
+      html+='<div class="group-meta">';
+      html+='<span title="写入权重(1-10)">⚖️ <span class="weight-control" onclick="event.stopPropagation()">'+
+        '<button onclick="changeWeight('+g.group_id+',-1)" title="减权重">−</button>'+
+        '<span class="weight-val">'+(g.group_weight||5)+'</span>'+
+        '<button onclick="changeWeight('+g.group_id+',1)" title="加权重">+</button></span></span>';
+      html+='<span>🪞 '+g.paths.length+'个镜像</span>';
+      html+='</div>';
+      html+='<div class="group-actions" onclick="event.stopPropagation()">';
+      if(locked){
+        html+='<span style="font-size:11px;color:var(--warn)">🔒 任务执行中</span>';
+      }else if(noPaths){
+        html+='<span style="font-size:11px;color:var(--text-muted)">💡 请先添加镜像路径</span>';
+      }else{
+        // 停用：组活跃时可用
+        if(!groupStopped){
+          html+='<button class="btn btn-outline btn-sm" onclick="stopGroup('+g.group_id+')" title="停用存储组（镜像保持原状态）">⏸ 停用</button>';
+        }
+        // 迁移/重组/回滚：组停用 + 全部镜像启用且正常(active+synced)
+        var allHealthy=!noPaths&&g.paths.every(function(p){return p.status==='active'&&p.sync_status==='synced'});
+        var canOperate=groupStopped&&allHealthy;
+        var operateTip=groupStopped?(allHealthy?'':'请先确保全部镜像已启用且同步'):'请先停用存储组';
+        html+='<button class="btn btn-warn btn-sm" '+(canOperate?'onclick="migrateAndDisable('+g.group_id+')"':'disabled')+' title="'+operateTip+'">📤 迁移</button>';
+        html+='<button class="btn btn-outline btn-sm" '+(canOperate?'onclick="reorganizePool('+g.group_id+')"':'disabled')+' title="'+operateTip+'">🔧 重组</button>';
+        html+='<button class="btn btn-outline btn-sm" '+(canOperate?'onclick="rollbackPool('+g.group_id+')"':'disabled')+' title="'+operateTip+'">↩ 回滚</button>';
+        // 数据校验：组停用即可，不需要全部镜像活跃
+        html+='<button class="btn btn-outline btn-sm" '+(groupStopped&&!noPaths?'onclick="verifyGroup('+g.group_id+')"':'disabled')+' title="'+(groupStopped?'扫描物理文件校验同步状态':'请先停用存储组')+'">✅ 数据校验</button>';
+        // 启用：组停用时可用
+        if(groupStopped){
+          html+='<button class="btn btn-outline btn-sm" onclick="activateGroupAction('+g.group_id+')" title="启用存储组">▶ 启用</button>';
+        }else{
+          html+='<button class="btn btn-outline btn-sm" disabled title="存储组已是活跃状态">▶ 启用</button>';
+        }
+      }
+      html+='</div>';
+      html+='<span class="group-arrow">▼</span>';
+      html+='</div>';
+
+      // Body - Mirror paths
+      html+='<div class="group-body">';
+      if(noPaths){
+        html+='<div class="empty" style="padding:20px">暂无镜像路径<br><span style="font-size:12px;color:var(--text-muted)">该存储组没有配置任何镜像路径，无法存储文件</span></div>';
+      }else{
+        g.paths.forEach(function(p){
+          var isLocked=(p.status==='syncing'||p.status==='processing'||p.status==='stopping');
+          var statusIcon='',statusLabel='',statusColor='';
+          switch(p.status){
+            case 'active':statusIcon='●';statusLabel='启用';statusColor='var(--accent)';break;
+            case 'syncing':statusIcon='◉';statusLabel='同步中';statusColor='var(--info)';break;
+            case 'processing':statusIcon='⏳';statusLabel='处理中';statusColor='var(--warn)';break;
+            case 'stopping':statusIcon='◐';statusLabel='停用中';statusColor='var(--warn)';break;
+            case 'stopped':statusIcon='⏸';statusLabel='已停用';statusColor='var(--danger)';break;
+            case 'disabled':statusIcon='○';statusLabel='停用(只读)';statusColor='var(--warn)';break;
+            case 'disabled_migrated':statusIcon='📦';statusLabel='已迁移待删除';statusColor='var(--purple)';break;
+            case 'degraded':statusIcon='⚠';statusLabel='降级(w:'+(p.priority||5)+')';statusColor='var(--danger)';break;
+            case 'error':statusIcon='✖';statusLabel='故障';statusColor='var(--danger)';break;
+            default:statusIcon='?';statusLabel=p.status;statusColor='var(--text-muted)';
+          }
+          var syncLabel='';
+          if(p.sync_status==='unsynced')syncLabel=' <span class="badge badge-warn" style="font-size:9px">未同步</span>';
+          else if(p.sync_status==='syncing')syncLabel=' <span class="badge badge-info" style="font-size:9px">同步中</span>';
+
+          // 判断是否该组的最后一个镜像
+          var isOnlyMirrorInGroup=(g.paths.length===1);
+
+          html+='<div class="mirror-row">';
+          html+='<div class="mirror-info">';
+          html+='<div class="mirror-name">🪞 '+escHtml(p.name||('镜像'+p.mirror_index))+'</div>';
+          html+='<div class="mirror-path">'+escHtml(p.local_path)+'</div>';
+          html+='</div>';
+          html+='<div class="mirror-status">';
+          html+='<span style="color:'+statusColor+'">'+statusIcon+' '+statusLabel+'</span>'+syncLabel;
+          if(p.total_bytes)html+=' <span style="color:var(--text-muted)">'+formatBytes(p.total_bytes)+'</span>';
+          html+='</div>';
+          html+='<div class="mirror-actions">';
+          if(isLocked&&p.status!=='stopping'){
+            html+='<span style="font-size:10px;color:var(--text-muted)">🔒</span>';
+          }else{
+            // 活跃 → 可停用
+            if(p.status==='active'){
+              html+='<button class="btn btn-outline btn-xs" onclick="toggleMirror('+p.id+',\'disable\')" title="停用此镜像">⏸ 停用</button>';
+            }
+            // 停用中 → 可强制停止
+            else if(p.status==='stopping'){
+              html+='<button class="btn btn-warn btn-xs" onclick="forceStopMirror('+p.id+')" title="立即终止写入并标记为已停用">⚡ 强制停止</button>';
+            }
+            // 已停用 → 可同步(如未同步) + 启用
+            else if(p.status==='stopped'){
+              if(p.sync_status==='unsynced'){
+                html+='<button class="btn btn-info btn-xs" onclick="syncMirror('+g.group_id+','+p.id+')" title="从已同步镜像复制数据到此镜像">🔄 同步</button>';
+              }
+              html+='<button class="btn btn-outline btn-xs" onclick="toggleMirror('+p.id+',\'enable\')" title="重新启用此镜像">▶ 启用</button>';
+            }
+            // 停用(只读) / 降级 / 故障 → 可启用
+            else if(p.status==='disabled'||p.status==='degraded'||p.status==='error'){
+              html+='<button class="btn btn-outline btn-xs" onclick="toggleMirror('+p.id+',\'enable\')" title="重新启用此镜像">▶ 启用</button>';
+            }
+            // 已迁移待删除 → 只能删除
+            // 删除按钮
+            if(p.status==='stopped'||p.status==='disabled'||p.status==='degraded'||p.status==='error'||p.status==='disabled_migrated'){
+              html+='<button class="btn btn-danger btn-xs" onclick="deleteMirror('+p.id+',\''+escHtml(p.name||'镜像'+p.mirror_index)+'\','+p.mirror_index+','+g.group_id+','+isOnlyMirrorInGroup+')" title="删除此镜像路径">🗑 删除</button>';
+            }
+          }
+          html+='</div>';
+          html+='</div>';
+        });
+      }
+      // Add mirror button
+      html+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">';
+      html+='<button class="btn btn-outline btn-sm" onclick="openAddMirrorModal('+g.group_id+')">+ 添加镜像路径</button> ';
+      html+='<span style="font-size:11px;color:var(--text-muted)">新镜像初始状态为"已停用/未同步"，需停用存储组后执行数据同步</span>';
+      html+='</div>';
+      html+='</div></div>';
+    });
+  }
+  $('groups-container').innerHTML=html;
+  restoreGroupOpenState(open);
+}
+
+function toggleGroup(header){
+  var body=header.nextElementSibling;
+  var arrow=header.querySelector('.group-arrow');
+  body.classList.toggle('open');
+  if(arrow){arrow.classList.toggle('open');body.classList.contains('open')?arrow.textContent='▲':arrow.textContent='▼'}
+}
+
+function changeWeight(groupId,delta){
+  var g=groupData.groups.find(function(x){return x.group_id===groupId});
+  if(!g)return;
+  var w=(g.group_weight||5)+delta;
+  if(w<1)w=1;if(w>10)w=10;
+  api('/api/admin/storage/groups/'+groupId+'/weight',{weight:w},'put').then(function(r){
+    toast(r.message||'权重已更新','ok');
+    loadPools();
+  });
+}
+
+// ==================== GROUP ACTIONS ====================
+function stopGroup(groupId){
+  if(!confirm('确定停用存储组 #'+groupId+'？\n\n停用后将等待当前写入完成，之后不再接收新写入。'))return;
+  api('/api/admin/storage/groups/'+groupId+'/stop',{},'post').then(function(r){
+    toast(r.message,'ok');loadPools();
+    // 如果后端已经立即完成，不需要轮询
+    if(r.message.indexOf('已停用')>=0){loadPools();return;}
+    // 否则轮询等待
+    var count=0;
+    var poll=setInterval(function(){count++;
+      api('/api/admin/storage/pools').then(function(pr){
+        var g=(pr.data.groups||[]).find(function(x){return x.group_id===groupId});
+        if(g&&g.paths.every(function(p){return p.status==='stopped'})){
+          clearInterval(poll);toast('存储组#'+groupId+' 已完全停用','ok');loadPools();
+        }
+      });
+      if(count>90){clearInterval(poll);}
+    },1000); // 每秒检查
+  });
+}
+function activateGroupAction(groupId){
+  api('/api/admin/storage/groups/'+groupId+'/activate',{},'post').then(function(r){
+    toast(r.message,r.code===0?'ok':'err');loadPools();
+  });
+}
+
+function verifyGroup(groupId){
+  if(!confirm('数据校验将扫描存储组#'+groupId+'所有镜像的物理文件，\n并自动更新同步状态。\n\n校验期间镜像将被锁定，停止后可取消。\n\n继续？'))return;
+  api('/api/admin/storage/groups/'+groupId+'/verify',{},'post').then(function(r){
+    toast(r.message,'ok');
+    loadPools();loadTasks();
+    // 切换到任务标签查看进度
+    document.querySelector('.tab-btn[data-tab="tasks"]').click();
+  });
+}
+function migrateAndDisable(groupId){
+  if(!confirm('确定迁移存储组#'+groupId+'的全部数据并停用？\n\n所有文件将迁移到其他活跃存储组，之后该组被停用。'))return;
+  api('/api/admin/storage/groups/'+groupId+'/migrate-and-disable',{},'post').then(function(r){
+    toast(r.message,'ok');loadPools();loadTasks();
+  });
+}
+function reorganizePool(groupId){
+  if(!confirm('确定重组存储组#'+groupId+'？\n\n清理已迁移标记，保留未迁移文件，恢复为正常状态。'))return;
+  api('/api/admin/storage/groups/'+groupId+'/reorganize',{},'post').then(function(r){
+    toast(r.message,'ok');loadPools();
+  });
+}
+function rollbackPool(groupId){
+  if(!confirm('确定回滚存储组#'+groupId+'？\n\n将已迁出的文件重新移回本组。通常推荐使用"重组"。'))return;
+  api('/api/admin/storage/groups/'+groupId+'/rollback',{},'post').then(function(r){
+    toast(r.message,'ok');loadPools();loadTasks();
+  });
+}
+function syncMirror(groupId,mirrorId){
+  toast('数据同步已启动...','info');
+  api('/api/admin/storage/pools/'+groupId+'/sync',{mirror_id:mirrorId},'post').then(function(r){
+    toast(r.message,r.code===0?'ok':'err');
+    if(r.code===0){
+      var count=0;
+      var t=setInterval(function(){count++;
+        api('/api/admin/storage/sync-status/'+groupId).then(function(sr){
+          if(sr.code===0&&sr.data&&!sr.data.is_syncing){clearInterval(t);toast('同步完成！','ok');loadPools();loadTasks();}
+        }).catch(function(){clearInterval(t)});
+        if(count>180){clearInterval(t);toast('同步超时','err')}
+      },1000);
+    }
+  });
+}
+
+function syncGroup(groupId){
+  syncMirror(groupId,0); // 0 = 全部未同步镜像
+}
+
+// ==================== MIRROR ACTIONS ====================
+function toggleMirror(id,action){
+  if(!confirm('确定'+(action==='disable'?'停用':'启用')+'该镜像路径？'+(action==='disable'?'\n\n停用后将标记为未同步状态。':'')+''))return;
+  if(action==='disable'){
+    api('/api/admin/storage/mirrors/'+id+'/stop',{},'post').then(function(r){
+      toast(r.message,'ok');loadPools();
+    });
+  }else{
+    api('/api/admin/storage/mirrors/'+id+'/enable',{},'post').then(function(r){
+      toast(r.message,'ok');loadPools();
+    });
+  }
+}
+
+function forceStopMirror(id){
+  if(!confirm('⚠️ 强制停止将立即终止该镜像上所有正在写入的文件，\n未完成的文件将被删除，镜像标记为已停用+未同步。\n\n确定要强制停止吗？'))return;
+  api('/api/admin/storage/mirrors/'+id+'/force-stop',{},'post').then(function(r){
+    toast(r.message||'已强制停止','ok');loadPools();
+  });
+}
+function deleteMirror(id,name,mirrorIndex,groupId,isOnly){
+  var msgs=[];
+  msgs.push('确定删除镜像 "'+name+'" (镜像#'+mirrorIndex+') ？');
+  msgs.push('');
+  if(isOnly){
+    msgs.push('⚠️ 重要警告：这是存储组#'+groupId+'的最后一个镜像路径！');
+    msgs.push('删除后关联的文件将显示为"物理丢失"，无法正常下载。');
+    msgs.push('');
+    msgs.push('推荐操作：');
+    msgs.push('  1. 先添加新镜像 → 同步数据 → 再删除此镜像');
+    msgs.push('  2. 或先迁移数据到其他存储组 → 再删除');
+    msgs.push('');
+    msgs.push('如果只是临时性路径变更，删除后可通过"修复"功能找回文件。');
+  }else{
+    msgs.push('该镜像路径将被删除，其文件引用也会被清理。');
+    msgs.push('文件数据由同组其他镜像保留，不影响正常访问。');
+  }
+  msgs.push('');
+  msgs.push('此操作不可撤销，确定要继续吗？');
+  if(!confirm(msgs.join('\n')))return;
+  api('/api/admin/storage/pools/'+id,{},'delete').then(function(r){
+    toast(r.message,'ok');loadPools();loadTasks();
+  }).catch(function(){});
+}
+
+// Backward compat wrapper
+function deletePool(id,name){
+  deleteMirror(id,name||'','0',0,true);
+}
+
+// ==================== ADD GROUP / MIRROR ====================
+function openAddGroupModal(){
+  $('new-group-name').value='';
+  $('new-group-weight').value=5;$('new-group-weight-val').textContent='5';
+  openModal('modal-add-group');
+}
+function submitAddGroup(){
+  var name=$('new-group-name').value.trim();
+  var weight=parseInt($('new-group-weight').value,10)||5;
+  // 只创建存储组，不添加镜像（镜像通过"+ 添加镜像"按钮单独添加）
+  api('/api/admin/storage/pools',{paths:[],group_name:name||('存储组'+Date.now()),weight:weight},'post').then(function(r){
+    toast(r.message,'ok');closeModal('modal-add-group');loadPools();
+  });
+}
+
+var currentMirrorGroup=0;
+function openAddMirrorModal(groupId){
+  currentMirrorGroup=groupId;
+  $('mirror-group-label').textContent='#'+groupId;
+  $('mirror-name').value='';
+  $('mirror-path').value='';
+  openModal('modal-add-mirror');
+}
+function submitAddMirror(){
+  var p=$('mirror-path').value.trim();
+  var n=$('mirror-name').value.trim()||('镜像'+Date.now());
+  if(!p){toast('请输入镜像路径','err');return}
+  api('/api/admin/storage/pools/'+currentMirrorGroup+'/mirror',{path:p,name:n},'post').then(function(r){
+    toast(r.message,'ok');closeModal('modal-add-mirror');loadPools();
+  });
+}
+
+// ==================== FMS ====================
+var filePage=0;
+function loadFiles(page){
+  filePage=page||0;
+  var search=$('file-search').value.trim();
+  api('/api/admin/storage/files',{search:search,limit:20,offset:filePage*20}).then(function(r){
+    if(r.code!==0)return;
+    var d=r.data,html='';
+    if(!d.files||d.files.length===0){
+      html='<tr><td colspan="8" class="empty">没有找到文件</td></tr>';
+    }else{
+      d.files.forEach(function(f){
+        html+='<tr>';
+        html+='<td>'+f.id+'</td>';
+        html+='<td class="mono" title="'+escHtml(f.uuid)+'">'+escHtml((f.uuid||'').substring(0,12))+'...</td>';
+        html+='<td class="mono" title="'+escHtml(f.rel_path||'')+'">'+escHtml((f.rel_path||'').substring(0,35))+'</td>';
+        html+='<td><span class="badge badge-gray">#'+f.group_id+'</span></td>';
+        html+='<td>'+formatBytes(f.file_size)+'</td>';
+        html+='<td><strong>'+f.ref_count+'</strong></td>';
+        html+='<td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(f.ref_users||'')+'">'+escHtml(f.ref_users||'-')+'</td>';
+        html+='<td><button class="btn btn-outline btn-xs" onclick="showFileDetail('+f.id+')">详情</button></td>';
+        html+='</tr>';
+      });
+    }
+    $('file-table-body').innerHTML=html;
+    var totalPages=Math.ceil((d.total||0)/20);
+    var ph='';
+    if(filePage>0)ph+='<button class="btn btn-outline btn-sm" onclick="loadFiles('+(filePage-1)+')">◀ 上一页</button>';
+    ph+='<span style="padding:4px 12px;font-size:12px;color:var(--text-muted)">'+(filePage+1)+' / '+totalPages+' (共'+d.total+'条)</span>';
+    if(filePage<totalPages-1)ph+='<button class="btn btn-outline btn-sm" onclick="loadFiles('+(filePage+1)+')">下一页 ▶</button>';
+    $('file-pagination').innerHTML=ph;
+  });
+}
+
+function showFileDetail(id){
+  openModal('modal-file-detail');
+  $('file-detail-content').innerHTML='<div class="empty">加载中...</div>';
+  api('/api/admin/storage/files/'+id).then(function(r){
+    if(r.code!==0){$('file-detail-content').innerHTML='<div class="empty">加载失败</div>';return}
+    var f=r.data;
+    var html='<table><tbody>';
+    html+='<tr><td style="width:100px"><strong>ID</strong></td><td>'+f.id+'</td></tr>';
+    html+='<tr><td><strong>UUID</strong></td><td class="mono">'+escHtml(f.uuid)+'</td></tr>';
+    html+='<tr><td><strong>SHA-256</strong></td><td class="mono" style="word-break:break-all;font-size:11px">'+escHtml(f.file_hash||'')+'</td></tr>';
+    html+='<tr><td><strong>文件大小</strong></td><td>'+formatBytes(f.file_size)+' (明文: '+formatBytes(f.plaintext_size)+')</td></tr>';
+    html+='<tr><td><strong>引用计数</strong></td><td><strong>'+f.ref_count+'</strong></td></tr>';
+    html+='<tr><td><strong>加密版本</strong></td><td>V'+f.enc_version+'</td></tr>';
+    html+='<tr><td><strong>创建时间</strong></td><td>'+fmtDate(f.created_at)+'</td></tr>';
+    html+='</tbody></table>';
+
+    // Ref users
+    html+='<h4 style="margin-top:16px;margin-bottom:8px">📎 引用用户 ('+(f.ref_users||[]).length+')</h4>';
+    if(!f.ref_users||f.ref_users.length===0){
+      html+='<p style="color:var(--text-muted);font-size:12px">无活跃引用</p>';
+    }else{
+      html+='<div class="table-wrap"><table><thead><tr><th>用户ID</th><th>邮箱</th><th>文件名</th></tr></thead><tbody>';
+      f.ref_users.forEach(function(u){html+='<tr><td>'+u.user_id+'</td><td>'+escHtml(u.email||'')+'</td><td>'+escHtml(u.name||'')+'</td></tr>'});
+      html+='</tbody></table></div>';
+    }
+
+    // Paths
+    html+='<h4 style="margin-top:16px;margin-bottom:8px">💿 存储路径 ('+(f.paths||[]).length+')</h4>';
+    if(!f.paths||f.paths.length===0){
+      html+='<p style="color:var(--danger);font-size:12px">⚠ 无存储路径！</p>';
+    }else{
+      html+='<div class="table-wrap"><table><thead><tr><th>镜像</th><th>路径</th><th>状态</th></tr></thead><tbody>';
+      f.paths.forEach(function(p){
+        var eBadge=p.exists?'<span style="color:var(--accent)">✅</span>':'<span style="color:var(--danger)">❌</span>';
+        html+='<tr><td>镜像'+p.mirror_index+' (组#'+p.group_id+')</td>';
+        html+='<td class="mono" style="font-size:11px;word-break:break-all">'+escHtml((p.local_path||'')+'/'+(p.relative_path||p.full_path||''))+'</td>';
+        html+='<td>'+eBadge+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    }
+    $('file-detail-content').innerHTML=html;
+  });
+}
+
+// ==================== DUPLICATES ====================
+function loadDuplicates(){
+  var container=$('duplicates-container');
+  container.innerHTML='<div class="empty">加载中...</div>';
+  api('/api/admin/storage/duplicates').then(function(r){
+    if(r.code!==0){container.innerHTML='';return}
+    var groups=r.data.groups||[];
+    if(groups.length===0){
+      container.innerHTML='<div class="section" style="margin-top:12px"><div class="section-header"><h2>📋 重复文件</h2></div><div class="empty">✅ 没有重复文件</div></div>';
+      return;
+    }
+    var html='<div class="section" style="margin-top:12px"><div class="section-header"><h2>📋 重复文件 ('+groups.length+'组)</h2></div>';
+    groups.forEach(function(g){
+      var totalRefs=g.files.reduce(function(s,f){return s+f.ref_count},0);
+      html+='<div style="margin-bottom:12px;border:1px solid var(--warn);border-radius:8px;overflow:hidden">';
+      html+='<div style="padding:8px 14px;background:var(--warn-dim);font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">';
+      html+='<span>🔁 哈希: <code style="font-size:11px">'+escHtml(g.file_hash.substring(0,24))+'...</code></span>';
+      html+='<span>大小: '+formatBytes(g.file_size)+' | 重复数: '+g.dup_count+' | 总引用: '+totalRefs+'</span>';
+      html+='</div>';
+      html+='<div style="padding:8px">';
+      g.files.forEach(function(f){
+        var pathCount=f.paths?f.paths.length:0;
+        html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;margin:4px 0;background:var(--bg);border-radius:6px;gap:8px;flex-wrap:wrap">';
+        html+='<div style="flex:1;min-width:0">';
+        html+='<span style="font-weight:600;font-size:13px">#'+f.id+'</span> ';
+        html+='<code style="font-size:10px;color:var(--text-muted)">'+escHtml((f.uuid||'').substring(0,14))+'...</code>';
+        html+=' <span class="badge badge-gray">组#'+(f.group_id||0)+'</span>';
+        html+=' <span style="font-size:11px;color:var(--text-muted)">引用:'+f.ref_count+' 路径:'+pathCount+'</span>';
+        html+='<div style="font-size:11px;color:var(--text-muted);margin-top:2px">'+escHtml(f.ref_users||'无引用')+'</div>';
+        html+='</div>';
+        html+='<button class="btn btn-outline btn-xs" onclick="showFileDetail('+f.id+')">详情</button>';
+        html+='</div>';
+        // 显示路径
+        if(f.paths&&f.paths.length>0){
+          f.paths.forEach(function(pp){
+            var absPath=(pp.local_path||'')+'/'+(pp.relative_path||pp.full_path||'');
+            html+='<div style="font-size:10px;color:var(--text-muted);padding:2px 10px 2px 24px;font-family:monospace">↳ '+escHtml(pp.pool_name||('镜像'+pp.mirror_index))+' @ '+escHtml(absPath)+'</div>';
+          });
+        }
+      });
+      html+='</div></div>';
+    });
+    html+='</div>';
+    container.innerHTML=html;
+  });
+}
+
+// ==================== REPAIR ====================
+function startRepair(){
+  if(!confirm('自动修复将扫描所有活跃存储池目录，匹配UUID找到物理文件并恢复数据库引用。继续？'))return;
+  var btn=$('btn-auto-repair');btn.disabled=true;btn.textContent='修复中...';
+  api('/api/admin/storage/repair-paths',{},'post').then(function(r){
+    toast(r.message,'ok');
+    $('auto-repair-result').innerHTML='<p style="color:var(--accent);margin-top:8px">✅ '+r.message+'</p>';
+    btn.disabled=false;btn.textContent='🔍 开始自动修复';
+    loadTasks();
+  }).catch(function(){btn.disabled=false;btn.textContent='🔍 开始自动修复'});
+}
+
+function startManualRepair(){
+  var p=$('manual-repair-path').value.trim();
+  if(!p){toast('请输入目录路径','err');return}
+  var verifyHash=$('chk-verify-hash').checked;
+  api('/api/admin/storage/repair-manual',{path:p,verify_hash:verifyHash},'post').then(function(r){
+    toast(r.message,'ok');
+    var html='<p style="color:var(--accent);margin-top:8px">✅ '+r.message+'</p>';
+    if(r.data&&r.data.disk_files)html+='<p style="font-size:11px;color:var(--text-muted)">扫描:'+r.data.disk_files+' 丢失:'+r.data.lost_files+' 模式:'+(r.data.mode||'')+'</p>';
+    $('manual-repair-result').innerHTML=html;
+    loadTasks();
+  });
+}
+
+var lostPage=0,lostPageSize=30;
+function loadLostFiles(){
+  api('/api/admin/storage/lost-files').then(function(r){
+    var d=r.data;var html='<h4 style="margin:12px 0 8px">⚠️ 丢失文件 ('+d.total+')</h4>';
+    html+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">';
+    html+='<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="chk-verify-hash2" checked> 哈希校验(慢但安全)</label>';
+    html+='<button class="btn btn-primary btn-sm" onclick="repairLostFiles()">🔧 修复丢失文件</button>';
+    html+='</div>';
+    if(d.total===0){html+='<div class="empty">✅ 没有丢失文件</div>';}
+    else{
+      var all=[];
+      if(d.physical&&d.physical.files)all=all.concat(d.physical.files.map(function(f){f.lostType='物理丢失';return f}));
+      if(d.logical&&d.logical.files)all=all.concat(d.logical.files.map(function(f){f.lostType='逻辑丢失';return f}));
+      var totalPages=Math.ceil(all.length/lostPageSize);
+      var pageFiles=all.slice(lostPage*lostPageSize,(lostPage+1)*lostPageSize);
+      html+='<p style="font-size:11px;color:var(--text-muted)">物理丢失:'+(d.physical?d.physical.count:0)+' | 逻辑丢失:'+(d.logical?d.logical.count:0)+'</p>';
+      html+='<div class="table-wrap"><table><thead><tr><th>UUID</th><th>类型</th><th>哈希</th><th>大小</th><th>引用</th></tr></thead><tbody>';
+      pageFiles.forEach(function(f){
+        html+='<tr><td class="mono">'+escHtml((f.uuid||'').substring(0,14))+'...</td><td style="color:'+(f.lostType==='物理丢失'?'var(--danger)':'var(--warn)')+'">'+f.lostType+'</td><td class="mono">'+escHtml(f.hash||'').substring(0,16)+'</td><td>'+formatBytes(f.size)+'</td><td>'+f.ref_count+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+      if(totalPages>1){
+        html+='<div class="pagination">';
+        if(lostPage>0)html+='<button class="btn btn-outline btn-sm" onclick="lostPage='+(lostPage-1)+';loadLostFiles()">◀</button>';
+        html+='<span style="font-size:12px">'+(lostPage+1)+'/'+totalPages+'</span>';
+        if(lostPage<totalPages-1)html+='<button class="btn btn-outline btn-sm" onclick="lostPage='+(lostPage+1)+';loadLostFiles()">▶</button>';
+        html+='</div>';
+      }
+    }
+    $('lost-files-container').innerHTML=html;
+  });
+}
+
+function repairLostFiles(){
+  var vh=$('chk-verify-hash2')?$('chk-verify-hash2').checked:true;
+  if(!confirm('确定要修复丢失文件吗？'+(vh?'(哈希校验模式)':'')+''))return;
+  api('/api/admin/storage/repair-with-hash',{verify_hash:vh},'post').then(function(r){
+    toast(r.message,'ok');loadTasks();
+  });
+}
+
+function loadOrphanFiles(){
+  api('/api/admin/storage/orphan-files').then(function(r){
+    var files=r.data.files||[];
+    var html='<h4 style="margin:12px 0 8px">📋 逻辑丢失文件 (无有效路径, '+files.length+')</h4>';
+    if(files.length===0){html+='<div class="empty">✅ 没有逻辑丢失文件</div>'}
+    else{
+      html+='<div class="table-wrap"><table><thead><tr><th>UUID</th><th>哈希</th><th>大小</th><th>引用</th><th>用户</th></tr></thead><tbody>';
+      files.forEach(function(f){
+        html+='<tr><td class="mono">'+escHtml((f.uuid||'').substring(0,14))+'...</td><td class="mono">'+escHtml(f.hash||'')+'</td><td>'+formatBytes(f.size)+'</td><td>'+f.ref_count+'</td><td style="font-size:11px">'+escHtml(f.users||'-')+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    }
+    $('orphan-files-list').innerHTML=html;
+  });
+}
+
+// ==================== MIGRATION ====================
+function loadMigrationStatus(){
+  api('/api/admin/storage/migration-status').then(function(r){
+    if(r.code!==0)return;
+    var d=r.data;
+    $('mig-total').textContent=d.total_files||0;
+    $('mig-done').textContent=d.migrated||0;
+    $('mig-pending').textContent=d.pending||0;
+    $('mig-failed').textContent=d.failed||0;
+    $('mig-progress').style.width=(d.progress||0)+'%';
+    $('mig-pct').textContent=d.progress||0;
+    if(d.pending===0){
+      $('btn-migrate').disabled=true;
+      $('btn-auto-migrate').disabled=true;
+    }
+  });
+}
+
+function startMigration(){
+  var btn=$('btn-migrate');btn.disabled=true;btn.textContent='迁移中...';
+  api('/api/admin/storage/migrate',{batch_size:10},'post').then(function(r){
+    toast(r.message,'ok');loadMigrationStatus();loadTasks();
+    btn.disabled=false;btn.textContent='📦 批量迁移 (10个)';
+  }).catch(function(){btn.disabled=false;btn.textContent='📦 批量迁移 (10个)'});
+}
+
+function startAutoMigration(){
+  if(!confirm('确定要自动迁移全部待迁移文件吗？此操作在后台异步执行。'))return;
+  var btn=$('btn-auto-migrate');btn.disabled=true;btn.textContent='启动中...';
+  api('/api/admin/storage/auto-migrate',{},'post').then(function(r){
+    toast(r.message,'ok');
+    btn.textContent='迁移中...';
+    loadMigrationStatus();loadTasks();
+    var poll=setInterval(function(){
+      loadTasks();loadMigrationStatus();
+      api('/api/admin/tasks?limit=1').then(function(tr){
+        var tasks=tr.data.tasks||[];
+        var running=tasks.filter(function(t){return (t.type==='auto_migrate'||t.type==='auto_upgrade')&&(t.status==='running'||t.status==='pending')});
+        if(running.length===0){
+          clearInterval(poll);
+          btn.disabled=false;btn.textContent='🚀 自动迁移全部';
+          toast('迁移完成','ok');loadMigrationStatus();loadTasks();
+        }
+      });
+    },3000);
+  }).catch(function(){btn.disabled=false;btn.textContent='🚀 自动迁移全部'});
+}
+
+// ==================== TASKS ====================
+function loadTasks(){
+  var status=$('task-filter')?$('task-filter').value:'all';
+  api('/api/admin/tasks',{limit:20,status:status}).then(function(r){
+    if(r.code!==0)return;
+    var tasks=r.data.tasks||[],html='';
+    var activeCount=tasks.filter(function(t){return t.status==='running'||t.status==='pending'}).length;
+    $('stat-tasks').textContent=activeCount;
+    var badge=$('task-badge');
+    if(activeCount>0){badge.textContent=activeCount;badge.style.display=''}else{badge.style.display='none'}
+
+    if(tasks.length===0){
+      html='<div class="empty"><div class="empty-icon">✅</div>暂无任务</div>';
+    }else{
+      html='<div class="table-wrap"><table><thead><tr><th>ID</th><th>类型</th><th>标题</th><th>状态</th><th>进度</th><th>开始</th><th>完成</th><th>操作</th></tr></thead><tbody>';
+      tasks.forEach(function(t){
+        var sb='';
+        switch(t.status){
+          case 'completed':sb='<span class="badge badge-ok">已完成</span>';break;
+          case 'running':sb='<span class="badge badge-info">运行中</span>';break;
+          case 'error':sb='<span class="badge badge-err">错误</span>';break;
+          case 'cancelled':sb='<span class="badge badge-gray">已取消</span>';break;
+          case 'paused':sb='<span class="badge badge-warn">已暂停</span>';break;
+          default:sb='<span class="badge badge-gray">等待中</span>';
+        }
+        var typeLabel={pool_delete:'删除镜像',pool_delete_migrate:'删除+迁移',pool_migrate_disable:'迁移停用',group_migrate_disable:'组迁移停用',auto_migrate:'自动迁移',auto_upgrade:'自动升级',pool_reorganize:'数据重组',pool_rollback:'回滚',group_rollback:'组回滚',data_sync:'数据同步',repair_paths:'路径修复',repair_manual:'手动修复',repair_lost:'丢失修复'}[t.type]||t.type;
+        var pctFill='';
+        if(t.status==='error')pctFill=' err';
+        else if(t.status==='cancelled')pctFill=' warn';
+        html+='<tr>';
+        html+='<td>'+t.id+'</td>';
+        html+='<td><span class="badge badge-purple" style="font-size:10px">'+typeLabel+'</span></td>';
+        html+='<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(t.title)+'">'+escHtml(t.title)+'</td>';
+        html+='<td>'+sb+'</td>';
+        html+='<td style="min-width:120px"><div class="progress-bar"><div class="progress-fill'+pctFill+'" style="width:'+(t.progress||0)+'%"></div></div><span style="font-size:10px;color:var(--text-muted)">'+(t.processed_items||0)+'/'+(t.total_items||0)+' ('+(t.progress||0)+'%)</span></td>';
+        html+='<td style="font-size:11px">'+(t.started_at?fmtDate(t.started_at):'-')+'</td>';
+        html+='<td style="font-size:11px">'+(t.completed_at?fmtDate(t.completed_at):'-')+'</td>';
+        html+='<td><div class="btn-group">';
+        html+='<button class="btn btn-outline btn-xs" onclick="showTaskDetail('+t.id+')">详情</button>';
+        if(t.status==='running'||t.status==='pending')html+='<button class="btn btn-warn btn-xs" onclick="cancelTask('+t.id+')">停止</button>';
+        if(t.status==='completed'||t.status==='error'||t.status==='cancelled')html+='<button class="btn btn-danger btn-xs" onclick="deleteTask('+t.id+')">删除</button>';
+        html+='</div></td>';
+        html+='</tr>';
+      });
+      html+='</tbody></table></div>';
+    }
+    $('tasks-container').innerHTML=html;
+  });
+}
+
+function showTaskDetail(id){
+  openModal('modal-task-detail');
+  $('task-detail-content').innerHTML='<div class="empty">加载中...</div>';
+  api('/api/admin/tasks/'+id).then(function(r){
+    if(r.code!==0)return;
+    var t=r.data;
+    var html='<p><strong>状态:</strong> '+t.status+' | <strong>进度:</strong> '+t.progress+'% ('+t.processed_items+'/'+t.total_items+') | <strong>失败:</strong> '+(t.error_items||0)+'</p>';
+    html+='<p style="font-size:12px;color:var(--text-muted)">开始: '+(t.started_at||'-')+' | 完成: '+(t.completed_at||'-')+'</p>';
+    if(t.metadata&&Object.keys(t.metadata).length>0){
+      html+='<p style="font-size:11px;color:var(--text-muted);margin-top:4px">元数据: '+escHtml(JSON.stringify(t.metadata))+'</p>';
+    }
+    html+='<h4 style="margin-top:14px;margin-bottom:6px">📝 日志</h4>';
+    var logs=t.logs||[];
+    if(logs.length===0){
+      html+='<div class="empty">暂无日志</div>';
+    }else{
+      html+='<div class="log-viewer">';
+      logs.forEach(function(l){
+        var cls='log-'+((l.level==='error')?'error':(l.level==='warn')?'warn':'info');
+        html+='<div class="log-line '+cls+'"><span class="log-time">['+(l.time||'').substring(11,19)+']</span>'+escHtml(l.msg)+'</div>';
+      });
+      html+='</div>';
+    }
+    $('task-detail-content').innerHTML=html;
+  });
+}
+
+function cancelTask(id){
+  if(!confirm('确定停止此任务？关联的存储池将被解锁。'))return;
+  api('/api/admin/tasks/'+id+'/cancel',{},'post').then(function(r){
+    toast(r.message,'ok');loadTasks();loadPools();
+  });
+}
+function deleteTask(id){
+  if(!confirm('确定删除此任务记录？关联的池会被解锁。'))return;
+  api('/api/admin/tasks/'+id,{},'delete').then(function(r){
+    toast(r.message,'ok');loadTasks();loadPools();
+  });
+}
+function unlockAllPools(){
+  if(!confirm('强制解锁所有被锁的存储池？'))return;
+  api('/api/admin/storage/unlock',{},'post').then(function(r){
+    toast(r.message,'ok');loadPools();
+  });
+}
+
+// ==================== MODAL CLICK-OUTSIDE ====================
+document.addEventListener('click',function(e){
+  if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('show');
+});
+
+// ==================== ENCRYPTION UPGRADE ====================
+var upState={files:[],total:0,page:1,limit:50,loading:false,upgrading:false};
+
+function loadUpgradeStats(){
+  api('/api/admin/files/upgrade-stats').then(function(r){
+    if(r.code!==0){toast(r.message||'加载失败','err');return}
+    var d=r.data;
+    var pendingTotal=d.total_pending||0;
+    var byUser=d.by_user||[];
+    $('up-pending').textContent=pendingTotal;
+    $('up-users').textContent=byUser.length;
+    // 更新徽章
+    var badge=$('upgrade-badge');
+    if(badge){
+      if(pendingTotal>0){badge.textContent=pendingTotal>99?'99+':pendingTotal;badge.style.display=''}
+      else{badge.style.display='none'}
+    }
+    upState.total=pendingTotal;
+    loadUpgradeFileList();
+  }).catch(function(){toast('加载失败','err')});
+}
+
+function loadUpgradeFileList(page){
+  if(page)upState.page=page;
+  var container=$('up-list-container');
+  if(!container)return;
+  container.innerHTML='<div class="empty">加载中...</div>';
+  api('/api/admin/files/pending-upgrade?page='+upState.page+'&limit='+upState.limit).then(function(r){
+    if(r.code!==0){container.innerHTML='<div class="empty">加载失败</div>';return}
+    var files=r.data.files||[];
+    upState.files=files;
+    upState.total=r.data.total||0;
+    if(files.length===0){
+      container.innerHTML='<div class="empty"><div class="empty-icon">✅</div>所有文件已升级完成</div>';
+      $('up-pager').innerHTML='';
+      // 全部完成后恢复按钮
+      var btn=$('btn-auto-upgrade');
+      if(btn){btn.disabled=false;btn.textContent='🚀 自动升级全部'}
+      return;
+    }
+    var html='<div class="table-wrap"><table><thead><tr><th>ID</th><th>UUID</th><th>文件名</th><th>用户</th><th>大小</th><th>版本</th><th>操作</th></tr></thead><tbody>';
+    files.forEach(function(f){
+      var verBadge='';
+      if(f.enc_version===1)verBadge='<span class="badge badge-ok">V1分块</span>';
+      else if(f.enc_version===0)verBadge='<span class="badge badge-warn">旧格式</span>';
+      else if(f.enc_version===-1)verBadge='<span class="badge badge-gray">未加密</span>';
+      else verBadge='<span class="badge badge-gray">未知</span>';
+      html+='<tr>';
+      html+='<td>'+f.id+'</td>';
+      html+='<td class="mono" title="'+escHtml(f.uuid||'')+'">'+escHtml((f.uuid||'').substring(0,12))+'...</td>';
+      html+='<td title="'+escHtml(f.name||'')+'">'+escHtml((f.name||'').substring(0,30))+'</td>';
+      html+='<td style="font-size:11px">'+escHtml(f.email||f.user_id||'-')+'</td>';
+      html+='<td>'+formatBytes(f.file_size||f.size||0)+'</td>';
+      html+='<td>'+verBadge+'</td>';
+      html+='<td><button class="btn btn-outline btn-xs" onclick="upgradeSingleFile('+f.id+')" '+(upState.upgrading?'disabled':'')+'>升级</button></td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div>';
+    container.innerHTML=html;
+    // 分页
+    var totalPages=Math.max(1,Math.ceil(upState.total/upState.limit));
+    var ph='';
+    if(upState.page>1)ph+='<button class="btn btn-outline btn-sm" onclick="loadUpgradeFileList('+(upState.page-1)+')">◀ 上一页</button>';
+    ph+='<span style="padding:4px 12px;font-size:12px;color:var(--text-muted)">'+upState.page+' / '+totalPages+' (共'+upState.total+'条)</span>';
+    if(upState.page<totalPages)ph+='<button class="btn btn-outline btn-sm" onclick="loadUpgradeFileList('+(upState.page+1)+')">下一页 ▶</button>';
+    $('up-pager').innerHTML=ph;
+  }).catch(function(){container.innerHTML='<div class="empty">网络错误</div>'});
+}
+
+function upgradeNextFile(count){
+  if(upState.upgrading){toast('正在升级中，请等待...','warn');return}
+  upState.upgrading=true;
+  var logEl=$('up-log-content');
+  if(logEl){$('up-log').style.display='block'}
+  function logMsg(msg){if(logEl){var t=new Date().toLocaleTimeString();logEl.innerHTML+='<div class="log-line"><span class="log-time">['+t+']</span>'+escHtml(msg)+'</div>';logEl.scrollTop=logEl.scrollHeight}}
+  logMsg('开始批量升级 '+count+' 个文件...');
+  axios.post('/api/admin/files/upgrade-batch',{limit:count},{withCredentials:true,headers:{'X-Device-Id':localStorage.getItem('_fs_device_id')||'web_admin'}}).then(function(r){
+    var d=r.data;
+    if(d.code!==0){logMsg('❌ '+d.message);toast(d.message||'升级失败','err');upState.upgrading=false;return}
+    logMsg('✅ 完成 — 成功: '+(d.data.success||0)+' 失败: '+(d.data.failed||0));
+    toast('升级完成，成功: '+(d.data.success||0)+' 失败: '+(d.data.failed||0),'ok');
+    upState.upgrading=false;
+    loadUpgradeStats();
+  }).catch(function(e){
+    logMsg('❌ 网络错误');
+    toast('网络错误','err');
+    upState.upgrading=false;
+  });
+}
+
+function upgradeSingleFile(id){
+  if(upState.upgrading){toast('正在升级中，请稍后','warn');return}
+  upState.upgrading=true;
+  axios.post('/api/admin/files/upgrade/'+id,{},{withCredentials:true,headers:{'X-Device-Id':localStorage.getItem('_fs_device_id')||'web_admin'}}).then(function(r){
+    var d=r.data;
+    if(d.code===0&&d.data){
+      var msg='文件 #'+id+' ';
+      if(d.data.already_v1)msg+='已是 V1 格式，跳过';
+      else if(d.data.repaired)msg+='升级成功';
+      else msg+='处理完成';
+      toast(msg,'ok');
+    }else{toast(d.message||'升级失败','err')}
+    upState.upgrading=false;
+    loadUpgradeStats();
+  }).catch(function(){toast('网络错误','err');upState.upgrading=false});
+}
+
+function startAutoUpgradeAll(){
+  if(!confirm('确定要自动升级全部待升级文件吗？\n\n此操作将作为异步任务在后台执行，可以在"异步任务"标签查看进度。'))return;
+  var btn=$('btn-auto-upgrade');
+  btn.disabled=true;btn.textContent='启动中...';
+  api('/api/admin/files/upgrade-all',{},'post').then(function(r){
+    if(r.code!==0){toast(r.message||'启动失败','err');btn.disabled=false;btn.textContent='🚀 自动升级全部';return}
+    toast(r.message||'自动升级任务已启动','ok');
+    btn.textContent='⏳ 后台执行中...';
+    loadTasks();
+    // 轮询直到任务完成
+    var poll=setInterval(function(){
+      loadTasks();loadUpgradeStats();
+      api('/api/admin/tasks?limit=5').then(function(tr){
+        var tasks=tr.data.tasks||[];
+        var running=tasks.filter(function(t){return t.type==='auto_upgrade'&&(t.status==='running'||t.status==='pending')});
+        if(running.length===0){
+          clearInterval(poll);
+          btn.disabled=false;btn.textContent='🚀 自动升级全部';
+          loadUpgradeStats();
+          loadTasks();
+        }
+      }).catch(function(){});
+    },3000);
+  }).catch(function(){btn.disabled=false;btn.textContent='🚀 自动升级全部';toast('网络错误','err')});
+}
+
+// ==================== INIT ====================
+document.addEventListener('DOMContentLoaded',function(){
+  axios.get('/api/auth/me',{withCredentials:true}).then(function(r){
+    if(r.data.code!==0||!r.data.data||!r.data.data.user){
+      window.location.href='/login.html?return='+encodeURIComponent('/admin-storage.html');
+      return;
+    }
+    if(!r.data.data.user.is_admin){
+      document.body.innerHTML='<div style="text-align:center;padding:100px 20px;color:var(--text-primary)"><h2>🛡️ 需要管理员权限</h2><p style="color:var(--text-muted);margin-top:16px">请使用管理员账号登录</p><a href="/" style="color:var(--accent);margin-top:16px;display:inline-block">返回首页</a></div>';
+      return;
+    }
+    // 检查 URL 参数预选标签
+    var urlParams=new URLSearchParams(window.location.search);
+    var preTab=urlParams.get('tab');
+    if(preTab&&document.querySelector('.tab-btn[data-tab="'+preTab+'"]')){
+      switchToTab(preTab);
+    }else{
+      // 默认加载存储组
+      loadPools();
+    }
+    loadTasks();
+    // Poll: 只在当前可见标签时更新
+    setInterval(function(){
+      var activeTab=document.querySelector('.tab-btn.active');
+      if(!activeTab)return;
+      var tab=activeTab.getAttribute('data-tab');
+      if(tab==='groups')loadPools();
+      else if(tab==='tasks')loadTasks();
+      else if(tab==='migration')loadMigrationStatus();
+    },15000); // 每15秒仅更新当前标签
+  }).catch(function(){
+    window.location.href='/login.html?return='+encodeURIComponent('/admin-storage.html');
+  });
+});
+</script>
+<!-- 嵌入模式检测：iframe 内嵌时隐藏顶部导航 -->
+<script>
+(function(){
+  if (window.location.search.indexOf('embed=1') !== -1) {
+    document.body.classList.add('embed-mode');
+  }
+})();
+</script>
+</body>
+</html>
