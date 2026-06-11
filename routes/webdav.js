@@ -334,11 +334,6 @@ function personalPropfind(resolved, subPath, req, res) {
   }
   var baseUrl = '/webdav/' + resolved.link.token + (subPath ? '/' + subPath : '');
 
-  log.debug('[WebDAV-PROPFIND] dirId=' + dirId + ' subPath="' + (subPath||'') + '" dirs=' + dirs.length + ' files=' + files.length);
-  if (files.length > 0) {
-    log.debug('[WebDAV-PROPFIND] files in dirId=' + dirId + ': ' + files.slice(0,5).map(function(f){ return '"' + f.name + '" (id=' + f.id + ')'; }).join(', '));
-  }
-
   var xml = '<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">\n';
 
   // 获取用户配额信息
@@ -702,15 +697,6 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
     var VirtualFile = require('../lib/db').VirtualFile, VirtualDir = require('../lib/db').VirtualDir;
     var dirId = resolved.rootDirId;
 
-    // 诊断：检查根目录是否存在及其中内容
-    var rootDir = VirtualDir.findById(resolved.rootDirId);
-    var rootFiles = VirtualFile.listByDir(resolved.userId, resolved.rootDirId);
-    var rootSubDirs = VirtualDir.listPersonalByParent(resolved.userId, resolved.rootDirId);
-    log.debug('[WebDAV-MOVE] rootDirId=' + resolved.rootDirId + ' rootExists=' + !!rootDir + ' rootFiles=' + rootFiles.length + ' rootSubDirs=' + rootSubDirs.length);
-    if (rootSubDirs.length > 0) {
-      log.debug('[WebDAV-MOVE] root subdirs: ' + rootSubDirs.map(function(d){ return '"' + d.name + '" (id=' + d.id + ')'; }).join(', '));
-    }
-
     // destSubPath 来自 Destination 头（原始 HTTP 头，未URL解码），需要解码
     var destDecoded = decodeURIComponent(destSubPath);
     var destParts = destDecoded.split('/').filter(Boolean);
@@ -736,28 +722,15 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
       destDirId = df.id;
     }
 
-    log.debug('[WebDAV-MOVE] src=' + subPath + ' → dest=' + destDecoded + ' dirId=' + dirId + ' destDirId=' + destDirId + ' srcName=' + srcName + ' destName=' + destName);
-
     // 查找源文件/目录
     var files = VirtualFile.listByDir(resolved.userId, dirId);
-    // 诊断日志：列出目录中所有文件名和请求名，排查编码/空格不匹配
-    log.debug('[WebDAV-MOVE] Looking for "' + srcName + '" (' + srcName.length + ' chars) in dirId=' + dirId + ' userId=' + resolved.userId + ' files count=' + files.length);
-    if (files.length > 0) {
-      log.debug('[WebDAV-MOVE] First 5 files in dirId=' + dirId + ': ' + files.slice(0,5).map(function(f){ return '"' + f.name + '" (' + f.name.length + ' chars)'; }).join(', '));
-    } else {
-      // 文件不在预期目录 — 全库搜索该用户的文件，看它到底在哪
-      var allFiles = require('../lib/db').query('SELECT id, name, dir_id FROM virtual_files WHERE user_id = ? ORDER BY dir_id, name', [resolved.userId]);
-      log.debug('[WebDAV-MOVE] User ' + resolved.userId + ' has ' + allFiles.length + ' files total across all dirs:');
-      allFiles.forEach(function(f) {
-        log.debug('[WebDAV-MOVE]   id=' + f.id + ' dir_id=' + f.dir_id + ' name="' + f.name + '"');
-      });
-    }
     var file = files.find(function(f) { return f.name === srcName; });
     if (file) {
       require('../lib/db').run('UPDATE virtual_files SET dir_id = ?, name = ?, updated_at = datetime("now") WHERE id = ?',
         [destDirId, destName, file.id]);
       cacheInvalidate(resolved.userId, dirId);
       cacheInvalidate(resolved.userId, destDirId);
+      log.info('[WebDAV-MOVE] OK: ' + srcName + ' id=' + file.id + ' from dirId=' + dirId + ' to dirId=' + destDirId);
       res.status(201).end('Moved');
       return;
     }
@@ -769,6 +742,7 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
         [destDirId, destName, dir.id]);
       cacheInvalidate(resolved.userId, dirId);
       cacheInvalidate(resolved.userId, destDirId);
+      log.info('[WebDAV-MOVE] OK dir: ' + srcName + ' id=' + dir.id + ' from parent=' + dirId + ' to parent=' + destDirId);
       res.status(201).end('Moved');
       return;
     }
@@ -1149,7 +1123,6 @@ router.all('/webdav/:token/*', function(req, res, next) {
   // 解析目标路径（必须在 isPersonal 分支之前，两边都需要）
   var destHeader = req.headers.destination || '';
   var destMatch = destHeader.match(/\/webdav\/[^/]+\/(.*)/);
-  log.debug('[WebDAV-MOVE] destHeader=' + destHeader + ' match=' + (destMatch ? destMatch[1] : 'null'));
   if (!destMatch) { res.status(400).end('Bad destination'); return; }
 
   if (resolved.isPersonal) { personalMove(resolved, subPath, destMatch[1], req, res); return; }
