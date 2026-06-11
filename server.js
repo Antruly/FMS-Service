@@ -119,6 +119,48 @@ function banIP(ip, reason, durationMinutes) {
   }
 }
 
+// Body parsers（仅在非 WebDAV 路径生效，避免消费 PUT body）
+app.use(function(req, res, next) {
+  if (req.path.indexOf('/webdav') === 0) return next();
+  express.json()(req, res, next);
+});
+app.use(function(req, res, next) {
+  if (req.path.indexOf('/webdav') === 0) return next();
+  express.urlencoded({ extended: true })(req, res, next);
+});
+
+// HTTP 到 HTTPS 重定向（启用 SSL 时）
+if (config.ssl && config.ssl.enabled) {
+  app.use(function(req, res, next) {
+    // 如果不是 HTTPS 请求，重定向到 HTTPS
+    if (!req.secure && req.protocol !== 'https') {
+      var httpsPort = config.ssl.port;
+      var host = req.headers.host.split(':')[0]; // 去掉端口
+      return res.redirect('https://' + host + ':' + httpsPort + req.originalUrl);
+    }
+    next();
+  });
+}
+
+// ==================== Session ====================
+var redisStore = getSessionStore();
+var sessionConfig = {
+  secret: config.SESSION_SECRET,
+  name: config.SESSION_NAME,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: 'lax',     // 防止跨站请求携带 cookie（CSRF 防护）
+    secure: config.ssl && config.ssl.enabled  // HTTPS 时启用 secure
+  }
+};
+if (redisStore) sessionConfig.store = redisStore;
+app.use(session(sessionConfig));
+
+// ==================== 请求频率监控 & 自动封禁 ====================
+// 注意：必须在 Session 之后运行，才能正确识别已登录用户提高限制
 app.use(function(req, res, next) {
   var path = req.path;
   if (path.startsWith('/files/') || path.startsWith('/public/') ||
@@ -155,7 +197,7 @@ app.use(function(req, res, next) {
 
   var isWebDAV = path.startsWith('/webdav/');
   var isApi = path.startsWith('/api/');
-  // 检查是否已登录（有 session userId）
+  // 检查是否已登录（有 session userId）—— 现在 Session 已初始化，可以正确识别
   var isAuthenticated = !!(req.session && req.session.userId);
 
   // 频率阈值配置
@@ -227,46 +269,6 @@ app.use(function(req, res, next) {
   }
   next();
 });
-
-// Body parsers（仅在非 WebDAV 路径生效，避免消费 PUT body）
-app.use(function(req, res, next) {
-  if (req.path.indexOf('/webdav') === 0) return next();
-  express.json()(req, res, next);
-});
-app.use(function(req, res, next) {
-  if (req.path.indexOf('/webdav') === 0) return next();
-  express.urlencoded({ extended: true })(req, res, next);
-});
-
-// HTTP 到 HTTPS 重定向（启用 SSL 时）
-if (config.ssl && config.ssl.enabled) {
-  app.use(function(req, res, next) {
-    // 如果不是 HTTPS 请求，重定向到 HTTPS
-    if (!req.secure && req.protocol !== 'https') {
-      var httpsPort = config.ssl.port;
-      var host = req.headers.host.split(':')[0]; // 去掉端口
-      return res.redirect('https://' + host + ':' + httpsPort + req.originalUrl);
-    }
-    next();
-  });
-}
-
-// ==================== Session ====================
-var redisStore = getSessionStore();
-var sessionConfig = {
-  secret: config.SESSION_SECRET,
-  name: config.SESSION_NAME,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-    httpOnly: true,
-    sameSite: 'lax',     // 防止跨站请求携带 cookie（CSRF 防护）
-    secure: config.ssl && config.ssl.enabled  // HTTPS 时启用 secure
-  }
-};
-if (redisStore) sessionConfig.store = redisStore;
-app.use(session(sessionConfig));
 
 // ==================== 在线状态追踪 ====================
 // 每次认证请求更新用户会话的 lastSeen 时间戳
