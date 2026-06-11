@@ -97,7 +97,7 @@ function handleLock(req, res, resolved) {
         // 资源不存在→创建锁空资源
         var emptyId = createLockNull(resolved.userId, did, fname2);
         _activeLocks[lockToken] = { userId: resolved.userId, dirId: did, fileName: fname2, emptyId: emptyId, expires: now + timeout * 1000 };
-        log.info('[WebDAV-LOCK] Created lock-null resource: ' + fname2 + ' id=' + emptyId + ' token=' + lockToken.substring(0,20));
+        log.debug('[WebDAV-LOCK] Created lock-null resource: ' + fname2 + ' id=' + emptyId + ' token=' + lockToken.substring(0,20));
       } else {
         // 资源已存在→正常锁
         _activeLocks[lockToken] = { userId: resolved.userId, path: resolved.subPath, expires: now + timeout * 1000 };
@@ -125,10 +125,10 @@ function resolveWebDAV(token, subPath, req, res) {
   if (WebDAVLink.checkExpired(link)) { res.status(410).end('Token expired'); return null; }
 
   if ((link.target_type || 'public') === 'personal') {
-    log.info('[WebDAV] PROPFIND personal link, userId=' + link.user_id + ', method=' + req.method);
+    log.debug('[WebDAV] PROPFIND personal link, userId=' + link.user_id + ', method=' + req.method);
     return resolvePersonalWebDAV(link, subPath, req, res);
   }
-  log.info('[WebDAV] PROPFIND public link, target=' + link.target_path + ', method=' + req.method);
+  log.debug('[WebDAV] PROPFIND public link, target=' + link.target_path + ', method=' + req.method);
   return resolvePublicWebDAV(link, subPath, req, res);
 }
 
@@ -283,7 +283,7 @@ function personalPropfind(resolved, subPath, req, res) {
   var quotaTotal = u ? (u.quota_bytes || 0) : 10 * 1024 * 1024 * 1024;
   var quotaUsed = u ? (u.used_bytes || 0) : 0;
   var quotaAvail = Math.max(0, quotaTotal - quotaUsed);
-  log.info('[WebDAV-Personal] quota=' + (quotaTotal/1024/1024/1024).toFixed(2) + 'GB, used=' + (quotaUsed/1024/1024/1024).toFixed(2) + 'GB, avail=' + (quotaAvail/1024/1024/1024).toFixed(2) + 'GB');
+  log.debug('[WebDAV-Personal] quota=' + (quotaTotal/1024/1024/1024).toFixed(2) + 'GB, used=' + (quotaUsed/1024/1024/1024).toFixed(2) + 'GB, avail=' + (quotaAvail/1024/1024/1024).toFixed(2) + 'GB');
 
   // 当前目录（附加用户配额信息）
   var dirStat = { mtime: currentDir ? new Date(currentDir.created_at) : new Date(), size: 0, isDirectory: function() { return true; } };
@@ -361,12 +361,12 @@ function personalGetFile(resolved, subPath, req, res) {
 
   // 解析文件路径
   var storagePath = file.storage_path;
-  log.info('[WebDAV-GET] file=' + file.name + ' storagePath=' + (storagePath||'(empty)') + ' storageId=' + file.storage_id);
+  log.debug('[WebDAV-GET] file=' + file.name + ' storagePath=' + (storagePath||'(empty)') + ' storageId=' + file.storage_id);
   if (!storagePath || !fs.existsSync(storagePath)) {
     // 通过 storage_id 查找
     if (file.storage_id && file.storage_id > 0) {
       var resolved = require('../routes/file').getDecryptedFilePath(file);
-      log.info('[WebDAV-GET] resolved via storage_id: ' + (resolved||'null'));
+      log.debug('[WebDAV-GET] resolved via storage_id: ' + (resolved||'null'));
       if (resolved) storagePath = resolved;
     }
     if (!storagePath || !fs.existsSync(storagePath)) { res.status(404).end('File not on disk'); return; }
