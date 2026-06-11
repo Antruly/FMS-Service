@@ -246,14 +246,73 @@ function personalPropfind(resolved, subPath, req, res) {
   var VirtualFile = require('../lib/db').VirtualFile, VirtualDir = require('../lib/db').VirtualDir;
   var dirId = resolved.rootDirId;
 
-  // 子路径导航：subPath 是目录名路径如 "folder1/subfolder"
+  // 子路径导航：subPath 可能是目录路径或文件路径
+  // Windows WebDAV 客户端会对每个文件单独发 PROPFIND (Depth:0)
+  var depth = (req.headers.depth || 'infinity').toString();
   if (subPath) {
     var parts = subPath.split('/').filter(Boolean);
+    // 先尝试纯目录导航（所有段都是目录）
+    var navDirId = dirId;
+    var allDirs = true;
     for (var i = 0; i < parts.length; i++) {
-      var subDirs = VirtualDir.listPersonalByParent(resolved.userId, dirId);
+      var subDirs = VirtualDir.listPersonalByParent(resolved.userId, navDirId);
       var found = subDirs.find(function(d) { return d.name === decodeURIComponent(parts[i]); });
-      if (!found) { res.status(404).end('Not found'); return; }
-      dirId = found.id;
+      if (!found) { allDirs = false; break; }
+      navDirId = found.id;
+    }
+    if (allDirs) {
+      // 所有段都是目录
+      dirId = navDirId;
+    } else {
+      // 最后一段可能是文件：分开处理
+      var lastPart = decodeURIComponent(parts.pop());
+      for (var j = 0; j < parts.length; j++) {
+        var sds = VirtualDir.listPersonalByParent(resolved.userId, navDirId);
+        var fd = sds.find(function(d) { return d.name === decodeURIComponent(parts[j]); });
+        if (!fd) { res.status(404).end('Not found'); return; }
+        navDirId = fd.id;
+      }
+      // 在最终目录中查找文件
+      var dirFiles = VirtualFile.listByDir(resolved.userId, navDirId);
+      var targetFile = dirFiles.find(function(f) { return f.name === lastPart; });
+      if (targetFile) {
+        // PROPFIND on a single file: 返回文件属性
+        var fileBaseUrl = '/webdav/' + resolved.link.token + '/' + subPath;
+        var User2 = require('../lib/db').User;
+        var fu = User2.findById(resolved.userId);
+        var fQuotaTotal = fu ? (fu.quota_bytes || 0) : 10 * 1024 * 1024 * 1024;
+        var fQuotaUsed = fu ? (fu.used_bytes || 0) : 0;
+        var fQuotaAvail = Math.max(0, fQuotaTotal - fQuotaUsed);
+        var fileXml = '<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">\n';
+        fileXml += buildPropstat(fileBaseUrl, { mtime: new Date(targetFile.created_at || Date.now()), size: targetFile.size, mime: targetFile.mime_type || 'application/octet-stream', isDirectory: function() { return false; } }, false, fQuotaAvail, fQuotaUsed);
+        fileXml += '</D:multistatus>\n';
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        res.status(207).send(fileXml);
+        return;
+      }
+      // 也不是文件 → 检查是否是锁空占位文件
+      var lockFile = null;
+      Object.keys(_activeLocks).forEach(function(lt) {
+        var l = _activeLocks[lt];
+        if (l.fileName && l.userId === resolved.userId && l.dirId === navDirId && l.fileName === lastPart) {
+          lockFile = l;
+        }
+      });
+      if (lockFile) {
+        var lockBaseUrl = '/webdav/' + resolved.link.token + '/' + subPath;
+        var User3 = require('../lib/db').User;
+        var lu = User3.findById(resolved.userId);
+        var lQuotaTotal = lu ? (lu.quota_bytes || 0) : 10 * 1024 * 1024 * 1024;
+        var lQuotaUsed = lu ? (lu.used_bytes || 0) : 0;
+        var lQuotaAvail = Math.max(0, lQuotaTotal - lQuotaUsed);
+        var lockXml = '<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">\n';
+        lockXml += buildPropstat(lockBaseUrl, { mtime: new Date(), size: 0, mime: 'application/octet-stream', isDirectory: function() { return false; } }, false, lQuotaAvail, lQuotaUsed);
+        lockXml += '</D:multistatus>\n';
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        res.status(207).send(lockXml);
+        return;
+      }
+      res.status(404).end('Not found'); return;
     }
   }
 
@@ -290,7 +349,6 @@ function personalPropfind(resolved, subPath, req, res) {
   xml += buildPropstat(baseUrl, dirStat, true, quotaAvail, quotaUsed);
 
   // RFC 4918 9.1: Depth 0 只返回资源本身
-  var depth = (req.headers.depth || 'infinity').toString();
   if (depth !== '0') {
     dirs.forEach(function(d) {
       var href = baseUrl.replace(/\/$/, '') + '/' + encodeURIComponent(d.name);
@@ -339,13 +397,22 @@ function personalGetFile(resolved, subPath, req, res) {
 
   var files = VirtualFile.listByDir(resolved.userId, dirId);
   var file = files.find(function(f) { return f.name === fileName; });
-  // 占位文件：DB里没有但在_activeLocks中
-  if (!file && _activeLocks[resolved.userId + '_' + dirId + '_' + fileName]) {
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Length', '0');
-    res.setHeader('Accept-Ranges', 'bytes');
-    if (req.method === 'HEAD') res.status(200).end(); else res.status(200).end('');
-    return;
+  // 占位文件：DB里没有但在_activeLocks中（遍历查找，handleLock用lockToken作key）
+  if (!file) {
+    var lockEntry = null;
+    Object.keys(_activeLocks).forEach(function(lt) {
+      var l = _activeLocks[lt];
+      if (l.fileName && l.userId === resolved.userId && l.dirId === dirId && l.fileName === fileName) {
+        lockEntry = l;
+      }
+    });
+    if (lockEntry) {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', '0');
+      res.setHeader('Accept-Ranges', 'bytes');
+      if (req.method === 'HEAD') res.status(200).end(); else res.status(200).end('');
+      return;
+    }
   }
   if (!file) {
     // 可能是子目录
@@ -353,7 +420,7 @@ function personalGetFile(resolved, subPath, req, res) {
     var subDir = subDirs.find(function(d) { return d.name === fileName; });
     if (subDir) {
       var newSubPath = subPath ? subPath.replace('/' + encodeURIComponent(fileName), '') + '/' + encodeURIComponent(fileName) : encodeURIComponent(fileName);
-      personalPropfind(resolved, newSubPath, res);
+      personalPropfind(resolved, newSubPath, req, res);
       return;
     }
     res.status(404).end('Not found'); return;
@@ -365,9 +432,9 @@ function personalGetFile(resolved, subPath, req, res) {
   if (!storagePath || !fs.existsSync(storagePath)) {
     // 通过 storage_id 查找
     if (file.storage_id && file.storage_id > 0) {
-      var resolved = require('../routes/file').getDecryptedFilePath(file);
-      log.debug('[WebDAV-GET] resolved via storage_id: ' + (resolved||'null'));
-      if (resolved) storagePath = resolved;
+      var resolvedPath = require('../routes/file').getDecryptedFilePath(file);
+      log.debug('[WebDAV-GET] resolved via storage_id: ' + (resolvedPath||'null'));
+      if (resolvedPath) storagePath = resolvedPath;
     }
     if (!storagePath || !fs.existsSync(storagePath)) { res.status(404).end('File not on disk'); return; }
   }
@@ -476,7 +543,9 @@ function personalPutFile(resolved, subPath, res, req) {
   // 流式写入临时文件（和公共 PUT 一致的方式）
   var tmpPath = path.join(tmpDir, 'webdav_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'));
   var ws = fs.createWriteStream(tmpPath);
-  ws.on('error', function(e) { res.status(500).end(e.message); });
+  var putError = null;
+  ws.on('error', function(e) { putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
+  req.on('error', function(e) { putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
   req.pipe(ws);
 
   ws.on('finish', function() {
@@ -968,7 +1037,8 @@ router.put('/webdav/:token/*', function(req, res) {
     logWebDAV(req, resolved.link, 'upload', path.basename(fullPath), fileStat.size, true);
     res.status(201).end('Created');
   });
-  ws.on('error', function(e) { ''; res.status(500).end(e.message); });
+  ws.on('error', function(e) { if (!res.headersSent) res.status(500).end(e.message); });
+  req.on('error', function(e) { if (!res.headersSent) res.status(500).end(e.message); });
 });
 
 // DELETE - 删除文件或目录
@@ -1027,11 +1097,13 @@ router.all('/webdav/:token/*', function(req, res, next) {
   var subPath = req.params[0] || '';
   var resolved = resolveWebDAV(token, subPath, req, res);
   if (!resolved) return;
-  if (resolved.isPersonal) { personalMove(resolved, subPath, destMatch[2], req, res); return; }
 
+  // 解析目标路径（必须在 isPersonal 分支之前，两边都需要）
   var destHeader = req.headers.destination || '';
   var destMatch = destHeader.match(/\/webdav\/[^/]+\/(.*)/);
   if (!destMatch) { res.status(400).end('Bad destination'); return; }
+
+  if (resolved.isPersonal) { personalMove(resolved, subPath, destMatch[1], req, res); return; }
   var destPath = path.join(resolved.baseDir, decodeURIComponent(destMatch[1]));
 
   if (destPath.indexOf(resolved.baseDir) !== 0) { res.status(403).end('Forbidden'); return; }

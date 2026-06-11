@@ -644,7 +644,7 @@ router.post('/share/save/:hash', requireAuth, function(req, res) {
     }
 
     User.updateUsedBytes(user.id, stat.size);
-    Share.incrementDownload(share.id);
+    ShareStats.incrementDownload(share.id);
 
     log.info('[ShareSave] 公共文件转存: ' + fileName + ' user=' + user.id);
     return res.json({
@@ -700,7 +700,7 @@ router.post('/share/save/:hash', requireAuth, function(req, res) {
     }
 
     User.updateUsedBytes(user.id, file.size);
-    Share.incrementDownload(share.id);
+    ShareStats.incrementDownload(share.id);
 
     log.info('[ShareSave] 个人文件引用转存: ' + file.name + ' storage_id=' + storageId + ' user=' + user.id);
     return res.json({
@@ -737,7 +737,7 @@ router.post('/share/save/:hash', requireAuth, function(req, res) {
     }
 
     User.updateUsedBytes(user.id, file.size);
-    Share.incrementDownload(share.id);
+    ShareStats.incrementDownload(share.id);
 
     log.info('[ShareSave] V1→V2 引用转存: ' + file.name + ' found existing storage_id=' + existingFS.id);
     return res.json({
@@ -884,21 +884,34 @@ router.get('/share/download/:hash/:fileId', function(req, res) {
     ShareAccessLog.log(share.id, 'download', clientIp, downloaderId, downloaderEmail, fileId, file.name);
   } catch(e) {}
 
-  // ===== 第1步：快速获取文件大小（元数据，不加载完整文件）=====
+  // ===== 第1步：解析实际文件路径（处理 V2 引用文件 storage_path 为空的情况）=====
+  var storagePath = file.storage_path;
+  if (!storagePath || !fs.existsSync(storagePath)) {
+    if (file.storage_id && file.storage_id > 0) {
+      var resolvedPath = require('./file').getDecryptedFilePath(file);
+      log.info('[ShareDownload] storage_path 为空,通过 storage_id=' + file.storage_id + ' 解析: ' + (resolvedPath || 'null'));
+      if (resolvedPath) storagePath = resolvedPath;
+    }
+    if (!storagePath || !fs.existsSync(storagePath)) {
+      return res.status(404).json({ code: 404, message: '文件不存在或已被删除', data: null });
+    }
+  }
+
+  // ===== 第2步：快速获取文件大小（元数据，不加载完整文件）=====
   var encVersion = file.enc_version || 0;
   var decryptedSize = 0;
   try {
     if (encVersion === 1) {
-      if (!fs.existsSync(file.storage_path)) throw new Error('文件不存在');
-      var v1Info = getV1FileInfo(file.storage_path);
+      if (!fs.existsSync(storagePath)) throw new Error('文件不存在');
+      var v1Info = getV1FileInfo(storagePath);
       if (!v1Info.isV1) throw new Error('V1格式错误');
       decryptedSize = v1Info.originalSize;
     } else {
-      if (!fs.existsSync(file.storage_path)) throw new Error('文件不存在');
-      var fileSize = fs.statSync(file.storage_path).size;
+      if (!fs.existsSync(storagePath)) throw new Error('文件不存在');
+      var fileSize = fs.statSync(storagePath).size;
       if (fileSize >= 88) {
         var magicBuf = Buffer.alloc(4);
-        var fd = fs.openSync(file.storage_path, 'r');
+        var fd = fs.openSync(storagePath, 'r');
         fs.readSync(fd, magicBuf, 0, 4, 0);
         fs.closeSync(fd);
         var isEncrypted = !(magicBuf.toString('ascii',0,4) === 'ftyp' ||
@@ -947,13 +960,13 @@ router.get('/share/download/:hash/:fileId', function(req, res) {
   var readStream = null;
   try {
     if (encVersion === 1) {
-      readStream = createV1DecryptStream(file.storage_path, 0, decryptedSize - 1);
-    } else if (decryptedSize < fs.statSync(file.storage_path).size) {
+      readStream = createV1DecryptStream(storagePath, 0, decryptedSize - 1);
+    } else if (decryptedSize < fs.statSync(storagePath).size) {
       // 旧加密格式（加密文件比原文件大88字节）
-      var si = createDecryptStream(file.storage_path);
+      var si = createDecryptStream(storagePath);
       readStream = si.readStream;
     } else {
-      readStream = fs.createReadStream(file.storage_path);
+      readStream = fs.createReadStream(storagePath);
     }
   } catch(e) {
     return res.status(500).json({ code: 500, message: '文件流创建失败', data: null });
