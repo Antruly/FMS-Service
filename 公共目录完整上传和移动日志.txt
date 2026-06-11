@@ -1,0 +1,576 @@
+
+D:\tools\fileservice>set SSL_ENABLED=false
+
+D:\tools\fileservice>node server.js
+[Config] 已加载 .env 配置文件
+[Config] 检测到已有数据库: D:\tools\fileservice\data\fileservice.db (1016 KB)
+[Session] 使用 Redis 存储 sessions
+[DB] 检查重复文件名...
+[DB] SQLite 数据库初始化完成
+[Server] 数据库初始化完成
+[Reminder] 定时提醒已启动（每小时检查一次）
+[FileCleanup] 文件清理定时任务已启动 (每天 3:00)，首次在 1 小时后
+[HealthCheck] 存储池健康检查已启动（每分钟）
+[TrafficQuota] 月度自动重置定时器已启动
+[WS] WebSocket 服务器已初始化，路径: /ws
+[HTTPS] 未启用 SSL，请设置环境变量 SSL_ENABLED=true 启用 HTTPS
+文件管理: http://localhost:88
+登录页面: http://localhost:88/login.html
+[HTTP] Server running at http://localhost:88
+[Redis] 连接成功 (DB 15)
+[WS] 用户 1 认证成功，当前连接数: 1
+[WS] 用户 1 认证成功，当前连接数: 2
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=1 subPath=(root) fullPath=D:\tools\fileservice\files\download\webdav
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387811840</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715513856</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:displayname>
+        <D:getlastmodified>2026-06-11T17:29:04.692Z</D:getlastmodified>
+        <D:creationdate>2026-06-04T19:07:28.066Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"odw7iiyk"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:29:04.692Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:29:04.692Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:29:04.692Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387811840</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715513856</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9</D:displayname>
+        <D:getlastmodified>2026-06-11T17:29:04.692Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:28:49.955Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"026kgoie"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:29:04.692Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:29:04.692Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:29:04.692Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=1 subPath=新建文件夹/ fullPath=D:\tools\fileservice\files\download\webdav\新建文件夹\
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/新建文件夹/</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387811840</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715513856</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>新建文件夹</D:displayname>
+        <D:getlastmodified>2026-06-11T17:29:04.692Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:28:49.955Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"ha8m434p"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:29:04.692Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:29:04.692Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:29:04.692Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/新建文件夹/666.txt</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype/>
+        <D:getcontentlength>10</D:getcontentlength>
+        <D:quota-available-bytes>127387811840</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715513856</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>666.txt</D:displayname>
+        <D:getlastmodified>2026-06-11T17:29:02.071Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:29:02.067Z</D:creationdate>
+        <D:getcontenttype>application/octet-stream</D:getcontenttype>
+        <D:iscollection>0</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"it6h1vx2"</D:getetag>
+        <Z:Win32FileAttributes>00000020</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:29:02.071Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:29:02.071Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:29:02.071Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=1 subPath=(root) fullPath=D:\tools\fileservice\files\download\webdav
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387811840</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715513856</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:displayname>
+        <D:getlastmodified>2026-06-11T17:29:04.692Z</D:getlastmodified>
+        <D:creationdate>2026-06-04T19:07:28.066Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"35omk2lb"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:29:04.692Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:29:04.692Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:29:04.692Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387811840</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715513856</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9</D:displayname>
+        <D:getlastmodified>2026-06-11T17:29:04.692Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:28:49.955Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"tmgzccck"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:29:04.692Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:29:04.692Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:29:04.692Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PUT
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=0 subPath=IIS 离线安装web服务.txt fullPath=D:\tools\fileservice\files\download\webdav\IIS 离线安装web服务.txt
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/IIS 离线安装web服务.txt</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype/>
+        <D:getcontentlength>0</D:getcontentlength>
+        <D:displayname>IIS 离线安装web服务.txt</D:displayname>
+        <D:getlastmodified>2026-06-11T17:36:42.638Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:36:42.638Z</D:creationdate>
+        <D:getcontenttype>application/octet-stream</D:getcontenttype>
+        <D:iscollection>0</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"gq1md5qi"</D:getetag>
+        <Z:Win32FileAttributes>00000020</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:36:42.638Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:36:42.638Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:36:42.638Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PUT
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=0 subPath=IIS 离线安装web服务.txt fullPath=D:\tools\fileservice\files\download\webdav\IIS 离线安装web服务.txt
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/IIS 离线安装web服务.txt</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype/>
+        <D:getcontentlength>1202</D:getcontentlength>
+        <D:displayname>IIS 离线安装web服务.txt</D:displayname>
+        <D:getlastmodified>2026-06-11T17:36:42.646Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:36:42.638Z</D:creationdate>
+        <D:getcontenttype>application/octet-stream</D:getcontenttype>
+        <D:iscollection>0</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"lngs7s2h"</D:getetag>
+        <Z:Win32FileAttributes>00000020</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:36:42.646Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:36:42.646Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:36:42.646Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=0 subPath=/ fullPath=D:\tools\fileservice\files\download\webdav\
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t//</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387807744</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715517952</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:displayname>
+        <D:getlastmodified>2026-06-11T17:36:42.638Z</D:getlastmodified>
+        <D:creationdate>2026-06-04T19:07:28.066Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"96wlfhag"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:36:42.638Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:36:42.638Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:36:42.638Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=1 subPath=(root) fullPath=D:\tools\fileservice\files\download\webdav
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387807744</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715517952</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:displayname>
+        <D:getlastmodified>2026-06-11T17:36:42.638Z</D:getlastmodified>
+        <D:creationdate>2026-06-04T19:07:28.066Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"0ngtvi08"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:36:42.638Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:36:42.638Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:36:42.638Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/IIS%20%E7%A6%BB%E7%BA%BF%E5%AE%89%E8%A3%85web%E6%9C%8D%E5%8A%A1.txt</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype/>
+        <D:getcontentlength>1202</D:getcontentlength>
+        <D:quota-available-bytes>127387807744</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715517952</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>IIS%20%E7%A6%BB%E7%BA%BF%E5%AE%89%E8%A3%85web%E6%9C%8D%E5%8A%A1.txt</D:displayname>
+        <D:getlastmodified>2026-06-11T17:36:42.646Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:36:42.638Z</D:creationdate>
+        <D:getcontenttype>application/octet-stream</D:getcontenttype>
+        <D:iscollection>0</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"nfb1go1n"</D:getetag>
+        <Z:Win32FileAttributes>00000020</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:36:42.646Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:36:42.646Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:36:42.646Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387807744</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715517952</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9</D:displayname>
+        <D:getlastmodified>2026-06-11T17:29:04.692Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:28:49.955Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"zab84bvt"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:29:04.692Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:29:04.692Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:29:04.692Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=0 subPath=(root) fullPath=D:\tools\fileservice\files\download\webdav
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>127387807744</D:quota-available-bytes>
+        <D:quota-used-bytes>1544715517952</D:quota-used-bytes>
+        <D:quota-bytes>1672103325696</D:quota-bytes>
+        <D:displayname>mhbswqrA7RAG7xzUapXCjGuAr5mPez3t</D:displayname>
+        <D:getlastmodified>2026-06-11T17:36:42.638Z</D:getlastmodified>
+        <D:creationdate>2026-06-04T19:07:28.066Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"c936yl4u"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:36:42.638Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:36:42.638Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:36:42.638Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+━━━━━━ [MOVE-REQ] ━━━━━━
+[MOVE-REQ] URL: /webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/IIS%20%E7%A6%BB%E7%BA%BF%E5%AE%89%E8%A3%85web%E6%9C%8D%E5%8A%A1.txt
+[MOVE-REQ] Method: MOVE
+[MOVE-REQ] token: mhbswqrA7RAG7xzUapXCjGuAr5mPez3t
+[MOVE-REQ] subPath (req.params[0]): "IIS 离线安装web服务.txt"
+[MOVE-REQ] Destination header (raw): "http://127.0.0.1:88/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/IIS%20%E7%A6%BB%E7%BA%BF%E5%AE%89%E8%A3%85web%E6%9C%8D%E5%8A%A1.txt"
+[MOVE-REQ] Depth: (none)
+[MOVE-REQ] Overwrite: F
+[MOVE-REQ] User-Agent: RaiDrive/2023.9.256.0
+[MOVE-REQ] All headers: {
+  "host": "127.0.0.1:88",
+  "destination": "http://127.0.0.1:88/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/IIS%20%E7%A6%BB%E7%BA%BF%E5%AE%89%E8%A3%85web%E6%9C%8D%E5%8A%A1.txt",
+  "overwrite": "F",
+  "content-length": "0",
+  "cookie": "fileservice.sid=s%3AuJ0KOZ3tMY1yd8FocT48d4ooO3xztoZ-.1Ctlgy8JCdOKaudnxrB3EiHmMA%2FrfpqvvTZR39BloWg",
+  "user-agent": "RaiDrive/2023.9.256.0",
+  "connection": "keep-alive"
+}
+[WebDAV] PROPFIND public link, target=webdav, method=MOVE
+[MOVE-REQ] resolved.isPersonal=false
+[MOVE-REQ] resolved: {"isPersonal":false,"baseDir":"D:\\tools\\fileservice\\files\\download\\webdav","fullPath":"D:\\tools\\fileservice\\files\\download\\webdav\\IIS 离线安装web服务.txt"}
+[MOVE-REQ] destMatch[1] (raw capture): "%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/IIS%20%E7%A6%BB%E7%BA%BF%E5%AE%89%E8%A3%85web%E6%9C%8D%E5%8A%A1.txt"
+[MOVE-REQ] destMatch[1] decoded: "新建文件夹/IIS 离线安装web服务.txt"
+━━━━━━━━━━━━━━━━━━━━━━━━
+[MOVE-PUBLIC] ===== 公共目录 MOVE 开始 =====
+[MOVE-PUBLIC] baseDir: D:\tools\fileservice\files\download\webdav
+[MOVE-PUBLIC] fullPath (源): D:\tools\fileservice\files\download\webdav\IIS 离线安装web服务.txt
+[MOVE-PUBLIC] destPath (目标): D:\tools\fileservice\files\download\webdav\新建文件夹\IIS 离线安装web服务.txt
+[MOVE-PUBLIC] 源文件存在: D:\tools\fileservice\files\download\webdav\IIS 离线安装web服务.txt (size=1202)
+[MOVE-PUBLIC] destDir: D:\tools\fileservice\files\download\webdav\新建文件夹 exists=true
+[MOVE-PUBLIC] ✓ 移动成功 → 201, Location: /webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/IIS%20%E7%A6%BB%E7%BA%BF%E5%AE%89%E8%A3%85web%E6%9C%8D%E5%8A%A1.txt
+[MOVE-PUBLIC] ===== 公共目录 MOVE 结束 =====
+[WebDAV] PROPFIND public link, target=webdav, method=PROPFIND
+[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====
+[PROPFIND-PUBLIC] depth=0 subPath=新建文件夹/IIS 离线安装web服务.txt fullPath=D:\tools\fileservice\files\download\webdav\新建文件夹\IIS 离线安装web服务.txt
+[PROPFIND-PUBLIC] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/mhbswqrA7RAG7xzUapXCjGuAr5mPez3t/新建文件夹/IIS 离线安装web服务.txt</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype/>
+        <D:getcontentlength>1202</D:getcontentlength>
+        <D:displayname>IIS 离线安装web服务.txt</D:displayname>
+        <D:getlastmodified>2026-06-11T17:36:42.646Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T17:36:42.638Z</D:creationdate>
+        <D:getcontenttype>application/octet-stream</D:getcontenttype>
+        <D:iscollection>0</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"o4ev6sn9"</D:getetag>
+        <Z:Win32FileAttributes>00000020</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T17:36:42.646Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T17:36:42.646Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T17:36:42.646Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====
+[WebDAV] PROPFIND personal link, userId=1, method=PROPFIND
+[WebDAV-Personal] quota=10.00GB, used=2.21GB, avail=7.79GB
+[PROPFIND-PERSONAL] ===== 响应 XML 开始 =====
+[PROPFIND-PERSONAL] depth=1 subPath=新建文件夹/ dirId=12
+[PROPFIND-PERSONAL] XML body:
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">
+  <D:response>
+    <D:href>/webdav/SxqapBCGFDumbB8QvpKKFytsPLmpeCBw/新建文件夹/</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:collection/></D:resourcetype>
+        <D:quota-available-bytes>8362087458</D:quota-available-bytes>
+        <D:quota-used-bytes>2375330782</D:quota-used-bytes>
+        <D:quota-bytes>10737418240</D:quota-bytes>
+        <D:displayname>新建文件夹</D:displayname>
+        <D:getlastmodified>2026-06-11T09:30:05.000Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T09:30:05.000Z</D:creationdate>
+        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>
+        <D:iscollection>1</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"zkfc19lk"</D:getetag>
+        <Z:Win32FileAttributes>00000010</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T09:30:05.000Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T09:30:05.000Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T09:30:05.000Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/webdav/SxqapBCGFDumbB8QvpKKFytsPLmpeCBw/新建文件夹/666.txt</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype/>
+        <D:getcontentlength>10</D:getcontentlength>
+        <D:quota-available-bytes>8362087458</D:quota-available-bytes>
+        <D:quota-used-bytes>2375330782</D:quota-used-bytes>
+        <D:quota-bytes>10737418240</D:quota-bytes>
+        <D:displayname>666.txt</D:displayname>
+        <D:getlastmodified>2026-06-11T09:30:09.000Z</D:getlastmodified>
+        <D:creationdate>2026-06-11T09:30:09.000Z</D:creationdate>
+        <D:getcontenttype>text/plain</D:getcontenttype>
+        <D:iscollection>0</D:iscollection>
+        <D:ishidden>0</D:ishidden>
+        <D:isreadonly>0</D:isreadonly>
+        <D:isroot>0</D:isroot>
+        <D:getetag>"ymv8wp3w"</D:getetag>
+        <Z:Win32FileAttributes>00000020</Z:Win32FileAttributes>
+        <Z:Win32CreationTime>2026-06-11T09:30:09.000Z</Z:Win32CreationTime>
+        <Z:Win32LastAccessTime>2026-06-11T09:30:09.000Z</Z:Win32LastAccessTime>
+        <Z:Win32LastModifiedTime>2026-06-11T09:30:09.000Z</Z:Win32LastModifiedTime>
+        <D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry></D:supportedlock>
+        <D:lockdiscovery/>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>
+
+[PROPFIND-PERSONAL] ===== 响应 XML 结束 =====
