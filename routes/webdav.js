@@ -334,6 +334,11 @@ function personalPropfind(resolved, subPath, req, res) {
   }
   var baseUrl = '/webdav/' + resolved.link.token + (subPath ? '/' + subPath : '');
 
+  log.debug('[WebDAV-PROPFIND] dirId=' + dirId + ' subPath="' + (subPath||'') + '" dirs=' + dirs.length + ' files=' + files.length);
+  if (files.length > 0) {
+    log.debug('[WebDAV-PROPFIND] files in dirId=' + dirId + ': ' + files.slice(0,5).map(function(f){ return '"' + f.name + '" (id=' + f.id + ')'; }).join(', '));
+  }
+
   var xml = '<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:" xmlns:Z="urn:schemas-microsoft-com:">\n';
 
   // 获取用户配额信息
