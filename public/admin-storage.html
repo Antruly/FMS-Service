@@ -348,6 +348,7 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
     <div class="section-header">
       <h2>📁 文件引用浏览器</h2>
       <button class="btn btn-outline btn-sm" onclick="loadDuplicates()">📋 查看重复文件</button>
+      <button class="btn btn-outline btn-sm" onclick="loadLostFilesSimple()">⚠️ 查看丢失文件</button>
     </div>
     <div class="search-bar">
       <input type="text" id="file-search" placeholder="搜索哈希值或UUID..." onkeyup="if(event.key==='Enter')loadFiles(0)">
@@ -1116,6 +1117,36 @@ function loadDuplicates(){
       html+='</div></div>';
     });
     html+='</div>';
+    container.innerHTML=html;
+  });
+}
+
+function loadLostFilesSimple(){
+  var container=$('duplicates-container');
+  container.innerHTML='<div class="empty">加载中...</div>';
+  api('/api/admin/storage/lost-files').then(function(r){
+    if(r.code!==0){container.innerHTML='';return}
+    var d=r.data;
+    var all=[];
+    if(d.physical&&d.physical.files) all=all.concat(d.physical.files.map(function(f){f._type='物理丢失';f._cls='danger';return f}));
+    if(d.logical&&d.logical.files) all=all.concat(d.logical.files.map(function(f){f._type='逻辑丢失';f._cls='warn';return f}));
+    if(all.length===0){
+      container.innerHTML='<div class="section" style="margin-top:12px"><div class="section-header"><h2>⚠️ 丢失文件</h2></div><div class="empty">✅ 没有丢失文件</div></div>';
+      return;
+    }
+    var html='<div class="section" style="margin-top:12px"><div class="section-header"><h2>⚠️ 丢失文件 ('+all.length+'个)</h2><span style="font-size:11px;color:var(--text-muted)">物理丢失:'+(d.physical?d.physical.count:0)+' | 逻辑丢失:'+(d.logical?d.logical.count:0)+'</span></div>';
+    html+='<div class="table-wrap"><table><thead><tr><th>ID</th><th>UUID</th><th>类型</th><th>大小</th><th>引用</th><th>创建时间</th></tr></thead><tbody>';
+    all.forEach(function(f){
+      html+='<tr>';
+      html+='<td>#'+f.id+'</td>';
+      html+='<td><code style="font-size:10px">'+escHtml((f.uuid||'').substring(0,14))+'</code></td>';
+      html+='<td><span style="color:var(--'+f._cls+');font-weight:600">'+f._type+'</span></td>';
+      html+='<td>'+formatBytes(f.size||0)+'</td>';
+      html+='<td>'+f.ref_count+'</td>';
+      html+='<td style="font-size:11px;color:var(--text-muted)">'+escHtml((f.created_at||'').substring(0,10))+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div></div>';
     container.innerHTML=html;
   });
 }
