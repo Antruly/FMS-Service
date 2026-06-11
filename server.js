@@ -306,7 +306,7 @@ app.use(function(req, res, next) {
   // 跳过公开 API（它们在登录前调用，没有 session）
   var publicPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/send-register-code',
                      '/api/auth/send-login-code', '/api/auth/send-reset-code', '/api/auth/reset-password',
-                     '/api/auth/qr-login/', '/api/share', '/api/offline/', '/api/admin/',
+                     '/api/auth/qr-login/', '/api/auth/captcha/', '/api/share', '/api/offline/', '/api/admin/',
                      '/api/files/upload', '/api/public-files/upload', '/api/auth/logout'];
   for (var i = 0; i < publicPaths.length; i++) {
     if (req.path.startsWith(publicPaths[i])) {
