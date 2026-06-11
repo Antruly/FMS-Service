@@ -540,19 +540,22 @@ function personalPutFile(resolved, subPath, res, req) {
   }
   if (!fileName) { res.status(400).end('Filename required'); return; }
 
-  // 流式写入临时文件（和公共 PUT 一致的方式）
+  // 流式写入临时文件 + 增量计算 SHA256（避免 finish 后全量 fs.readFileSync）
   var tmpPath = path.join(tmpDir, 'webdav_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'));
   var ws = fs.createWriteStream(tmpPath);
   var putError = null;
+  var hash = crypto.createHash('sha256');
+  var totalBytes = 0;
+  req.on('data', function(chunk) { totalBytes += chunk.length; hash.update(chunk); });
   ws.on('error', function(e) { putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
   req.on('error', function(e) { putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
   req.pipe(ws);
 
   ws.on('finish', function() {
+    if (putError) return;
+    var mimeType = require('mime-types').lookup(fileName) || 'application/octet-stream';
+    var fileHash = hash.digest('hex');
     try {
-      var buf = fs.readFileSync(tmpPath); fs.unlinkSync(tmpPath);
-      var mimeType = require('mime-types').lookup(fileName) || 'application/octet-stream';
-
       // 检查同名文件
       var existing = VirtualFile.listByDir(resolved.userId, dirId).find(function(f) { return f.name === fileName; });
       if (existing) {
@@ -560,47 +563,51 @@ function personalPutFile(resolved, subPath, res, req) {
           try { fs.unlinkSync(existing.storage_path); } catch(e) {}
           require('../lib/db').run('DELETE FROM virtual_files WHERE id = ?', [existing.id]);
         } else {
-          var RecycleBin = require('../lib/db').RecycleBin;
-          var UserOld = require('../lib/db').User;
-          UserOld.updateUsedBytes(resolved.userId, -existing.size);
-          RecycleBin.moveFile(existing.id, resolved.userId);
+          require('../lib/db').RecycleBin.moveFile(existing.id, resolved.userId);
+          require('../lib/db').User.updateUsedBytes(resolved.userId, -existing.size);
         }
       }
 
-      // V1 AES 加密
-      var fileUuid = crypto.randomUUID();
-      var storagePath = Storage.getFilePath(resolved.userId, fileUuid);
-      var encResult = cryptoLib.createV1EncryptStreamSync(storagePath, buf);
-      if (!encResult.ok) { res.status(500).end('Encrypt error'); return; }
-
-      // 哈希 + 存储
-      var fileHash = crypto.createHash('sha256').update(buf).digest('hex');
+      // 哈希秒传检测（在加密前，节省计算）
       var FileStorage = require('../lib/db').FileStorage;
       var UserFileRef = require('../lib/db').UserFileRef;
-      var existingFS = FileStorage.findByHashAndSize(fileHash, buf.length);
-      var storageId;
-
+      var existingFS = FileStorage.findByHashAndSize(fileHash, totalBytes);
       if (existingFS && FileStorage.hasValidPath(existingFS.id)) {
-        storageId = existingFS.id;
-        FileStorage.incrementRef(storageId);
-        UserFileRef.create(resolved.userId, storageId, dirId, fileName, mimeType);
-        try { fs.unlinkSync(storagePath); } catch(e) {}
-      } else {
-        storageId = FileStorage.create(fileUuid, fileHash, buf.length, buf.length, 1, true, encResult.nonce);
-        require('../lib/db').run('UPDATE file_storage SET group_id=(SELECT group_id FROM storage_pools WHERE status=? ORDER BY group_id,mirror_index LIMIT 1) WHERE id=?', ['active', storageId]);
-        var wPool = require('../lib/db').get('SELECT id,local_path FROM storage_pools WHERE status=? ORDER BY group_id,mirror_index LIMIT 1', ['active']);
-        var relP = (wPool&&wPool.local_path) ? require('path').relative(wPool.local_path, storagePath).replace(/\\/g,'/') : storagePath.replace(/\\/g,'/');
-        FileStorage.addPath(storageId, wPool?wPool.id:1, relP, relP);
-        UserFileRef.create(resolved.userId, storageId, dirId, fileName, mimeType);
+        // 秒传：文件已存在，直接引用
+        try { fs.unlinkSync(tmpPath); } catch(e) {}
+        FileStorage.incrementRef(existingFS.id);
+        UserFileRef.create(resolved.userId, existingFS.id, dirId, fileName, mimeType);
+        var vfId2 = VirtualFile.createWithEncVersion(resolved.userId, dirId, fileName, totalBytes, mimeType, '', '', 1);
+        if (vfId2) require('../lib/db').run('UPDATE virtual_files SET storage_id=? WHERE id=?', [existingFS.id, vfId2]);
+        require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
+        cacheInvalidate(resolved.userId, dirId);
+        logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
+        log.info('[WebDAV-PUT] 秒传命中: ' + fileName + ' hash=' + fileHash.substring(0,12));
+        res.status(201).end('Created');
+        return;
       }
 
-      var vfId = VirtualFile.createWithEncVersion(resolved.userId, dirId, fileName, buf.length, mimeType, storagePath, fileUuid, 1);
+      // V1 分块流式加密（使用 createV1EncryptStreamLarge，按4MB块读写，内存友好）
+      var fileUuid = crypto.randomUUID();
+      var storagePath = Storage.getFilePath(resolved.userId, fileUuid);
+      var encResult = cryptoLib.createV1EncryptStreamLarge(tmpPath, storagePath);
+      try { fs.unlinkSync(tmpPath); } catch(e) {}
+      if (!encResult.ok) { res.status(500).end('Encrypt error: ' + (encResult.error || '')); return; }
+
+      // 创建存储记录
+      var storageId = FileStorage.create(fileUuid, fileHash, totalBytes, totalBytes, 1, true, encResult.nonce);
+      require('../lib/db').run('UPDATE file_storage SET group_id=(SELECT group_id FROM storage_pools WHERE status=? ORDER BY group_id,mirror_index LIMIT 1) WHERE id=?', ['active', storageId]);
+      var wPool = require('../lib/db').get('SELECT id,local_path FROM storage_pools WHERE status=? ORDER BY group_id,mirror_index LIMIT 1', ['active']);
+      var relP = (wPool&&wPool.local_path) ? require('path').relative(wPool.local_path, storagePath).replace(/\\/g,'/') : storagePath.replace(/\\/g,'/');
+      FileStorage.addPath(storageId, wPool?wPool.id:1, relP, relP);
+      UserFileRef.create(resolved.userId, storageId, dirId, fileName, mimeType);
+
+      var vfId = VirtualFile.createWithEncVersion(resolved.userId, dirId, fileName, totalBytes, mimeType, storagePath, fileUuid, 1);
       if (vfId) require('../lib/db').run('UPDATE virtual_files SET storage_id=? WHERE id=?', [storageId, vfId]);
 
-      var User2 = require('../lib/db').User;
-      User2.updateUsedBytes(resolved.userId, buf.length);
+      require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
       cacheInvalidate(resolved.userId, dirId);
-      logWebDAV(req, resolved.link, 'upload', fileName, buf.length, true);
+      logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
       res.status(201).end('Created');
     } catch(e) {
       log.error('[WebDAV-PUT] Error:', e.message);
