@@ -418,6 +418,7 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
     <div class="btn-group" style="margin-top:12px">
       <button class="btn btn-primary" id="btn-migrate" onclick="startMigration()">📦 批量迁移 (10个)</button>
       <button class="btn btn-info" id="btn-auto-migrate" onclick="startAutoMigration()">🚀 自动迁移全部</button>
+      <button class="btn btn-outline" id="btn-retry-failed" onclick="retryFailed()" style="color:var(--danger);border-color:var(--danger);display:none">🔄 重试失败文件</button>
     </div>
   </div>
 </div>
@@ -1212,6 +1213,8 @@ function loadMigrationStatus(){
     $('mig-failed').textContent=d.failed||0;
     $('mig-progress').style.width=(d.progress||0)+'%';
     $('mig-pct').textContent=d.progress||0;
+    // 重试失败按钮：有失败文件时显示
+    $('btn-retry-failed').style.display=(d.failed>0)?'':'none';
     if(d.pending===0){
       $('btn-migrate').disabled=true;
       $('btn-auto-migrate').disabled=true;
@@ -1225,6 +1228,27 @@ function startMigration(){
     toast(r.message,'ok');loadMigrationStatus();loadTasks();
     btn.disabled=false;btn.textContent='📦 批量迁移 (10个)';
   }).catch(function(){btn.disabled=false;btn.textContent='📦 批量迁移 (10个)'});
+}
+
+function retryFailed(){
+  if(!confirm('确定要重试所有迁移失败的文件吗？将重置失败状态并自动迁移。'))return;
+  var btn=$('btn-retry-failed');btn.disabled=true;btn.textContent='⏳ 重试中...';
+  api('/api/admin/storage/retry-failed',{},'post').then(function(r){
+    toast(r.message,'ok');
+    loadMigrationStatus();loadTasks();
+    var poll=setInterval(function(){
+      loadTasks();loadMigrationStatus();
+      api('/api/admin/tasks?limit=1').then(function(tr){
+        var tasks=tr.data.tasks||[];
+        var running=tasks.filter(function(t){return (t.type==='auto_migrate'||t.type==='auto_upgrade')&&(t.status==='running'||t.status==='pending')});
+        if(running.length===0){
+          clearInterval(poll);
+          btn.disabled=false;btn.textContent='🔄 重试失败文件';
+          toast('重试完成','ok');loadMigrationStatus();loadTasks();
+        } else { btn.textContent='⏳ 迁移中...'; }
+      });
+    },3000);
+  }).catch(function(){btn.disabled=false;btn.textContent='🔄 重试失败文件'});
 }
 
 function startAutoMigration(){

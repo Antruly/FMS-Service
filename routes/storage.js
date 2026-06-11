@@ -728,6 +728,70 @@ router.get('/admin/storage/migration-status', requireAdmin, function(req, res) {
   });
 });
 
+// POST /api/admin/storage/reset-failed — 重置迁移失败文件为待迁移状态
+router.post('/admin/storage/reset-failed', requireAdmin, function(req, res) {
+  var db = require('../lib/db');
+  var count = db.get(
+    "SELECT COUNT(*) as cnt FROM virtual_files WHERE migration_status = -1"
+  );
+  if (!count || count.cnt === 0) {
+    return res.json({ code: 0, message: '没有迁移失败的文件', data: { reset: 0 } });
+  }
+  db.run(
+    "UPDATE virtual_files SET migration_status = 0 WHERE migration_status = -1"
+  );
+  log.info('[Migration] 已重置 ' + count.cnt + ' 个失败文件为待迁移');
+  res.json({ code: 0, message: '已重置 ' + count.cnt + ' 个失败文件', data: { reset: count.cnt } });
+});
+
+// 一键重置失败并自动迁移全部
+router.post('/admin/storage/retry-failed', requireAdmin, function(req, res) {
+  var db = require('../lib/db');
+  var resetCount = db.get(
+    "SELECT COUNT(*) as cnt FROM virtual_files WHERE migration_status = -1"
+  );
+  if (!resetCount || resetCount.cnt === 0) {
+    return res.json({ code: 0, message: '没有迁移失败的文件', data: { reset: 0 } });
+  }
+  db.run(
+    "UPDATE virtual_files SET migration_status = 0 WHERE migration_status = -1"
+  );
+  log.info('[Migration] 重试失败文件: ' + resetCount.cnt + ' 个');
+
+  // 触发自动迁移任务（复用现有逻辑）
+  var totalPending = db.get(
+    "SELECT COUNT(*) as cnt FROM virtual_files WHERE (storage_id IS NULL OR storage_id = 0) AND enc_version >= 1 AND (migration_status IS NULL OR migration_status = 0)"
+  );
+
+  if (!totalPending || totalPending.cnt === 0) {
+    return res.json({ code: 0, message: '已重置但没有待迁移文件', data: { reset: resetCount.cnt } });
+  }
+
+  var AsyncTask = require('../lib/db').AsyncTask;
+  var taskId = AsyncTask.create('auto_migrate', '迁移失败文件重试 (' + totalPending.cnt + ' 个)');
+
+  processBatch(taskId, function(err) {
+    if (err) {
+      AsyncTask.complete(taskId, 'failed', err);
+    } else {
+      AsyncTask.complete(taskId, 'completed', '迁移完成');
+    }
+  });
+
+  res.json({ code: 0, message: '已开始重试 ' + totalPending.cnt + ' 个文件', data: { reset: resetCount.cnt, pending: totalPending.cnt } });
+
+  function processBatch(taskId, done) {
+    var files = db.query(
+      "SELECT * FROM virtual_files WHERE (storage_id IS NULL OR storage_id = 0) AND enc_version >= 1 AND (migration_status IS NULL OR migration_status = 0) ORDER BY id LIMIT 5"
+    );
+    if (files.length === 0) return done(null);
+    migrateFileBatch(files, function(m, e) {
+      AsyncTask.update(taskId, m, e);
+      processBatch(taskId, done);
+    });
+  }
+});
+
 // POST /api/admin/storage/migrate — 批量迁移旧文件（异步处理）
 router.post('/admin/storage/migrate', requireAdmin, function(req, res) {
   var batchSize = parseInt(req.body.batch_size, 10) || 10;
