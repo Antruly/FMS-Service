@@ -694,6 +694,15 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
     var VirtualFile = require('../lib/db').VirtualFile, VirtualDir = require('../lib/db').VirtualDir;
     var dirId = resolved.rootDirId;
 
+    // 诊断：检查根目录是否存在及其中内容
+    var rootDir = VirtualDir.findById(resolved.rootDirId);
+    var rootFiles = VirtualFile.listByDir(resolved.userId, resolved.rootDirId);
+    var rootSubDirs = VirtualDir.listPersonalByParent(resolved.userId, resolved.rootDirId);
+    log.debug('[WebDAV-MOVE] rootDirId=' + resolved.rootDirId + ' rootExists=' + !!rootDir + ' rootFiles=' + rootFiles.length + ' rootSubDirs=' + rootSubDirs.length);
+    if (rootSubDirs.length > 0) {
+      log.debug('[WebDAV-MOVE] root subdirs: ' + rootSubDirs.map(function(d){ return '"' + d.name + '" (id=' + d.id + ')'; }).join(', '));
+    }
+
     // destSubPath 来自 Destination 头（原始 HTTP 头，未URL解码），需要解码
     var destDecoded = decodeURIComponent(destSubPath);
     var destParts = destDecoded.split('/').filter(Boolean);
