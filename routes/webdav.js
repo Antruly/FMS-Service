@@ -723,6 +723,11 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
 
     // 查找源文件/目录
     var files = VirtualFile.listByDir(resolved.userId, dirId);
+    // 诊断日志：列出目录中所有文件名和请求名，排查编码/空格不匹配
+    log.debug('[WebDAV-MOVE] Looking for "' + srcName + '" (' + srcName.length + ' chars) in dirId=' + dirId + ' userId=' + resolved.userId + ' files count=' + files.length);
+    if (files.length > 0) {
+      log.debug('[WebDAV-MOVE] First 5 files in dirId=' + dirId + ': ' + files.slice(0,5).map(function(f){ return '"' + f.name + '" (' + f.name.length + ' chars)'; }).join(', '));
+    }
     var file = files.find(function(f) { return f.name === srcName; });
     if (file) {
       require('../lib/db').run('UPDATE virtual_files SET dir_id = ?, name = ?, updated_at = datetime("now") WHERE id = ?',
