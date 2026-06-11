@@ -353,11 +353,31 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
     <div class="search-bar">
       <input type="text" id="file-search" placeholder="搜索哈希值或UUID..." onkeyup="if(event.key==='Enter')loadFiles(0)">
       <button class="btn btn-primary btn-sm" onclick="loadFiles(0)">🔍 搜索</button>
+      <select id="file-filter" onchange="loadFiles(0)" style="margin-left:8px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+        <option value="">全部文件</option>
+        <option value="zero_ref">零引用 (ref≤0)</option>
+        <option value="no_paths">逻辑丢失 (无路径)</option>
+        <option value="physical_lost">物理丢失 (文件不可达)</option>
+        <option value="lost">全部丢失</option>
+      </select>
+    </div>
+    <!-- 批量选择工具栏 -->
+    <div class="cleanup-toolbar" id="cleanup-toolbar" style="margin:8px 0;padding:8px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:600;color:var(--text-muted)">批量选择:</span>
+      <button class="btn btn-outline btn-xs" onclick="selectByStatus('zero_ref')">引用≤0</button>
+      <button class="btn btn-outline btn-xs" onclick="selectByStatus('physical_lost')">物理丢失</button>
+      <button class="btn btn-outline btn-xs" onclick="selectByStatus('logical_lost')">逻辑丢失</button>
+      <button class="btn btn-outline btn-xs" onclick="selectByStatus('all')">全选当前页</button>
+      <button class="btn btn-outline btn-xs" onclick="clearAllCheckboxes()">取消全选</button>
+      <span style="flex:1"></span>
+      <span id="cleanup-count" style="font-size:12px;color:var(--accent);font-weight:600">已选: 0</span>
+      <button class="btn btn-danger btn-xs" id="btn-exec-cleanup" onclick="executeCleanup()" disabled>🗑️ 执行清理</button>
+      <button class="btn btn-outline btn-xs" onclick="clearCleanupList()">清空列表</button>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ID</th><th>UUID</th><th>相对路径</th><th>组</th><th>大小</th><th>引用</th><th>引用用户</th><th>操作</th></tr></thead>
-        <tbody id="file-table-body"><tr><td colspan="8" class="empty">点击搜索查看文件</td></tr></tbody>
+        <thead><tr><th style="width:30px"><input type="checkbox" id="check-all-files" onchange="toggleAllCheckboxes(this.checked)" title="全选当前页"></th><th>ID</th><th>UUID</th><th>相对路径</th><th>组</th><th>大小</th><th>引用</th><th>状态</th><th>引用用户</th><th>操作</th></tr></thead>
+        <tbody id="file-table-body"><tr><td colspan="10" class="empty">点击搜索查看文件</td></tr></tbody>
       </table>
     </div>
     <div class="pagination" id="file-pagination"></div>
@@ -996,35 +1016,151 @@ function submitAddMirror(){
 
 // ==================== FMS ====================
 var filePage=0;
+// 待清理列表（跨页面持久，存 storage_id）
+var cleanupSet = new Set();
+
+var STATUS_MAP = {
+  normal:    { label:'正常',     color:'var(--ok)',   bg:'' },
+  zero_ref:  { label:'零引用',   color:'#b8860b',      bg:'#fff8dc' },
+  physical_lost: { label:'物理丢失', color:'#d2691e', bg:'#fff0e0' },
+  logical_lost:  { label:'逻辑丢失', color:'#c00',    bg:'#ffe0e0' },
+  cleaned:   { label:'已清理',   color:'var(--text-muted)', bg:'#f0f0f0' }
+};
+
 function loadFiles(page){
   filePage=page||0;
   var search=$('file-search').value.trim();
-  api('/api/admin/storage/files',{search:search,limit:20,offset:filePage*20}).then(function(r){
+  var filter=$('file-filter').value;
+  var params={search:search,limit:20,offset:filePage*20};
+  if(filter)params.filter=filter;
+  api('/api/admin/storage/files',params).then(function(r){
     if(r.code!==0)return;
     var d=r.data,html='';
     if(!d.files||d.files.length===0){
-      html='<tr><td colspan="8" class="empty">没有找到文件</td></tr>';
+      html='<tr><td colspan="10" class="empty">没有找到文件</td></tr>';
     }else{
       d.files.forEach(function(f){
-        html+='<tr>';
+        var st=STATUS_MAP[f.status]||STATUS_MAP.normal;
+        var checked=cleanupSet.has(f.id)?' checked':'';
+        var rowStyle=st.bg?' style="background:'+st.bg+'"':'';
+        html+='<tr'+rowStyle+'>';
+        html+='<td><input type="checkbox" class="file-checkbox" data-id="'+f.id+'" data-status="'+f.status+'" '+checked+' onchange="onCheckboxChange()"></td>';
         html+='<td>'+f.id+'</td>';
         html+='<td class="mono" title="'+escHtml(f.uuid)+'">'+escHtml((f.uuid||'').substring(0,12))+'...</td>';
         html+='<td class="mono" title="'+escHtml(f.rel_path||'')+'">'+escHtml((f.rel_path||'').substring(0,35))+'</td>';
         html+='<td><span class="badge badge-gray">#'+f.group_id+'</span></td>';
         html+='<td>'+formatBytes(f.file_size)+'</td>';
         html+='<td><strong>'+f.ref_count+'</strong></td>';
+        html+='<td><span style="font-size:11px;font-weight:600;color:'+st.color+'">'+st.label+(f.path_count>0&&f.status!=='cleaned'?' ('+f.path_count+'镜像)':'')+'</span></td>';
         html+='<td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(f.ref_users||'')+'">'+escHtml(f.ref_users||'-')+'</td>';
         html+='<td><button class="btn btn-outline btn-xs" onclick="showFileDetail('+f.id+')">详情</button></td>';
         html+='</tr>';
       });
     }
     $('file-table-body').innerHTML=html;
+    $('check-all-files').checked=false;
     var totalPages=Math.ceil((d.total||0)/20);
     var ph='';
     if(filePage>0)ph+='<button class="btn btn-outline btn-sm" onclick="loadFiles('+(filePage-1)+')">◀ 上一页</button>';
     ph+='<span style="padding:4px 12px;font-size:12px;color:var(--text-muted)">'+(filePage+1)+' / '+totalPages+' (共'+d.total+'条)</span>';
     if(filePage<totalPages-1)ph+='<button class="btn btn-outline btn-sm" onclick="loadFiles('+(filePage+1)+')">下一页 ▶</button>';
     $('file-pagination').innerHTML=ph;
+    updateCleanupUI();
+  });
+}
+
+// ==================== 清理列表管理 ====================
+function onCheckboxChange(){
+  var cbs=document.querySelectorAll('.file-checkbox');
+  cbs.forEach(function(cb){
+    var id=parseInt(cb.getAttribute('data-id'));
+    if(cb.checked)cleanupSet.add(id);else cleanupSet.delete(id);
+  });
+  updateCleanupUI();
+}
+
+function toggleAllCheckboxes(checked){
+  var cbs=document.querySelectorAll('.file-checkbox');
+  cbs.forEach(function(cb){
+    cb.checked=checked;
+    var id=parseInt(cb.getAttribute('data-id'));
+    if(checked)cleanupSet.add(id);else cleanupSet.delete(id);
+  });
+  updateCleanupUI();
+}
+
+function clearAllCheckboxes(){
+  var cbs=document.querySelectorAll('.file-checkbox');
+  cbs.forEach(function(cb){cb.checked=false;});
+  cbs.forEach(function(cb){
+    var id=parseInt(cb.getAttribute('data-id'));
+    cleanupSet.delete(id);
+  });
+  $('check-all-files').checked=false;
+  updateCleanupUI();
+}
+
+function selectByStatus(status){
+  var cbs=document.querySelectorAll('.file-checkbox');
+  if(status==='all'){
+    cbs.forEach(function(cb){
+      cb.checked=true;
+      cleanupSet.add(parseInt(cb.getAttribute('data-id')));
+    });
+    $('check-all-files').checked=true;
+  }else{
+    cbs.forEach(function(cb){
+      if(cb.getAttribute('data-status')===status){
+        cb.checked=true;
+        cleanupSet.add(parseInt(cb.getAttribute('data-id')));
+      }
+    });
+  }
+  updateCleanupUI();
+}
+
+function clearCleanupList(){
+  cleanupSet.clear();
+  clearAllCheckboxes();
+  updateCleanupUI();
+}
+
+function updateCleanupUI(){
+  var cnt=cleanupSet.size;
+  $('cleanup-count').textContent='已选: '+cnt;
+  $('btn-exec-cleanup').disabled=(cnt===0);
+  // 同步当前页的checkbox状态
+  var cbs=document.querySelectorAll('.file-checkbox');
+  cbs.forEach(function(cb){
+    cb.checked=cleanupSet.has(parseInt(cb.getAttribute('data-id')));
+  });
+}
+
+function executeCleanup(){
+  if(cleanupSet.size===0){toast('请先选择要清理的文件');return;}
+  var ids=Array.from(cleanupSet);
+  if(!confirm('确定要清理 '+ids.length+' 个文件的物理存储吗？\n\n⚠️ 此操作不可逆！物理文件将被永久删除。\n• 逻辑文件记录保留，用户仍可看到文件名\n• 但文件将无法下载（显示为失效文件）\n• 需要用户手动删除失效的逻辑文件'))return;
+
+  var btn=$('btn-exec-cleanup');
+  btn.disabled=true;btn.textContent='提交中...';
+  api('/api/admin/storage/cleanup',{storage_ids:ids},'POST').then(function(r){
+    btn.disabled=false;btn.textContent='🗑️ 执行清理';
+    if(r.code===0){
+      toast('清理任务已启动! 任务ID: '+r.data.task_id+' 文件数: '+r.data.total,'ok');
+      cleanupSet.clear();
+      updateCleanupUI();
+      // 刷新列表
+      setTimeout(function(){loadFiles(filePage);},500);
+      // 提示查看任务
+      setTimeout(function(){
+        if(confirm('清理任务已创建，是否跳转到任务列表查看进度？')){
+          goToTab('tasks');
+          loadTasks();
+        }
+      },1000);
+    }else{
+      toast('清理失败: '+r.message,'err');
+    }
   });
 }
 

@@ -1100,7 +1100,7 @@
   var HASH_VIEWS = [
     'files', 'share', 'profile', 'change-password', 'offline', 'webdav', 'admin-storage',
     'admin-users', 'admin-logs', 'admin-files', 'admin-shares', 'admin-blacklist',
-    'admin-traffic', 'admin-version', 'about'
+    'admin-traffic', 'admin-version', 'admin-rate-limit', 'about'
   ];
 
   function setHash(name) {
@@ -1115,7 +1115,7 @@
   function restoreFromHash(hash) {
     // 移除可能的子路径（如 files/personal → files）
     var viewName = hash.split('/')[0];
-    var adminViews = ['admin-users','admin-logs','admin-files','admin-shares','admin-blacklist','admin-traffic','admin-version','admin-storage'];
+    var adminViews = ['admin-users','admin-logs','admin-files','admin-shares','admin-blacklist','admin-traffic','admin-version','admin-storage','admin-rate-limit'];
     if (adminViews.indexOf(viewName) !== -1 && !state.isAdmin) {
       // 非管理员无法访问管理视图，更新 URL 再切回文件
       setHash('files');
@@ -1223,6 +1223,10 @@
         if (panelTitle) panelTitle.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 版本管理';
         updateNavHighlight('admin-version', state.dirType);
         loadAdminVersions();
+      } else if (name === 'admin-rate-limit') {
+        if (panelTitle) panelTitle.innerHTML = '⏱ 频率限制';
+        updateNavHighlight('admin-rate-limit', state.dirType);
+        loadAdminRateLimit();
       } else if (name === 'offline') {
         if (panelTitle) panelTitle.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 离线下载';
         updateNavHighlight('offline', state.dirType);
@@ -1835,7 +1839,7 @@
       var ext = !item.isDirectory ? getFileExt(item.name) : '';
       var displayName = item.name != null ? String(item.name) : '';
       var isSelected = state.selectedFiles.indexOf(String(item.id)) !== -1;
-      var card = el('div', 'file-card' + (isSelected ? ' selected' : ''));
+      var card = el('div', 'file-card' + (isSelected ? ' selected' : '') + (item.is_broken ? ' broken' : ''));
       card.dataset.fileId = String(item.id);
       card.style.animationDelay = (i * 0.04) + 's';
 
@@ -1901,12 +1905,13 @@
       card.innerHTML =
         '<div class="hover-shimmer"></div>' +
         (!item.isDirectory && ext ? '<div class="card-badge">' + escapeAttr(ext) + '</div>' : '') +
+        (item.is_broken ? '<div class="card-broken-overlay" title="文件已失效，无法下载">💔 已失效</div>' : '') +
         '<div class="card-check-wrap' + (state.isSelectionMode ? '' : ' hidden-check') + '">' +
           '<div class="checkbox' + (isSelected ? ' checked' : '') + '"></div>' +
         '</div>' +
         '<div class="card-icon-wrap">' + iconWrapContent + '</div>' +
         '<div class="card-info">' +
-          '<div class="card-name" title="' + escapeAttr(displayName) + '">' + displayName + '</div>' +
+          '<div class="card-name" title="' + escapeAttr(displayName) + '">' + (item.is_broken ? '💔 ' : '') + displayName + '</div>' +
           '<div class="card-meta">' + cardMeta + '</div>' +
         '</div>' +
         menuBtn;
@@ -2029,10 +2034,10 @@
         remainingCell = '<td class="td-remaining"></td>';
       }
 
-      th += '<tr class="fm-row' + (isSelected ? ' selected' : '') + '" data-file-id="' + String(item.id) + '" data-item="' + encodeURIComponent(JSON.stringify(item)) + '">' +
+      th += '<tr class="fm-row' + (isSelected ? ' selected' : '') + (item.is_broken ? ' broken' : '') + '" data-file-id="' + String(item.id) + '" data-item="' + encodeURIComponent(JSON.stringify(item)) + '">' +
         cbCell +
-        '<td class="td-icon"><span class="' + typeClass + '" style="font-size:18px">' + icon + '</span></td>' +
-        '<td class="td-name"><span class="' + typeClass + '">' + escapeAttr(item.name) + '</span></td>' +
+        '<td class="td-icon"><span class="' + typeClass + '" style="font-size:18px">' + (item.is_broken ? '💔' : icon) + '</span></td>' +
+        '<td class="td-name"><span class="' + typeClass + '">' + (item.is_broken ? '💔 ' : '') + escapeAttr(item.name) + '</span></td>' +
         '<td class="td-size">' + (item.isRecycleItem ? '-' : formatFileSize(item.size)) + '</td>' +
         '<td class="td-date">' + tableDate + '</td>' +
         remainingCell +
@@ -2191,6 +2196,12 @@
   var GUEST_DL_LIMIT = 100 * 1024 * 1024; // 100MB
 
   function downloadFile(item) {
+    // 失效文件：阻止下载
+    if (item.is_broken) {
+      showToast('文件已失效，存储文件已被清理，无法下载。请删除该文件后重新上传', '&#9888;');
+      return;
+    }
+
     // 访客检查：文件超过 100MB 时引导登录
     if (!state.user && (item.size || 0) > GUEST_DL_LIMIT) {
       showLoginPromptDiag(item.name || '', item.size);
@@ -3130,7 +3141,7 @@
     if (state.dirType === 'public') {
       var pubItems = state.selectedFiles.map(function(id) {
         var item = state.fileData.find(function(f) { return f.id === id; });
-        return item ? { id: item.id, name: item.name, isDirectory: item.isDirectory } : null;
+        return item ? { id: item.id, name: item.name, isDirectory: item.isDirectory || item.isPublicDir, relPath: item.relPath } : null;
       }).filter(Boolean);
       if (pubItems.length === 0) return;
       doCreateShare._items = pubItems;
@@ -3303,7 +3314,7 @@
     if (itemType === 'public') {
       body = {
         target_type: 'public',
-        target_path: item.id,
+        target_path: item.relPath || item.id,
         expires_days: expireDays,
         password: needPassword,
         max_downloads: maxDownloads
@@ -3461,7 +3472,8 @@
       });
       return;
     }
-    if (!confirm('确定删除 "' + item.name + '"？' + (item.isDirectory ? '（包含所有子项）' : '') + '\n\n删除后可在回收站恢复。')) return;
+    var confirmMsg = '确定删除 "' + item.name + '"？' + (item.isDirectory ? '（包含所有子项）' : '') + '\n\n删除后可在回收站恢复。';
+    if (!confirm(confirmMsg)) return;
     showLoading();
     var promise;
     if (item.isPublicFile) {
@@ -3477,7 +3489,15 @@
     promise.then(function (res) {
       hideLoading();
       if (res.code === 0) {
-        showToast('已删除', '&#128465;');
+        var msg = '已删除';
+        if (res.data && res.data.warnings) {
+          msg += '\n' + res.data.warnings.message;
+          // 延迟弹窗让toast先显示
+          setTimeout(function() {
+            alert('⚠️ 关联链接已失效\n\n' + res.data.warnings.message);
+          }, 500);
+        }
+        showToast(msg, '&#128465;');
         loadFiles(state.currentDirId);
         loadProfile();
       } else {
@@ -5607,6 +5627,317 @@
     logLimit: 50,
     users: [],
     guestIps: []
+  };
+
+  // ==================== 频率限制管理页面 ====================
+
+  var rlState = { rules: null, whitelist: null, editingRule: null };
+
+  function loadAdminRateLimit() {
+    var container = $('#page-panel-body');
+    if (!container) return;
+    var result = makeAdminHeader('⏱ 频率限制配置', null, null, null);
+    container.innerHTML = '';
+    container.appendChild(result.wrap);
+    var body = result.content;
+    body.id = 'rl-body';
+    body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">加载中...</div>';
+    fetchRateLimitData();
+  }
+
+  function fetchRateLimitData() {
+    Promise.all([
+      apiGet('/admin/rate-limit/rules'),
+      apiGet('/admin/rate-limit/whitelist')
+    ]).then(function(results) {
+      var rulesData = results[0];
+      var wlData = results[1];
+      rlState.rules = rulesData.data;
+      rlState.whitelist = wlData.data.whitelist;
+      renderRateLimitPage();
+    }).catch(function(e) {
+      var body = $('#rl-body');
+      if (body) body.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + (e.message || '网络错误') + '</div>';
+    });
+  }
+
+  function renderRateLimitPage() {
+    var body = $('#rl-body');
+    if (!body) return;
+    var h = '';
+
+    // ---- 已登录用户规则 ----
+    h += '<div class="rl-section">';
+    h += '<div class="rl-section-header"><span class="rl-section-icon">&#128274;</span> 已登录用户规则</div>';
+    var authRules = (rlState.rules && rlState.rules.authenticated) ? rlState.rules.authenticated : [];
+    h += renderRuleTable('authenticated', authRules);
+    h += '<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="window.__rlAddRule(\'authenticated\')">+ 添加规则</button></div>';
+    h += '</div>';
+
+    // ---- 未登录用户规则 ----
+    h += '<div class="rl-section">';
+    h += '<div class="rl-section-header"><span class="rl-section-icon">&#127760;</span> 未登录用户规则</div>';
+    var anonRules = (rlState.rules && rlState.rules.anonymous) ? rlState.rules.anonymous : [];
+    h += renderRuleTable('anonymous', anonRules);
+    h += '<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="window.__rlAddRule(\'anonymous\')">+ 添加规则</button></div>';
+    h += '</div>';
+
+    // ---- 路径白名单 ----
+    h += '<div class="rl-section">';
+    h += '<div class="rl-section-header"><span class="rl-section-icon">&#9989;</span> 不受限制的路径（白名单）</div>';
+    h += '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>路径</th><th>描述</th><th>状态</th><th style="width:80px">操作</th></tr></thead><tbody>';
+    var wl = rlState.whitelist || [];
+    if (wl.length === 0) {
+      h += '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary)">暂无白名单</td></tr>';
+    } else {
+      wl.forEach(function(w) {
+        h += '<tr><td><code>' + escHtml(w.path) + '</code></td><td>' + escHtml(w.description || '') + '</td>';
+        h += '<td>' + (w.is_enabled ? '<span style="color:#10b981">启用</span>' : '<span style="color:var(--text-secondary)">禁用</span>') + '</td>';
+        h += '<td><button class="btn btn-sm btn-outline" onclick="window.__rlDeleteWhitelist(' + w.id + ')">删除</button></td></tr>';
+      });
+    }
+    h += '</tbody></table></div>';
+    h += '<div style="margin-top:8px;display:flex;gap:8px"><input type="text" id="rl-wl-path" placeholder="路径，如 /api/xxx" style="flex:1;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:12px"><input type="text" id="rl-wl-desc" placeholder="描述（可选）" style="flex:1;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:12px"><button class="btn btn-sm btn-primary" onclick="window.__rlAddWhitelist()">添加白名单</button></div>';
+    h += '</div>';
+
+    // 提示
+    h += '<div style="margin-top:16px;padding:12px;background:var(--bg-card);border-radius:var(--radius);font-size:12px;color:var(--text-secondary);line-height:1.6">';
+    h += '<strong>&#128161; 提示：</strong><br>';
+    h += '• 阈值按 <strong>排序值(sort_order)从小到大</strong> 匹配，命中最高等级即封禁<br>';
+    h += '• 封禁时长 0 秒 = <strong>永久封禁</strong><br>';
+    h += '• 规则和白名单修改后 <strong>立即生效</strong>（自动刷新缓存）<br>';
+    h += '• 静态资源（/files/, /public/, .js/.css/.png 等）和 localhost 始终不受限<br>';
+    h += '• WebDAV 有效 token 按<strong>已登录</strong>规则，无效 token 按<strong>未登录</strong>规则';
+    h += '</div>';
+
+    body.innerHTML = h;
+  }
+
+  function renderRuleTable(userType, rules) {
+    var h = '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th style="width:40px">排序</th><th>时间窗口(秒)</th><th>最大请求数</th><th>封禁时长</th><th style="width:60px">启用</th><th style="width:100px">操作</th></tr></thead><tbody>';
+    if (rules.length === 0) {
+      h += '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary)">暂无规则</td></tr>';
+    } else {
+      rules.forEach(function(r) {
+        var banLabel = formatBanDuration(r.ban_duration_seconds);
+        h += '<tr>';
+        h += '<td>' + (r.sort_order || 0) + '</td>';
+        h += '<td>' + r.window_seconds + '</td>';
+        h += '<td>' + r.max_requests + '</td>';
+        h += '<td>' + banLabel + '</td>';
+        h += '<td>' + (r.is_enabled ? '<span style="color:#10b981">&#10003;</span>' : '<span style="color:var(--text-secondary)">&#10007;</span>') + '</td>';
+        h += '<td>';
+        h += '<button class="btn btn-sm btn-outline" onclick="window.__rlEditRule(' + r.id + ')" style="margin-right:4px">编辑</button>';
+        h += '<button class="btn btn-sm btn-outline" onclick="window.__rlDeleteRule(' + r.id + ')" style="color:#e74c3c">删除</button>';
+        h += '</td></tr>';
+      });
+    }
+    h += '</tbody></table></div>';
+    return h;
+  }
+
+  function formatBanDuration(seconds) {
+    if (seconds === 0) return '<span style="color:#e74c3c;font-weight:700">永久</span>';
+    if (seconds < 60) return seconds + '秒';
+    if (seconds < 3600) return Math.round(seconds / 60) + '分钟';
+    if (seconds < 86400) return Math.round(seconds / 3600) + '小时';
+    if (seconds < 2592000) return Math.round(seconds / 86400) + '天';
+    if (seconds < 31536000) return Math.round(seconds / 2592000) + '月';
+    return Math.round(seconds / 31536000) + '年';
+  }
+
+  function parseBanDuration(value, unit) {
+    var multipliers = { second: 1, minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000, year: 31536000 };
+    return (parseInt(value, 10) || 0) * (multipliers[unit] || 1);
+  }
+
+  // 全局函数暴露（供 onclick 调用）
+  window.__rlRefresh = function() { fetchRateLimitData(); };
+
+  window.__rlAddRule = function(userType) {
+    showRuleModal(null, userType);
+  };
+
+  window.__rlEditRule = function(id) {
+    var allRules = [];
+    if (rlState.rules) {
+      allRules = allRules.concat(rlState.rules.authenticated || [], rlState.rules.anonymous || []);
+    }
+    var rule = allRules.find(function(r) { return r.id === id; });
+    if (rule) showRuleModal(rule, rule.user_type);
+  };
+
+  window.__rlDeleteRule = function(id) {
+    if (!confirm('确定删除此规则？')) return;
+    apiDelete('/admin/rate-limit/rules/' + id).then(function(r) {
+      if (r.code === 0) { window.__rlRefresh(); } else { alert('删除失败：' + r.message); }
+    }).catch(function(e) { alert('删除失败：' + (e.message || '网络错误')); });
+  };
+
+  window.__rlAddWhitelist = function() {
+    var pathInput = $('#rl-wl-path');
+    var descInput = $('#rl-wl-desc');
+    var p = (pathInput ? pathInput.value.trim() : '');
+    if (!p) { alert('请输入路径'); return; }
+    if (p.indexOf('/') !== 0) { alert('路径必须以 / 开头'); return; }
+    var desc = descInput ? descInput.value.trim() : '';
+    apiPost('/admin/rate-limit/whitelist', { path: p, description: desc }).then(function(r) {
+      if (r.code === 0) {
+        if (pathInput) pathInput.value = '';
+        if (descInput) descInput.value = '';
+        window.__rlRefresh();
+      } else { alert('添加失败：' + r.message); }
+    }).catch(function(e) { alert('添加失败：' + (e.message || '网络错误')); });
+  };
+
+  window.__rlDeleteWhitelist = function(id) {
+    if (!confirm('确定从白名单删除此路径？')) return;
+    apiDelete('/admin/rate-limit/whitelist/' + id).then(function(r) {
+      if (r.code === 0) { window.__rlRefresh(); } else { alert('删除失败：' + r.message); }
+    }).catch(function(e) { alert('删除失败：' + (e.message || '网络错误')); });
+  };
+
+  function showRuleModal(rule, userType) {
+    var isEdit = !!rule;
+    var modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'rl-modal';
+
+    var banDuration = rule ? rule.ban_duration_seconds : 60;
+    var durationParts = splitBanDuration(banDuration);
+
+    var presetBtns = '';
+    var presets = [
+      { label: '1分钟', sec: 60 }, { label: '1小时', sec: 3600 }, { label: '1天', sec: 86400 },
+      { label: '7天', sec: 604800 }, { label: '30天', sec: 2592000 }, { label: '1年', sec: 31536000 },
+      { label: '永久', sec: 0 }
+    ];
+    presets.forEach(function(p) {
+      var active = (banDuration === p.sec) ? ' rl-preset-active' : '';
+      presetBtns += '<button class="btn btn-sm btn-outline rl-preset-btn' + active + '" onclick="window.__rlSetPreset(' + p.sec + ')" data-sec="' + p.sec + '">' + p.label + '</button>';
+    });
+
+    modal.innerHTML = '<div class="modal" style="max-width:520px">' +
+      '<h3>' + (isEdit ? '编辑规则' : '添加规则') + '</h3>' +
+      '<label>用户类型</label>' +
+      '<select id="rl-e-user-type" ' + (isEdit ? 'disabled' : '') + ' style="width:100%;padding:8px;margin:4px 0 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit">' +
+        '<option value="authenticated"' + (userType === 'authenticated' ? ' selected' : '') + '>已登录用户 (authenticated)</option>' +
+        '<option value="anonymous"' + (userType === 'anonymous' ? ' selected' : '') + '>未登录用户 (anonymous)</option>' +
+      '</select>' +
+      '<label>时间窗口（秒）</label>' +
+      '<input type="number" id="rl-e-window" value="' + (rule ? rule.window_seconds : 60) + '" min="1" max="3600" style="width:100%;padding:8px;margin:4px 0 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit">' +
+      '<label>最大请求数</label>' +
+      '<input type="number" id="rl-e-max-req" value="' + (rule ? rule.max_requests : 1000) + '" min="1" style="width:100%;padding:8px;margin:4px 0 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit">' +
+      '<label>封禁时长</label>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px">' + presetBtns + '</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:4px">' +
+        '<span style="font-size:12px;color:var(--text-secondary)">自定义：</span>' +
+        '<input type="number" id="rl-e-ban-val" value="' + durationParts.value + '" min="0" style="width:100px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit">' +
+        '<select id="rl-e-ban-unit" style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit">' +
+          '<option value="second"' + (durationParts.unit === 'second' ? ' selected' : '') + '>秒</option>' +
+          '<option value="minute"' + (durationParts.unit === 'minute' ? ' selected' : '') + '>分钟</option>' +
+          '<option value="hour"' + (durationParts.unit === 'hour' ? ' selected' : '') + '>小时</option>' +
+          '<option value="day"' + (durationParts.unit === 'day' ? ' selected' : '') + '>天</option>' +
+          '<option value="month"' + (durationParts.unit === 'month' ? ' selected' : '') + '>月</option>' +
+          '<option value="year"' + (durationParts.unit === 'year' ? ' selected' : '') + '>年</option>' +
+        '</select>' +
+      '</div>' +
+      '<label style="margin-top:12px">启用</label>' +
+      '<label class="toggle-switch" style="margin-left:8px;vertical-align:middle">' +
+        '<input type="checkbox" id="rl-e-enabled" ' + ((rule && rule.is_enabled) || !rule ? 'checked' : '') + '>' +
+        '<span class="toggle-slider"></span>' +
+      '</label>' +
+      '<label style="margin-left:16px">排序值</label>' +
+      '<input type="number" id="rl-e-sort" value="' + (rule ? (rule.sort_order || 0) : 0) + '" min="0" style="width:80px;padding:8px;margin-left:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:14px;font-family:inherit">' +
+      '<div class="modal-actions" style="margin-top:16px">' +
+        '<button class="btn btn-outline" onclick="window.__rlCloseModal()">取消</button>' +
+        '<button class="btn btn-primary" onclick="window.__rlSaveRule(' + (isEdit ? rule.id : -1) + ')">' + (isEdit ? '保存' : '添加') + '</button>' +
+      '</div>' +
+    '</div>';
+
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e) { if (e.target === modal) window.__rlCloseModal(); });
+  }
+
+  function splitBanDuration(totalSeconds) {
+    if (totalSeconds === 0) return { value: 0, unit: 'second' };
+    if (totalSeconds % 31536000 === 0 && totalSeconds > 0) return { value: totalSeconds / 31536000, unit: 'year' };
+    if (totalSeconds % 2592000 === 0 && totalSeconds > 0) return { value: totalSeconds / 2592000, unit: 'month' };
+    if (totalSeconds % 86400 === 0 && totalSeconds > 0) return { value: totalSeconds / 86400, unit: 'day' };
+    if (totalSeconds % 3600 === 0 && totalSeconds > 0) return { value: totalSeconds / 3600, unit: 'hour' };
+    if (totalSeconds % 60 === 0) return { value: totalSeconds / 60, unit: 'minute' };
+    return { value: totalSeconds, unit: 'second' };
+  }
+
+  window.__rlSetPreset = function(sec) {
+    var val, unit;
+    if (sec === 0) { val = 0; unit = 'second'; }
+    else { var parts = splitBanDuration(sec); val = parts.value; unit = parts.unit; }
+    var valInput = $('#rl-e-ban-val');
+    var unitSelect = $('#rl-e-ban-unit');
+    if (valInput) valInput.value = val;
+    if (unitSelect) unitSelect.value = unit;
+    // 高亮选中的预设按钮
+    var btns = document.querySelectorAll('.rl-preset-btn');
+    btns.forEach(function(b) { b.classList.remove('rl-preset-active'); });
+    var activeBtn = document.querySelector('.rl-preset-btn[data-sec="' + sec + '"]');
+    if (activeBtn) activeBtn.classList.add('rl-preset-active');
+  };
+
+  window.__rlSaveRule = function(id) {
+    var isEdit = id > 0;
+    var userTypeEl = $('#rl-e-user-type');
+    var windowEl = $('#rl-e-window');
+    var maxReqEl = $('#rl-e-max-req');
+    var banValEl = $('#rl-e-ban-val');
+    var banUnitEl = $('#rl-e-ban-unit');
+    var enabledEl = $('#rl-e-enabled');
+    var sortEl = $('#rl-e-sort');
+
+    var userType = userTypeEl ? userTypeEl.value : 'authenticated';
+    var windowSec = parseInt(windowEl ? windowEl.value : 60, 10);
+    var maxReq = parseInt(maxReqEl ? maxReqEl.value : 100, 10);
+    var banVal = parseInt(banValEl ? banValEl.value : 0, 10);
+    var banUnit = banUnitEl ? banUnitEl.value : 'minute';
+    var totalBanSec = banVal === 0 ? 0 : parseBanDuration(banVal, banUnit);
+    var enabled = enabledEl ? enabledEl.checked : true;
+    var sortOrder = parseInt(sortEl ? sortEl.value : 0, 10);
+
+    if (isNaN(windowSec) || windowSec < 1) { alert('时间窗口至少 1 秒'); return; }
+    if (isNaN(maxReq) || maxReq < 1) { alert('最大请求数至少为 1'); return; }
+    if (isNaN(totalBanSec) || totalBanSec < 0) { alert('封禁时长无效'); return; }
+
+    var data = {
+      user_type: userType,
+      window_seconds: windowSec,
+      max_requests: maxReq,
+      ban_duration_seconds: totalBanSec,
+      is_enabled: enabled,
+      sort_order: sortOrder
+    };
+
+    var promise;
+    if (isEdit) {
+      promise = apiPut('/admin/rate-limit/rules/' + id, data);
+    } else {
+      promise = apiPost('/admin/rate-limit/rules', data);
+    }
+
+    promise.then(function(r) {
+      if (r.code === 0) {
+        window.__rlCloseModal();
+        window.__rlRefresh();
+      } else {
+        alert((isEdit ? '更新' : '添加') + '失败：' + r.message);
+      }
+    }).catch(function(e) {
+      alert((isEdit ? '更新' : '添加') + '失败：' + (e.message || '网络错误'));
+    });
+  };
+
+  window.__rlCloseModal = function() {
+    var modal = $('#rl-modal');
+    if (modal) modal.remove();
   };
 
   function loadAdminTraffic() {
@@ -7743,6 +8074,9 @@
     } else if (viewName === 'admin-storage') {
       var storageNav = $('#nav-storage');
       if (storageNav) storageNav.classList.add('active');
+    } else if (viewName === 'admin-rate-limit') {
+      var rlNav = $('#nav-rate-limit');
+      if (rlNav) rlNav.classList.add('active');
     } else if (viewName === 'share') {
       var shareNav = $('#nav-share');
       if (shareNav) shareNav.classList.add('active');
@@ -7941,17 +8275,49 @@
     }
   }
 
-  // 秒传预检（个人文件上传前检查哈希）
+  // 秒传预检（个人文件上传前检查哈希）— 两阶段安全质询
+  var INSTANT_MIN_SIZE = 1048576; // 1MB，小于此大小的文件不秒传
+
   async function checkInstantUpload(file, dirId) {
+    // 小于 1MB 的文件直接走正常上传
+    if (file.size < INSTANT_MIN_SIZE) return { instant: false, reason: 'too_small' };
+
     var hash = await computeFileHash(file);
-    if (!hash) return null; // 浏览器不支持 crypto API，走正常上传
+    if (!hash) return { instant: false, reason: 'no_crypto' }; // 浏览器不支持 crypto API，走正常上传
+
     try {
-      var res = await axios.post('/api/files/check-hash', {
-        hash: hash, size: file.size, dir_id: dirId, name: file.name
+      // Phase 1: 发送 hash+size，获取质询
+      var phase1 = await axios.post('/api/files/check-hash', {
+        hash: hash, size: file.size
       });
-      if (res.data.code === 0 && res.data.data && res.data.data.exists) {
-        return { instant: true, data: res.data.data };
+      if (phase1.data.code !== 0 || !phase1.data.data || !phase1.data.data.exists) {
+        return { instant: false, hash: hash };
       }
+
+      var challenge = phase1.data.data.challenge;
+      if (!challenge) return { instant: false, hash: hash };
+
+      // Phase 2: 读取文件指定位置的字节
+      var slice = file.slice(challenge.offset, challenge.offset + challenge.length);
+      var sliceBuf = await slice.arrayBuffer();
+      var sliceBytes = new Uint8Array(sliceBuf);
+      // 转 base64
+      var b64 = btoa(String.fromCharCode.apply(null, sliceBytes));
+
+      // Phase 2: 提交质询响应
+      var phase2 = await axios.post('/api/files/instant-upload', {
+        hash: hash,
+        size: file.size,
+        dir_id: dirId,
+        name: file.name,
+        token: challenge.token,
+        data: b64
+      });
+
+      if (phase2.data.code === 0 && phase2.data.data && phase2.data.data.exists) {
+        return { instant: true, data: phase2.data.data };
+      }
+      // 质询失败（code 2-7），走正常上传
       return { instant: false, hash: hash };
     } catch(e) {
       return { instant: false, hash: hash }; // 预检失败，正常上传
@@ -8474,7 +8840,6 @@
   function loadAboutPage() {
     var container = $('#page-panel-body');
     if (!container) return;
-    var githubUrl = 'https://github.com/Antruly/FMS-Service';
     container.innerHTML = '<div style="padding:20px 0;text-align:center;font-size:13px;color:var(--text-muted)">加载中...</div>';
 
     axios.get('/api/version/server').then(function(res) {
@@ -8483,54 +8848,115 @@
         return;
       }
       var d = res.data.data;
-      var html = '<div style="max-width:600px;margin:0 auto;padding:20px">';
+      var html = '<div style="max-width:680px;margin:0 auto;padding:20px">';
 
       // Logo + 名称
-      html += '<div style="text-align:center;margin-bottom:24px">';
+      html += '<div style="text-align:center;margin-bottom:28px">';
       html += '<img src="/favicon.png" alt="FMS" style="width:64px;height:64px;border-radius:16px;margin-bottom:12px">';
       html += '<h2 style="font-size:22px;font-weight:800;color:var(--text-primary);margin:0">FMS 文件管理系统</h2>';
       html += '<p style="font-size:12px;color:var(--text-muted);margin:4px 0 0">' + escHtml(d.description) + '</p>';
       html += '</div>';
 
-      // 版本信息
-      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">';
-      html += '<span style="color:var(--text-secondary)">服务端版本</span>';
-      html += '<span style="font-family:Share Tech Mono,monospace;color:var(--accent);font-weight:700;font-size:15px">v' + escHtml(d.serverVersion) + '</span>';
+      // ======== 核心特性卡片 ========
+      html += '<h3 style="font-size:14px;font-weight:700;color:var(--text-primary);margin:0 0 12px;text-align:left">⚡ 核心特性</h3>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px">';
+
+      // WebDAV 卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '📡' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">WebDAV 协议</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">支持标准 WebDAV 协议挂载为网络驱动器，公共目录与个人加密目录均可映射，支持 PROPFIND/PUT/MOVE/COPY/LOCK 等标准操作</p>';
       html += '</div>';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">';
-      html += '<span style="color:var(--text-secondary)">Android App</span>';
-      html += '<span style="font-family:Share Tech Mono,monospace;color:var(--accent2);font-weight:700;font-size:15px">' + (d.apkVersion !== '-' ? 'v' + escHtml(d.apkVersion) : '暂无') + '</span>';
+
+      // 加密卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '🔐' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">AES-256 加密</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">所有个人文件采用 AES-256-GCM 分块加密存储，密钥由用户密码派生，端到端保护数据安全</p>';
       html += '</div>';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">';
-      html += '<span style="color:var(--text-secondary)">运行环境</span>';
-      html += '<span style="font-family:Share Tech Mono,monospace;color:var(--text-muted);font-size:12px">' + escHtml(d.nodeVersion || '-') + '</span>';
+
+      // 秒传卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '⚡' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">哈希秒传</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">基于 SHA-256 + 随机字节质询的安全秒传机制，相同文件无需重复上传，节省带宽与存储空间</p>';
       html += '</div>';
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0">';
-      html += '<span style="color:var(--text-secondary)">数据库</span>';
-      html += '<span style="font-family:Share Tech Mono,monospace;color:var(--text-muted);font-size:12px">SQLite (sql.js)</span>';
+
+      // 分享卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '🔗' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">文件分享</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">支持个人/公共文件分享，可设提取码、有效期、下载次数限制，一键生成分享链接与二维码</p>';
+      html += '</div>';
+
+      // 存储架构卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '🗄️' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">存储组 & 镜像</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">多存储组权重负载均衡，多镜像自动同步，支持存储组迁移/重组/回滚，数据冗余安全保障</p>';
+      html += '</div>';
+
+      // 离线下载卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '📥' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">离线下载</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">服务器代理下载远程文件到个人存储，支持进度追踪、断点续传、多任务并行，完成后自动通知</p>';
       html += '</div>';
       html += '</div>';
 
-      // 更新日志（App）
+      // ======== 版本信息 ========
+      html += '<h3 style="font-size:14px;font-weight:700;color:var(--text-primary);margin:0 0 12px;text-align:left">📊 系统信息</h3>';
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">';
+      var verRows = [
+        ['服务端版本', 'v' + escHtml(d.serverVersion), 'var(--accent)'],
+        ['Android App', (d.apkVersion !== '-' ? 'v' + escHtml(d.apkVersion) : '暂无'), 'var(--accent2)'],
+        ['运行环境', escHtml(d.nodeVersion || '-'), 'var(--text-muted)'],
+        ['数据库', 'SQLite (sql.js)', 'var(--text-muted)']
+      ];
+      verRows.forEach(function(vr, i) {
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0' + (i < verRows.length - 1 ? ';border-bottom:1px solid var(--border)' : '') + '">';
+        html += '<span style="color:var(--text-secondary);font-size:13px">' + vr[0] + '</span>';
+        html += '<span style="font-family:Share Tech Mono,monospace;color:' + vr[2] + ';font-weight:600;font-size:14px">' + vr[1] + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+
+      // ======== 最近更新 ========
+      html += '<h3 style="font-size:14px;font-weight:700;color:var(--text-primary);margin:0 0 12px;text-align:left">📋 最近更新</h3>';
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">';
       if (d.apkNotes) {
-        html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px">';
-        html += '<h4 style="font-size:14px;font-weight:700;color:var(--text-primary);margin:0 0 8px">📋 App 最新更新 (v' + escHtml(d.apkVersion) + ')</h4>';
-        html += '<p style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:0;white-space:pre-wrap">' + escHtml(d.apkNotes) + '</p>';
+        html += '<div style="margin-bottom:12px">';
+        html += '<span style="font-size:11px;color:var(--accent);font-weight:600;background:var(--accent);color:#fff;padding:2px 8px;border-radius:4px">App v' + escHtml(d.apkVersion) + '</span>';
+        html += '<p style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin:8px 0 0;white-space:pre-wrap">' + escHtml(d.apkNotes) + '</p>';
         html += '</div>';
       }
+      html += '<div>';
+      html += '<span style="font-size:11px;color:var(--accent2);font-weight:600;background:var(--accent2);color:#fff;padding:2px 8px;border-radius:4px">服务端 v' + escHtml(d.serverVersion) + '</span>';
+      html += '<ul style="font-size:12px;color:var(--text-secondary);line-height:1.8;margin:8px 0 0;padding-left:18px">';
+      html += '<li>WebDAV 协议完整支持（公共目录 + 个人加密目录）</li>';
+      html += '<li>AES-256-GCM 分块加密存储（V1 格式）</li>';
+      html += '<li>多存储组权重负载均衡 + 镜像自动同步</li>';
+      html += '<li>安全秒传：SHA-256 哈希 + 随机字节质询验证</li>';
+      html += '<li>可配置频率限制与 IP 封禁管理</li>';
+      html += '<li>离线下载 + WebSocket 实时进度推送</li>';
+      html += '<li>文件分享（提取码/有效期/下载次数限制/二维码）</li>';
+      html += '<li>回收站 30 天自动清理 + 物理文件引用追踪</li>';
+      html += '</ul>';
+      html += '</div>';
+      html += '</div>';
 
-// GitHub 链接
-      html += '<div style="text-align:center;margin-top:20px;display:flex;flex-direction:column;gap:8px;align-items:center">';
-      // 服务端仓库
-      html += '<a href="' + escHtml(d.github) + '" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--text-secondary);text-decoration:none;font-size:13px;font-weight:600;transition:all .2s" onmouseover="this.style.borderColor=\'var(--accent)\';this.style.color=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text-secondary)\'">';
-      html += '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>';
-      html += '服务端: Antruly/FMS-Service';
+      // ======== GitHub 仓库 ========
+      html += '<h3 style="font-size:14px;font-weight:700;color:var(--text-primary);margin:0 0 12px;text-align:left">' + '🐙' + ' 开源仓库</h3>';
+      html += '<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">';
+      // 服务端
+      html += '<a href="' + escHtml(d.github) + '" target="_blank" style="flex:1;min-width:200px;display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--text-secondary);text-decoration:none;transition:all .2s" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">';
+      html += '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>';
+      html += '<div><div style="font-size:13px;font-weight:700;color:var(--text-primary)">FMS-Service</div><div style="font-size:11px;color:var(--text-muted)">服务端 · Node.js</div></div>';
       html += '</a>';
-      // App 仓库
-      html += '<a href="' + escHtml(d.githubApp) + '" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--text-secondary);text-decoration:none;font-size:13px;font-weight:600;transition:all .2s" onmouseover="this.style.borderColor=\'var(--accent2)\';this.style.color=\'var(--accent2)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text-secondary)\'">';
-      html += '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>';
-      html += 'App: Antruly/FMS-Service-app';
+      // App
+      html += '<a href="' + escHtml(d.githubApp) + '" target="_blank" style="flex:1;min-width:200px;display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--text-secondary);text-decoration:none;transition:all .2s" onmouseover="this.style.borderColor=\'var(--accent2)\'" onmouseout="this.style.borderColor=\'var(--border)\'">';
+      html += '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>';
+      html += '<div><div style="font-size:13px;font-weight:700;color:var(--text-primary)">FMS-Service-app</div><div style="font-size:11px;color:var(--text-muted)">Android · Capacitor</div></div>';
       html += '</a>';
       html += '</div>';
 

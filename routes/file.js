@@ -669,10 +669,29 @@ router.get('/dirs', requireAuth, function(req, res) {
   var dirs = VirtualDir.listPersonalByParent(user.id, dirId);
   var files = VirtualFile.listByDir(user.id, dirId);
 
+  // 批量检查文件存储是否有效（一次查询，避免 N+1）
+  var storageIds = files.filter(function(f) { return f.storage_id > 0; }).map(function(f) { return f.storage_id; });
+  var validStorageIds = {};
+  if (storageIds.length > 0) {
+    var phs = storageIds.map(function() { return '?'; }).join(',');
+    var activeRows = query(
+      'SELECT DISTINCT storage_id FROM file_storage_paths WHERE storage_id IN (' + phs + ') AND status = ?',
+      storageIds.concat(['active'])
+    );
+    activeRows.forEach(function(r) { validStorageIds[r.storage_id] = true; });
+  }
+
   res.json({
     code: 0, message: 'success', data: {
       dirs: dirs.map(function(d) { return { id: d.id, name: d.name, parent_id: d.parent_id, created_at: d.created_at }; }),
-      files: files.map(function(f) { return { id: f.id, name: f.name, size: f.size, mime_type: f.mime_type, created_at: f.created_at }; }),
+      files: files.map(function(f) {
+        return {
+          id: f.id, name: f.name, size: f.size, mime_type: f.mime_type,
+          created_at: f.created_at,
+          is_broken: f.storage_id > 0 && !validStorageIds[f.storage_id],
+          storage_id: f.storage_id || 0
+        };
+      }),
       breadcrumb: breadcrumb
     }
   });
@@ -738,18 +757,80 @@ router.delete('/dirs/:id', requireAuth, function(req, res) {
   if (!dir || dir.user_id !== user.id) return deny404(res, '目录不存在');
   if (!checkPerm(user, dirId, 'delete')) return deny403(res, '无权限删除目录');
 
+  // ========== 检查关联的分享和WebDAV链接 ==========
+  var dbModule = require('../lib/db');
+  // 收集该目录及其所有子目录ID
+  var allDirIds = [dirId];
+  try {
+    var childIds = VirtualDir.getAllChildIds(dirId);
+    if (childIds && childIds.length > 0) allDirIds = allDirIds.concat(childIds);
+  } catch(e) {}
+  var placeholders = allDirIds.map(function() { return '?'; }).join(',');
+
+  // 检查分享（target_type='dir' 且 target_id 在删除范围内）
+  var affectedShares = dbModule.query(
+    'SELECT id, hash, title, target_id FROM shares WHERE target_type = ? AND target_id IN (' + placeholders + ') AND status = ?',
+    ['dir'].concat(allDirIds).concat(['active'])
+  );
+
+  // 检查 WebDAV 个人链接（target_type='personal' 且 target_path 对应目录ID）
+  var affectedWebDAV = [];
+  allDirIds.forEach(function(did) {
+    var links = dbModule.query(
+      'SELECT id, link_name, target_path FROM webdav_links WHERE target_type = ? AND target_path = ? AND status = ?',
+      ['personal', String(did), 'active']
+    );
+    links.forEach(function(l) { affectedWebDAV.push(l); });
+  });
+
+  var hasWarnings = (affectedShares && affectedShares.length > 0) || affectedWebDAV.length > 0;
+
   // 递归移入回收站（物理文件保留在原位置）
   var moved = RecycleBin.moveDir(dirId, user.id);
   if (!moved) return deny404(res, '目录不存在');
 
+  // ========== 自动失效关联的分享和WebDAV链接 ==========
+  if (affectedShares && affectedShares.length > 0) {
+    affectedShares.forEach(function(s) {
+      try { dbModule.run("UPDATE shares SET status = 'disabled' WHERE id = ?", [s.id]); } catch(e) {}
+    });
+    log.info('[DeleteDir] 已失效 ' + affectedShares.length + ' 个分享链接');
+  }
+  if (affectedWebDAV.length > 0) {
+    affectedWebDAV.forEach(function(w) {
+      try { dbModule.run("UPDATE webdav_links SET status = 'disabled' WHERE id = ?", [w.id]); } catch(e) {}
+    });
+    log.info('[DeleteDir] 已失效 ' + affectedWebDAV.length + ' 个WebDAV链接');
+  }
+
   logger.logRecycleDelete(req, dir.name, true, true);
 
-  res.json({ code: 0, message: '目录已移入回收站', data: null });
+  res.json({
+    code: 0, message: '目录已移入回收站' + (hasWarnings ? '，关联的分享/WebDAV链接已自动失效' : ''),
+    data: {
+      warnings: hasWarnings ? {
+        shares: (affectedShares || []).map(function(s) { return { id: s.id, title: s.title, hash: s.hash }; }),
+        webdav: affectedWebDAV.map(function(w) { return { id: w.id, name: w.link_name }; }),
+        message: '该目录或子目录存在 ' + (affectedShares ? affectedShares.length : 0) + ' 个分享链接和 ' + affectedWebDAV.length + ' 个WebDAV链接，已自动失效'
+      } : null
+    }
+  });
 });
 
 // ==================== 虚拟文件 ====================
 
-// POST /api/files/check-hash  秒传预检（上传前检查文件是否已存在）
+// 秒传质询缓存（内存，5分钟过期）
+// key: token → { storageId, offset, length, fileHash, fileSize, expires }
+var instantChallenges = new Map();
+// 定期清理过期质询
+setInterval(function() {
+  var now = Date.now();
+  instantChallenges.forEach(function(v, k) {
+    if (v.expires < now) instantChallenges.delete(k);
+  });
+}, 60000);
+
+// POST /api/files/check-hash  秒传预检 Phase 1：检查文件是否存在，返回随机字节质询
 // crypto 已在文件顶部声明: const crypto = require('crypto');
 router.post('/files/check-hash', requireAuth, function(req, res) {
   var fileHash = String(req.body.hash || '').trim();
@@ -757,6 +838,12 @@ router.post('/files/check-hash', requireAuth, function(req, res) {
 
   if (!fileHash || fileHash.length !== 64 || !fileSize) {
     return res.json({ code: 1, message: '参数错误：需要有效的 hash(SHA-256) 和 size', data: null });
+  }
+
+  // 小于 1MB 的文件不允许秒传
+  var MIN_INSTANT_SIZE = 1048576; // 1MB
+  if (fileSize < MIN_INSTANT_SIZE) {
+    return res.json({ code: 0, message: '文件小于1MB，不支持秒传', data: { exists: false, too_small: true } });
   }
 
   var FileStorage = require('../lib/db').FileStorage;
@@ -767,40 +854,208 @@ router.post('/files/check-hash', requireAuth, function(req, res) {
   }
 
   // 文件存在，检查是否有可读取的有效路径
-  if (FileStorage.hasValidPath(existing.id)) {
-    // 秒传成功：直接为用户创建引用
-    var dirId = parseInt(req.body.dir_id || '0', 10);
-    var fileName = String(req.body.name || '秒传文件').trim();
+  if (!FileStorage.hasValidPath(existing.id)) {
+    // 文件存在但所有路径都失效 → 需要用户上传新文件来修复
+    log.info('[HashCheck] 文件损坏，请求上传修复: hash=' + fileHash.substring(0, 12) + ' size=' + fileSize);
+    return res.json({ code: 0, message: '文件需要重新上传', data: { exists: false, need_repair: true } });
+  }
 
-    // 检查同名文件
+  // 生成随机质询：从文件中随机位置取 128B ~ 1KB
+  var CHALLENGE_MIN = 128;
+  var CHALLENGE_MAX = 1024;
+  var challengeLen = CHALLENGE_MIN + Math.floor(Math.random() * (CHALLENGE_MAX - CHALLENGE_MIN + 1));
+  var maxOffset = Math.max(0, fileSize - challengeLen);
+  var challengeOffset = Math.floor(Math.random() * (maxOffset + 1));
+
+  // 生成质询 token（绑定到用户）
+  var token = require('crypto').randomBytes(16).toString('hex');
+  instantChallenges.set(token, {
+    storageId: existing.id,
+    offset: challengeOffset,
+    length: challengeLen,
+    fileHash: fileHash,
+    fileSize: fileSize,
+    expires: Date.now() + 5 * 60 * 1000 // 5分钟
+  });
+
+  log.info('[HashCheck] Phase1 质询: hash=' + fileHash.substring(0, 12) + ' offset=' + challengeOffset + ' len=' + challengeLen + ' token=' + token.substring(0, 8));
+
+  return res.json({
+    code: 0, message: '需要验证文件内容', data: {
+      exists: true,
+      challenge: { token: token, offset: challengeOffset, length: challengeLen }
+    }
+  });
+});
+
+// POST /api/files/instant-upload  秒传预检 Phase 2：验证随机字节质询，完成秒传
+router.post('/files/instant-upload', requireAuth, function(req, res) {
+  var fileHash = String(req.body.hash || '').trim();
+  var fileSize = parseInt(req.body.size, 10) || 0;
+  var dirId = parseInt(req.body.dir_id || '0', 10);
+  var fileName = String(req.body.name || '秒传文件').trim();
+  var token = String(req.body.token || '').trim();
+  var challengeDataB64 = String(req.body.data || '').trim();
+
+  if (!token || !challengeDataB64) {
+    return res.json({ code: 1, message: '参数错误：需要 token 和 data', data: null });
+  }
+
+  // 查找质询记录
+  var challenge = instantChallenges.get(token);
+  if (!challenge) {
+    return res.json({ code: 2, message: '质询已过期或无效，请重试', data: null });
+  }
+
+  // 验证 hash 和 size 是否匹配
+  if (challenge.fileHash !== fileHash || challenge.fileSize !== fileSize) {
+    instantChallenges.delete(token);
+    return res.json({ code: 3, message: '质询参数不匹配', data: null });
+  }
+
+  // 解码客户端提交的字节数据
+  var submittedData;
+  try {
+    submittedData = Buffer.from(challengeDataB64, 'base64');
+  } catch (e) {
+    return res.json({ code: 4, message: '数据格式错误', data: null });
+  }
+
+  if (submittedData.length !== challenge.length) {
+    instantChallenges.delete(token);
+    return res.json({ code: 5, message: '数据长度不匹配：期望' + challenge.length + '字节，收到' + submittedData.length + '字节', data: null });
+  }
+
+  // ========== 存储架构：通过 storage-stream 获取文件流（不手动操作路径） ==========
+  var fs = require('fs');
+  var FileStorage = require('../lib/db').FileStorage;
+  var cryptoLib = require('../lib/crypto');
+  var dbMod = require('../lib/db');
+  var StorageStream = require('../lib/storage-stream');
+
+  // 1) 从 file_storage 获取加密状态和存储组
+  var storageRecord = dbMod.get('SELECT * FROM file_storage WHERE id = ?', [challenge.storageId]);
+  if (!storageRecord) {
+    log.error('[InstantUpload] file_storage 记录不存在: storageId=' + challenge.storageId);
+    instantChallenges.delete(token);
+    return res.json({ code: 6, message: '文件存储记录不存在(storageId=' + challenge.storageId + ')', data: null });
+  }
+  var groupId = storageRecord.group_id;
+  var isEncrypted = storageRecord.is_encrypted;
+
+  // 2) 从 file_storage_paths 获取相对路径（任意一条 active 记录即可，路径在所有镜像中相同）
+  var pathRow = dbMod.get(
+    "SELECT relative_path FROM file_storage_paths WHERE storage_id = ? AND status = 'active' LIMIT 1",
+    [challenge.storageId]
+  );
+  if (!pathRow || !pathRow.relative_path) {
+    log.error('[InstantUpload] 无活跃存储路径记录: storageId=' + challenge.storageId);
+    instantChallenges.delete(token);
+    return res.json({ code: 6, message: '文件无可用存储路径(storageId=' + challenge.storageId + ')', data: null });
+  }
+  var relativePath = pathRow.relative_path;
+
+  // 3) 通过存储架构解析所有可用镜像路径（内部处理负载均衡和镜像选择）
+  var allPaths = StorageStream.resolveAllReadPaths(relativePath, groupId);
+  if (!allPaths || allPaths.length === 0) {
+    log.error('[InstantUpload] 存储组无可用镜像: storageId=' + challenge.storageId + ' groupId=' + groupId + ' relPath=' + relativePath);
+    instantChallenges.delete(token);
+    return res.json({ code: 6, message: '文件所有镜像均不可读(storageId=' + challenge.storageId + ' groupId=' + groupId + ')', data: null });
+  }
+
+  // decryptedStart/decryptedEnd 为闭区间（inclusive）
+  var decStart = challenge.offset;
+  var decEnd = challenge.offset + challenge.length - 1;
+
+  // 4) 逐条尝试每个镜像路径（容错：文件可能在上一个检查后被删除）
+  var pathIdx = 0;
+  function tryNextPath() {
+    if (pathIdx >= allPaths.length) {
+      log.error('[InstantUpload] 所有镜像路径均不可读: storageId=' + challenge.storageId + ' tried=' + allPaths.length);
+      instantChallenges.delete(token);
+      return res.json({ code: 6, message: '文件所有存储路径均不可读(storageId=' + challenge.storageId + ')', data: null });
+    }
+    var fullPath = allPaths[pathIdx++];
+
+    try {
+      if (isEncrypted) {
+        // 加密文件：走 crypto 流式解密（只解密质询区间，不加载整个文件）
+        var decryptStream = cryptoLib.createDecryptStreamAuto(fullPath, decStart, decEnd);
+        var chunks = [];
+        decryptStream.on('data', function(c) { chunks.push(c); });
+        decryptStream.on('end', function() { completeInstantUpload(Buffer.concat(chunks)); });
+        decryptStream.on('error', function(err) {
+          log.warn('[InstantUpload] 镜像解密失败: ' + fullPath + ' err=' + err.message + '，尝试下一条...');
+          tryNextPath();
+        });
+      } else {
+        // 非加密文件：流式读取指定区间
+        var readStream = fs.createReadStream(fullPath, { start: decStart, end: decEnd });
+        var bufs = [];
+        readStream.on('data', function(c) { bufs.push(c); });
+        readStream.on('end', function() { completeInstantUpload(Buffer.concat(bufs)); });
+        readStream.on('error', function(err) {
+          log.warn('[InstantUpload] 镜像读取失败: ' + fullPath + ' err=' + err.message + '，尝试下一条...');
+          tryNextPath();
+        });
+      }
+    } catch(e) {
+      log.warn('[InstantUpload] 镜像异常: ' + fullPath + ' err=' + e.message + '，尝试下一条...');
+      tryNextPath();
+    }
+  }
+  tryNextPath();
+
+  function completeInstantUpload(serverData) {
+    if (!submittedData.equals(serverData)) {
+      log.warn('[InstantUpload] 质询验证失败: ' + fileName + ' hash=' + fileHash.substring(0, 12) +
+        ' offset=' + challenge.offset + ' len=' + challenge.length +
+        ' 客户端前8字节=' + submittedData.slice(0, 8).toString('hex') +
+        ' 服务端前8字节=' + serverData.slice(0, 8).toString('hex'));
+      instantChallenges.delete(token);
+      return res.json({ code: 7, message: '文件内容验证失败，请正常上传', data: null });
+    }
+
+    // 质询通过 → 删除质询记录（防止重放）
+    instantChallenges.delete(token);
+
+    // 检查同名文件（含回收站）：存在则自动重命名为 "文件名 (1).ext"
     var VirtualFile = require('../lib/db').VirtualFile;
-    var existingVF = VirtualFile.listByDir(req.user.id, dirId).find(function(f) { return f.name === fileName; });
-    if (existingVF) {
-      // 同名文件：替换（旧文件进回收站并减引用）
-      var RecycleBin = require('../lib/db').RecycleBin;
-      RecycleBin.moveFile(existingVF.id, req.user.id);
-      var User = require('../lib/db').User;
-      User.updateUsedBytes(req.user.id, -existingVF.size);
+    var dbModule = require('../lib/db');
+    function nameExistsInDir(name) {
+      var vf = VirtualFile.listByDir(req.user.id, dirId).find(function(f) { return f.name === name; });
+      if (vf) return true;
+      var df = dbModule.get("SELECT id FROM deleted_files WHERE user_id = ? AND dir_id = ? AND name = ?", [req.user.id, dirId, name]);
+      return !!df;
+    }
+    var originalName = fileName;
+    if (nameExistsInDir(fileName)) {
+      var ext = '', base = fileName;
+      var dotIdx = fileName.lastIndexOf('.');
+      if (dotIdx > 0) { base = fileName.substring(0, dotIdx); ext = fileName.substring(dotIdx); }
+      else { base = fileName; ext = ''; }
+      var n = 1;
+      while (nameExistsInDir(base + ' (' + n + ')' + ext)) { n++; }
+      fileName = base + ' (' + n + ')' + ext;
+      log.info('[InstantUpload] 重命名: ' + originalName + ' → ' + fileName);
     }
 
     // 创建引用
     var UserFileRef = require('../lib/db').UserFileRef;
-    UserFileRef.create(req.user.id, existing.id, dirId, fileName, null);
+    UserFileRef.create(req.user.id, challenge.storageId, dirId, fileName, null);
 
     // 更新引用计数
-    FileStorage.incrementRef(existing.id);
+    FileStorage.incrementRef(challenge.storageId);
 
-    // 在 virtual_files 中也创建一条记录（用于兼容现有文件列表）
+    // 在 virtual_files 中也创建一条记录
     var vfId = VirtualFile.createWithEncVersion(
       req.user.id, dirId, fileName, fileSize,
       require('mime-types').lookup(fileName) || 'application/octet-stream',
-      '', '',  // storage_path 和 uuid 为空（通过 user_file_refs + file_storage_paths 查找）
-      existing.enc_version || 1
+      '', '',
+      (function(){ var r = require('../lib/db').get('SELECT enc_version FROM file_storage WHERE id = ?', [challenge.storageId]); return (r && r.enc_version) || 1; })()
     );
-    // 关联 storage_id
     if (vfId) {
-      var dbModule = require('../lib/db');
-      dbModule.run('UPDATE virtual_files SET storage_id = ? WHERE id = ?', [existing.id, vfId]);
+      require('../lib/db').run('UPDATE virtual_files SET storage_id = ? WHERE id = ?', [challenge.storageId, vfId]);
     }
 
     // 更新配额
@@ -810,18 +1065,15 @@ router.post('/files/check-hash', requireAuth, function(req, res) {
       User.updateUsedBytes(req.user.id, fileSize);
     }
 
-    log.info('[HashCheck] 秒传成功: ' + fileName + ' hash=' + fileHash.substring(0, 12) + ' size=' + fileSize);
+    log.info('[InstantUpload] 秒传成功(质询通过): ' + fileName + ' hash=' + fileHash.substring(0, 12) + ' size=' + fileSize);
     return res.json({
       code: 0, message: '秒传成功', data: {
         id: vfId, name: fileName, size: fileSize,
-        exists: true, is_instant: true, storage_id: existing.id
+        exists: true, is_instant: true, storage_id: challenge.storageId
       }
     });
   }
 
-  // 文件存在但所有路径都失效 → 需要用户上传新文件来修复
-  log.info('[HashCheck] 文件损坏，请求上传修复: hash=' + fileHash.substring(0, 12) + ' size=' + fileSize);
-  return res.json({ code: 0, message: '文件需要重新上传', data: { exists: false, need_repair: true } });
 });
 
 // POST /api/files/upload  上传文件
@@ -939,7 +1191,7 @@ router.post('/files/upload', requireAuth, function(req, res) {
       if (brokenExisting) {
         var oldRefs = FileStorage.listRefUsers(brokenExisting.id);
         oldRefs.forEach(function(ref) {
-          UserFileRef.removeByStorageAndUser(brokenExisting.id, ref.user_id);
+          UserFileRef.removeOneRef(brokenExisting.id, ref.user_id, ref.dir_id || 0, ref.name);
           UserFileRef.create(ref.user_id, storageId, ref.dir_id || 0, ref.name, null);
           if (ref.user_id === user.id) currentUserAlreadyHasRef = true;
         });
@@ -1164,7 +1416,13 @@ router.get('/files/download/:id', requireAuth, function(req, res) {
       filePath = validPaths[Math.floor(Math.random() * validPaths.length)];
     }
   }
-  if (!filePath || !fs.existsSync(filePath)) return deny404(res, '文件不存在');
+  if (!filePath || !fs.existsSync(filePath)) {
+    // 有 storage_id 但物理文件丢失 → 文件已失效（被清理或移动）
+    if (file.storage_id && file.storage_id > 0) {
+      return res.status(410).json({ code: 410, message: '文件已失效（存储文件已被清理或移动）', data: { is_broken: true } });
+    }
+    return deny404(res, '文件不存在');
+  }
 
   // ========== 存储架构 V2: 惰性迁移 ==========
   if (!file.storage_id || file.storage_id === 0) {
@@ -1300,7 +1558,7 @@ router.delete('/files/:id', requireAuth, function(req, res) {
   var UserFileRef = require('../lib/db').UserFileRef;
   // 通过 virtual_files 的 storage_id 查找引用
   if (moved.storage_id && moved.storage_id > 0) {
-    UserFileRef.removeByStorageAndUser(moved.storage_id, user.id);
+    UserFileRef.removeOneRef(moved.storage_id, user.id, moved.dir_id || 0, moved.name);
     var newRefCount = FileStorage.decrementRef(moved.storage_id);
     log.info('[Delete] storage_id=' + moved.storage_id + ' ref_count=' + newRefCount + ' user=' + user.id);
     // ref_count = 0 → 立即清理物理文件
@@ -2257,6 +2515,7 @@ router.delete('/recycle/dirs/:id', requireAuth, function(req, res) {
     var files = query('SELECT * FROM deleted_files WHERE user_id = ? AND recycle_dir_id = ?', [user.id, rid]);
     files.forEach(function(f) {
       Storage.deleteFile(user.id, f.nonce);
+      RecycleBin._decrementStorageRef(f, user.id);
       run('DELETE FROM deleted_files WHERE id = ?', [f.id]);
     });
     // 递归删除子回收站目录
@@ -3052,56 +3311,130 @@ function doOfflineDownload(task, user, req, callback) {
             return callback(new Error(emptyErr));
           }
 
-          // 转换为 V1 加密格式
+          // ========== 存储架构 V3: 离线下载接入存储组 ==========
           try {
             var tempData = fs.readFileSync(tempPath);
-            var encResult = createV1EncryptStreamSync(storagePath, tempData);
-            if (!encResult.ok) {
-              log.error('[Offline] V1 加密失败:', encResult.error);
-              try { fs.unlinkSync(tempPath); } catch(e) {}
-              OfflineDownload.updateStatus(task.id, 'failed', '加密失败: ' + encResult.error);
-              if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: '加密失败: ' + encResult.error });
-              return callback(new Error('V1加密失败: ' + encResult.error));
+            var plaintextSize = tempData.length;
+            // 计算明文哈希（用于秒传去重）
+            var fileHash = crypto.createHash('sha256').update(tempData).digest('hex');
+            var FileStorage = require('../lib/db').FileStorage;
+            var UserFileRef = require('../lib/db').UserFileRef;
+            var fileId, storageId, isDedup = false;
+
+            // 检查去重
+            var existing = FileStorage.findByHashAndSize(fileHash, plaintextSize);
+            if (existing && FileStorage.hasValidPath(existing.id)) {
+              storageId = existing.id;
+              FileStorage.incrementRef(storageId);
+              isDedup = true;
+              log.info('[Offline] 秒传: hash=' + fileHash.substring(0, 12) + ' -> storage_id=' + storageId);
             }
-            // 删除临时文件
+
+            if (!isDedup) {
+              // V1 加密到临时文件
+              var encResult = createV1EncryptStreamSync(storagePath, tempData);
+              if (!encResult.ok) {
+                log.error('[Offline] V1 加密失败:', encResult.error);
+                try { fs.unlinkSync(tempPath); } catch(e) {}
+                OfflineDownload.updateStatus(task.id, 'failed', '加密失败: ' + encResult.error);
+                if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: '加密失败: ' + encResult.error });
+                return callback(new Error('V1加密失败: ' + encResult.error));
+              }
+
+              // 写入锁检查
+              var lockErr2 = require('../lib/db').StoragePool.checkWriteLock();
+              if (lockErr2) {
+                try { fs.unlinkSync(tempPath); } catch(e) {}
+                try { fs.unlinkSync(storagePath); } catch(e) {}
+                OfflineDownload.updateStatus(task.id, 'failed', lockErr2);
+                return callback(new Error(lockErr2));
+              }
+
+              // 通过存储流写入均衡组
+              var StorageMod = require('../lib/db').Storage;
+              var relPath = StorageMod.getDateBasedPath(uuid);
+              var StorageStream = require('../lib/storage-stream');
+              var writeResult = StorageStream.createWriteStream(relPath);
+              var groupId = writeResult.groupId;
+              log.info('[Offline] createWriteStream: groupId=' + groupId + ' poolIds=' + JSON.stringify(writeResult.poolIds));
+
+              if (groupId === null || groupId === undefined) {
+                try { fs.unlinkSync(tempPath); } catch(e) {}
+                try { fs.unlinkSync(storagePath); } catch(e) {}
+                var errMsg2 = '没有可写入的存储组';
+                OfflineDownload.updateStatus(task.id, 'failed', errMsg2);
+                return callback(new Error(errMsg2));
+              }
+
+              var encBuf = fs.readFileSync(storagePath);
+              var ws = writeResult.stream;
+              ws.end(encBuf);
+              // 删除旧格式临时文件
+              try { fs.unlinkSync(storagePath); } catch(e) {}
+
+              storageId = FileStorage.create(uuid, fileHash, plaintextSize, plaintextSize, ENC_V1_VERSION, true, encResult.nonce);
+              require('../lib/db').run('UPDATE file_storage SET group_id = ? WHERE id = ?', [groupId, storageId]);
+              (writeResult.poolIds || []).forEach(function(pid) {
+                FileStorage.addPath(storageId, pid, relPath, relPath);
+              });
+              log.info('[Offline] storageId=' + storageId + ' relPath=' + relPath + ' mirrors=' + (writeResult.poolIds || []).length);
+            }
+
+            // 删除临时文件（明文 + 旧加密）
             try { fs.unlinkSync(tempPath); } catch(e) {}
-            log.info('[Offline] V1 加密完成，最终文件大小=' + fs.statSync(storagePath).size);
+            if (isDedup) { try { fs.unlinkSync(storagePath); } catch(e) {} }
+
+            // 校验目标目录仍存在（离线下载是异步的，目录可能在任务创建后被删除）
+            var dirId = task.target_dir_id || 0;
+            if (dirId !== 0) {
+              var targetDir = require('../lib/db').VirtualDir.findById(dirId);
+              if (!targetDir || targetDir.user_id !== user.id) {
+                // 目录已删除，回退到根目录
+                log.warn('[Offline] 目标目录 ' + dirId + ' 已不存在，回退到根目录');
+                dirId = 0;
+              }
+            }
+
+            // 创建用户引用
+            UserFileRef.create(user.id, storageId, dirId, filename, mimeType);
+
+            // 创建 virtual_files 记录（关联 storage_id）
+            fileId = VirtualFile.createWithEncVersion(user.id, dirId, filename, plaintextSize, mimeType,
+              isDedup ? 'dedup_' + fileHash.substring(0, 12) : relPath,
+              isDedup ? '' : uuid, ENC_V1_VERSION);
+            log.info('[Offline] VirtualFile.create 返回 fileId=' + fileId);
+
+            if (fileId) {
+              require('../lib/db').run('UPDATE virtual_files SET storage_id = ? WHERE id = ?', [storageId, fileId]);
+            }
+
+            if (!fileId) {
+              OfflineDownload.updateStatus(task.id, 'failed', '创建文件记录失败');
+              if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: '创建文件记录失败' });
+              return callback(new Error('创建文件记录失败'));
+            }
+
+            User.updateUsedBytes(user.id, plaintextSize);
+            OfflineDownload.updateProgress(task.id, downloadedBytes, totalBytes, 0);
+            OfflineDownload.updateStatus(task.id, 'completed');
+
+            log.info('[Offline] 完成: ' + filename + ' (' + Math.round(plaintextSize / 1024) + 'KB)' + (isDedup ? ' [秒传]' : ''));
+            if (wsPush) {
+              wsPush.pushOfflineUpdate(user.id, task.id, 'completed', {
+                fileId: fileId,
+                fileName: filename,
+                fileSize: plaintextSize
+              });
+            }
+            callback(null, fileId);
           } catch(e) {
-            log.error('[Offline] V1 加密异常:', e.message);
+            log.error('[Offline] 存储写入异常:', e.message);
             try { fs.unlinkSync(tempPath); } catch(e2) {}
             try { fs.unlinkSync(storagePath); } catch(e2) {}
-            OfflineDownload.updateStatus(task.id, 'failed', '加密过程异常: ' + e.message);
-            if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: '加密过程异常: ' + e.message });
+            OfflineDownload.updateStatus(task.id, 'failed', '存储写入异常: ' + e.message);
+            if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: '存储写入异常: ' + e.message });
             return callback(e);
           }
-
-          // 创建虚拟文件记录（enc_version = 1 表示 V1 格式）
-          var nonce = crypto.randomBytes(12).toString('hex');
-          var dirId = task.target_dir_id || 0;
-          var actualSize = fs.statSync(storagePath).size;
-          var fileId = VirtualFile.createWithEncVersion(user.id, dirId, filename, actualSize, mimeType, storagePath, nonce, ENC_V1_VERSION);
-          log.info('[Offline] VirtualFile.create 返回 fileId=' + fileId);
-
-          if (!fileId) {
-            try { fs.unlinkSync(storagePath); } catch(e) {}
-            OfflineDownload.updateStatus(task.id, 'failed', '创建文件记录失败');
-            if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: '创建文件记录失败' });
-            return callback(new Error('创建文件记录失败'));
-          }
-
-          User.updateUsedBytes(user.id, actualSize);
-          OfflineDownload.updateProgress(task.id, downloadedBytes, totalBytes, 0);
-          OfflineDownload.updateStatus(task.id, 'completed');
-
-          log.info('[Offline] 完成: ' + filename + ' (' + Math.round(actualSize / 1024) + 'KB)');
-          if (wsPush) {
-            wsPush.pushOfflineUpdate(user.id, task.id, 'completed', {
-              fileId: fileId,
-              fileName: filename,
-              fileSize: actualSize
-            });
-          }
-          callback(null, fileId);
         });
       });
 
@@ -4654,6 +4987,108 @@ router.delete('/admin/blacklist/:id', requireAuth, function(req, res) {
   require('../lib/db').IPBlacklist.delete(id);
   logger.logAdmin(req, 'remove_ip_blacklist', 'ip_blacklist', String(id), String(id), '删除黑名单记录');
   res.json({ code: 0, message: '已从黑名单移除', data: null });
+});
+
+// ==================== 频率限制规则管理 ====================
+
+// GET /api/admin/rate-limit/rules  获取所有规则
+router.get('/admin/rate-limit/rules', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return deny403(res, '需要管理员权限');
+  var rules = require('../lib/db').RateLimitRules.getAll();
+  var authenticated = rules.filter(function(r) { return r.user_type === 'authenticated'; });
+  var anonymous = rules.filter(function(r) { return r.user_type === 'anonymous'; });
+  res.json({ code: 0, data: { authenticated: authenticated, anonymous: anonymous } });
+});
+
+// POST /api/admin/rate-limit/rules  新增规则
+router.post('/admin/rate-limit/rules', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return deny403(res, '需要管理员权限');
+  var body = req.body;
+  var userType = body.user_type;
+  if (userType !== 'authenticated' && userType !== 'anonymous') {
+    return res.json({ code: 400, message: 'user_type 必须是 authenticated 或 anonymous' });
+  }
+  var windowSeconds = parseInt(body.window_seconds, 10) || 60;
+  if (windowSeconds < 1 || windowSeconds > 3600) {
+    return res.json({ code: 400, message: '时间窗口必须在 1-3600 秒之间' });
+  }
+  var maxRequests = parseInt(body.max_requests, 10) || 1;
+  if (maxRequests < 1) {
+    return res.json({ code: 400, message: '最大请求数至少为 1' });
+  }
+  var banDurationSeconds = parseInt(body.ban_duration_seconds, 10);
+  if (isNaN(banDurationSeconds) || banDurationSeconds < 0) {
+    return res.json({ code: 400, message: '封禁时长必须 >= 0（0=永久）' });
+  }
+  var sortOrder = parseInt(body.sort_order, 10) || 0;
+  var id = require('../lib/db').RateLimitRules.add(userType, windowSeconds, maxRequests, banDurationSeconds, sortOrder);
+  if (global.__rateLimitReload) global.__rateLimitReload();
+  logger.logAdmin(req, 'add_rate_limit_rule', 'rate_limit_rules', String(id), JSON.stringify(body), '新增频率限制规则');
+  res.json({ code: 0, message: '规则已添加', data: { id: id } });
+});
+
+// PUT /api/admin/rate-limit/rules/:id  更新规则
+router.put('/admin/rate-limit/rules/:id', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return deny403(res, '需要管理员权限');
+  var id = parseInt(req.params.id, 10);
+  var existing = require('../lib/db').RateLimitRules.getById(id);
+  if (!existing) return res.json({ code: 404, message: '规则不存在' });
+  var fields = {};
+  if (req.body.user_type !== undefined) fields.user_type = req.body.user_type;
+  if (req.body.window_seconds !== undefined) fields.window_seconds = parseInt(req.body.window_seconds, 10);
+  if (req.body.max_requests !== undefined) fields.max_requests = parseInt(req.body.max_requests, 10);
+  if (req.body.ban_duration_seconds !== undefined) fields.ban_duration_seconds = parseInt(req.body.ban_duration_seconds, 10);
+  if (req.body.is_enabled !== undefined) fields.is_enabled = req.body.is_enabled ? 1 : 0;
+  if (req.body.sort_order !== undefined) fields.sort_order = parseInt(req.body.sort_order, 10);
+  require('../lib/db').RateLimitRules.update(id, fields);
+  if (global.__rateLimitReload) global.__rateLimitReload();
+  logger.logAdmin(req, 'update_rate_limit_rule', 'rate_limit_rules', String(id), JSON.stringify(fields), '更新频率限制规则');
+  res.json({ code: 0, message: '规则已更新' });
+});
+
+// DELETE /api/admin/rate-limit/rules/:id  删除规则
+router.delete('/admin/rate-limit/rules/:id', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return deny403(res, '需要管理员权限');
+  var id = parseInt(req.params.id, 10);
+  var existing = require('../lib/db').RateLimitRules.getById(id);
+  if (!existing) return res.json({ code: 404, message: '规则不存在' });
+  require('../lib/db').RateLimitRules.delete(id);
+  if (global.__rateLimitReload) global.__rateLimitReload();
+  logger.logAdmin(req, 'delete_rate_limit_rule', 'rate_limit_rules', String(id), String(id), '删除频率限制规则');
+  res.json({ code: 0, message: '规则已删除' });
+});
+
+// ==================== 频率限制白名单管理 ====================
+
+// GET /api/admin/rate-limit/whitelist  获取白名单
+router.get('/admin/rate-limit/whitelist', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return deny403(res, '需要管理员权限');
+  var list = require('../lib/db').RateLimitWhitelist.getAll();
+  res.json({ code: 0, data: { whitelist: list } });
+});
+
+// POST /api/admin/rate-limit/whitelist  添加白名单路径
+router.post('/admin/rate-limit/whitelist', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return deny403(res, '需要管理员权限');
+  var body = req.body;
+  var p = (body.path || '').trim();
+  if (!p) return res.json({ code: 400, message: '路径不能为空' });
+  if (p.indexOf('/') !== 0) return res.json({ code: 400, message: '路径必须以 / 开头' });
+  var desc = (body.description || '').trim();
+  var id = require('../lib/db').RateLimitWhitelist.add(p, desc);
+  if (global.__rateLimitReload) global.__rateLimitReload();
+  logger.logAdmin(req, 'add_rate_limit_whitelist', 'rate_limit_whitelist', String(id), p, '添加频率限制白名单');
+  res.json({ code: 0, message: '白名单已添加', data: { id: id } });
+});
+
+// DELETE /api/admin/rate-limit/whitelist/:id  删除白名单
+router.delete('/admin/rate-limit/whitelist/:id', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return deny403(res, '需要管理员权限');
+  var id = parseInt(req.params.id, 10);
+  require('../lib/db').RateLimitWhitelist.delete(id);
+  if (global.__rateLimitReload) global.__rateLimitReload();
+  logger.logAdmin(req, 'delete_rate_limit_whitelist', 'rate_limit_whitelist', String(id), String(id), '删除频率限制白名单');
+  res.json({ code: 0, message: '白名单已删除' });
 });
 
 // ==================== 分享管理 ====================

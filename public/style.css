@@ -1636,6 +1636,38 @@ body {
   opacity: 0.85;
 }
 
+/* ======== 失效文件样式 ======== */
+.file-card.broken {
+  opacity: 0.6;
+  filter: grayscale(60%);
+}
+.file-card.broken .card-icon-wrap {
+  filter: grayscale(100%);
+}
+.card-broken-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  z-index: 5;
+}
+/* 表格中的失效行 */
+.fm-row.broken {
+  opacity: 0.5;
+  text-decoration: line-through;
+  text-decoration-color: #999;
+}
+.fm-row.broken .td-icon,
+.fm-row.broken .td-name {
+  color: #999;
+}
+
 .card-public-badge {
   position: absolute;
   top: 8px;
@@ -3197,6 +3229,43 @@ body {
 .bl-permanent {
   color: #f87171;
   font-weight: 600;
+}
+
+/* 频率限制管理页面 */
+.rl-section {
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.rl-section-header {
+  padding: 10px 16px;
+  background: var(--bg-card);
+  font-weight: 700;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rl-section-icon {
+  font-size: 16px;
+}
+.rl-section .admin-table-wrap {
+  margin: 0;
+}
+.rl-section .admin-table {
+  margin: 0;
+}
+.rl-preset-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  transition: all 0.15s;
+}
+.rl-preset-active {
+  background: var(--accent, #3b82f6) !important;
+  color: #fff !important;
+  border-color: var(--accent, #3b82f6) !important;
 }
 
 .bl-level-tag {

@@ -583,14 +583,17 @@ router.get('/admin/storage/sync-status/:groupId', requireAdmin, function(req, re
 
 // ==================== 文件引用浏览器 ====================
 
-// GET /api/admin/storage/files — 列出文件引用
+// GET /api/admin/storage/files — 列出文件引用（支持筛选 + 状态标记）
 router.get('/admin/storage/files', requireAdmin, function(req, res) {
   var search = req.query.search || '';
+  var filter = req.query.filter || ''; // zero_ref | no_paths | lost | all
   var limit = parseInt(req.query.limit, 10) || 50;
   var offset = parseInt(req.query.offset, 10) || 0;
 
   var FileStorage = require('../lib/db').FileStorage;
   var db = require('../lib/db');
+  var fs = require('fs');
+  var pathLib = require('path');
 
   var where = "WHERE fs.status = 'active'";
   var params = [];
@@ -599,8 +602,21 @@ router.get('/admin/storage/files', requireAdmin, function(req, res) {
     params.push('%' + search + '%', '%' + search + '%');
   }
 
+  // 筛选条件
+  if (filter === 'zero_ref') {
+    where += ' AND fs.ref_count <= 0';
+  } else if (filter === 'no_paths') {
+    where += ' AND fs.ref_count > 0 AND (SELECT COUNT(*) FROM file_storage_paths fsp2 WHERE fsp2.storage_id = fs.id AND fsp2.status = \'active\') = 0';
+  } else if (filter === 'lost') {
+    // 丢失 = 无路径(logical) OR 有路径但不可读(physical)
+    where += ' AND (fs.ref_count <= 0 OR (SELECT COUNT(*) FROM file_storage_paths fsp2 WHERE fsp2.storage_id = fs.id AND fsp2.status = \'active\') = 0)';
+  } else if (filter === 'physical_lost') {
+    // 有路径记录但物理文件可能不可达 — 需要逐行检查
+    where += ' AND (SELECT COUNT(*) FROM file_storage_paths fsp2 WHERE fsp2.storage_id = fs.id AND fsp2.status = \'active\') > 0 AND fs.ref_count > 0';
+  }
+
   var files = db.query(
-    'SELECT fs.id, fs.uuid, fs.file_hash, fs.file_size, fs.plaintext_size, fs.ref_count, fs.enc_version, fs.group_id, fs.created_at, ' +
+    'SELECT fs.id, fs.uuid, fs.file_hash, fs.file_size, fs.plaintext_size, fs.ref_count, fs.enc_version, fs.group_id, fs.created_at, fs.status as fs_status, ' +
     '(SELECT GROUP_CONCAT(u.email, \', \') FROM user_file_refs ufr LEFT JOIN users u ON ufr.user_id = u.id WHERE ufr.storage_id = fs.id) as ref_users, ' +
     '(SELECT COUNT(*) FROM file_storage_paths fsp WHERE fsp.storage_id = fs.id AND fsp.status = \'active\') as path_count, ' +
     '(SELECT fsp.relative_path FROM file_storage_paths fsp WHERE fsp.storage_id = fs.id AND fsp.status = \'active\' LIMIT 1) as rel_path ' +
@@ -608,26 +624,72 @@ router.get('/admin/storage/files', requireAdmin, function(req, res) {
     params.concat([limit, offset])
   );
 
+  // 批量查询所有有路径记录的文件的物理可达性（一次 SQL，精确复用 getValidPaths 逻辑）
+  var storageIdToValid = {};
+  var filesWithPaths = files.filter(function(f) { return f.path_count > 0; });
+  if (filesWithPaths.length > 0) {
+    var sidList = filesWithPaths.map(function(f) { return f.id; });
+    var phs2 = sidList.map(function() { return '?'; }).join(',');
+    var allPathRows = db.query(
+      'SELECT fsp.storage_id, fsp.full_path, sp.local_path FROM file_storage_paths fsp ' +
+      'LEFT JOIN storage_pools sp ON fsp.pool_id = sp.id ' +
+      'WHERE fsp.storage_id IN (' + phs2 + ') AND fsp.status = ? AND (sp.status IS NULL OR sp.status = ?)',
+      sidList.concat(['active', 'active'])
+    );
+    allPathRows.forEach(function(row) {
+      if (storageIdToValid[row.storage_id]) return; // 已确认有效，跳过
+      var checkPath = row.full_path;
+      if (checkPath && !pathLib.isAbsolute(checkPath) && row.local_path) {
+        checkPath = pathLib.join(row.local_path, checkPath);
+      }
+      try { if (checkPath && fs.existsSync(checkPath)) storageIdToValid[row.storage_id] = true; } catch(e) {}
+    });
+  }
+
+  var mapped = files.map(function(f) {
+    // 判断状态
+    var fileStatus = 'normal';
+    if (f.fs_status === 'cleaned') {
+      fileStatus = 'cleaned';
+    } else if (f.ref_count <= 0) {
+      fileStatus = 'zero_ref';
+    } else if (f.path_count === 0) {
+      fileStatus = 'logical_lost';
+    }
+
+    var hasValidPath = !!storageIdToValid[f.id];
+
+    // 有路径但物理文件全丢了 → 物理丢失
+    if (fileStatus === 'normal' && f.path_count > 0 && !hasValidPath) {
+      fileStatus = 'physical_lost';
+    }
+
+    // physical_lost 筛选：二次过滤
+    if (filter === 'physical_lost' && fileStatus !== 'physical_lost') return null;
+
+    return {
+      id: f.id,
+      uuid: f.uuid,
+      file_hash: f.file_hash ? f.file_hash.substring(0, 16) + '...' : '',
+      file_size: f.file_size,
+      ref_count: f.ref_count,
+      ref_users: f.ref_users || '',
+      path_count: f.path_count || 0,
+      group_id: f.group_id || 0,
+      rel_path: f.rel_path || '',
+      enc_version: f.enc_version,
+      created_at: f.created_at,
+      has_valid_path: hasValidPath,
+      status: fileStatus
+    };
+  }).filter(Boolean); // 过滤 null（physical_lost 筛选中不匹配的）
+
   var total = db.get('SELECT COUNT(*) as cnt FROM file_storage fs ' + where, params);
   var totalCount = total ? total.cnt : 0;
 
   res.json({
     code: 0, data: {
-      files: files.map(function(f) {
-        return {
-          id: f.id,
-          uuid: f.uuid,
-          file_hash: f.file_hash ? f.file_hash.substring(0, 16) + '...' : '',
-          file_size: f.file_size,
-          ref_count: f.ref_count,
-          ref_users: f.ref_users || '',
-          path_count: f.path_count || 0,
-          group_id: f.group_id || 0,
-          rel_path: f.rel_path || '',
-          enc_version: f.enc_version,
-          created_at: f.created_at
-        };
-      }),
+      files: mapped,
       total: totalCount,
       limit: limit,
       offset: offset
@@ -1400,6 +1462,116 @@ router.get('/admin/storage/orphan-files', requireAdmin, function(req, res) {
         };
       })
     }
+  });
+});
+
+// ==================== 物理文件清理 ====================
+
+// POST /api/admin/storage/cleanup — 异步清理物理文件（保留逻辑记录）
+router.post('/admin/storage/cleanup', requireAdmin, function(req, res) {
+  var storageIds = req.body.storage_ids || [];
+  if (!Array.isArray(storageIds) || storageIds.length === 0) {
+    return res.json({ code: 1, message: '请指定要清理的 storage_ids 列表' });
+  }
+  // 去重、过滤非法值
+  storageIds = storageIds.filter(function(id) { return id > 0; });
+  if (storageIds.length === 0) {
+    return res.json({ code: 1, message: '没有有效的 storage_id' });
+  }
+
+  var AsyncTask = require('../lib/db').AsyncTask;
+  var db = require('../lib/db');
+  var FileStorage = require('../lib/db').FileStorage;
+  var StoragePool = require('../lib/db').StoragePool;
+  var fs = require('fs');
+  var pathLib = require('path');
+
+  var taskId = AsyncTask.create('physical_cleanup',
+    '清理物理文件 (' + storageIds.length + '个)',
+    { storage_ids: storageIds, total: storageIds.length }
+  );
+  AsyncTask.start(taskId, storageIds.length);
+  AsyncTask.appendLog(taskId, '开始清理 ' + storageIds.length + ' 个文件的物理存储', 'info');
+
+  var cleaned = 0, errors = 0, skipped = 0, idx = 0;
+
+  function processNext() {
+    if (idx >= storageIds.length) {
+      AsyncTask.complete(taskId, errors > 0 ? 'completed' : 'completed');
+      AsyncTask.appendLog(taskId,
+        '清理完成! 成功:' + cleaned + ' 失败:' + errors + ' 跳过:' + skipped,
+        errors > 0 ? 'warn' : 'info'
+      );
+      log.info('[Cleanup] 任务完成: taskId=' + taskId + ' cleaned=' + cleaned + ' errors=' + errors + ' skipped=' + skipped);
+      return;
+    }
+
+    var sid = storageIds[idx++];
+    try {
+      var fsEntry = FileStorage.findById(sid);
+      if (!fsEntry) {
+        AsyncTask.appendLog(taskId, '跳过 #' + sid + ': file_storage 记录不存在', 'warn');
+        skipped++;
+        setImmediate(processNext);
+        return;
+      }
+
+      // 获取所有存储路径（包括已标记 deleted 的）
+      var allPaths = db.query(
+        'SELECT fsp.id as path_id, fsp.full_path, fsp.relative_path, fsp.pool_id, sp.local_path, sp.status as pool_status ' +
+        'FROM file_storage_paths fsp LEFT JOIN storage_pools sp ON fsp.pool_id = sp.id ' +
+        'WHERE fsp.storage_id = ?',
+        [sid]
+      );
+
+      var deletedCount = 0;
+      allPaths.forEach(function(p) {
+        var fp = p.full_path;
+        if (fp && !pathLib.isAbsolute(fp) && p.local_path) {
+          fp = pathLib.join(p.local_path, fp);
+        }
+        // 尝试删除物理文件
+        try {
+          if (fp && fs.existsSync(fp)) {
+            fs.unlinkSync(fp);
+            deletedCount++;
+          }
+        } catch(e) {
+          AsyncTask.appendLog(taskId, '删除失败 #' + sid + ' path=' + fp + ' err=' + e.message, 'warn');
+        }
+        // 标记路径记录为 deleted
+        db.run("UPDATE file_storage_paths SET status = 'deleted' WHERE id = ?", [p.path_id]);
+      });
+
+      // 标记 file_storage 为已清理（不删除记录，保持逻辑引用可查看）
+      db.run("UPDATE file_storage SET status = 'cleaned' WHERE id = ?", [sid]);
+
+      if (deletedCount > 0) {
+        cleaned++;
+        AsyncTask.appendLog(taskId, '✅ #' + sid + ' 清理 ' + deletedCount + ' 个物理文件 (uuid=' + (fsEntry.uuid||'').substring(0,8) + ')', 'info');
+      } else {
+        skipped++;
+        AsyncTask.appendLog(taskId, '⏭️ #' + sid + ' 无物理文件可清理', 'info');
+      }
+    } catch(e) {
+      errors++;
+      AsyncTask.appendLog(taskId, '❌ #' + sid + ' 清理异常: ' + e.message, 'error');
+      log.error('[Cleanup] storage_id=' + sid + ' error=' + e.message);
+    }
+
+    AsyncTask.updateProgress(taskId, cleaned + errors + skipped, storageIds.length, errors);
+    if (idx % 10 === 0) {
+      AsyncTask.appendLog(taskId, '进度: ' + idx + '/' + storageIds.length + ' 清理:' + cleaned + ' 错:' + errors, 'info');
+    }
+    setImmediate(processNext);
+  }
+
+  setImmediate(processNext);
+
+  log.info('[Cleanup] 启动清理任务: taskId=' + taskId + ' files=' + storageIds.length);
+  res.json({
+    code: 0, message: '清理任务已启动，正在异步处理...',
+    data: { task_id: taskId, total: storageIds.length }
   });
 });
 

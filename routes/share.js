@@ -193,11 +193,33 @@ router.get('/share', requireAuth, function(req, res) {
     var info = Share.getPublicInfo(s);
     var targetIds = [];
     try { targetIds = JSON.parse(s.target_ids || '[]'); } catch(e) {}
+    // target_scope 和 display_path：用于前端区分公共/个人分享
+    var targetScope = 'personal';
+    var displayPath = s.target_name;
+    if (s.target_type === 'public') {
+      targetScope = 'public';
+      // 公共目录：完整路径在 target_ids[0] 中，target_path 列未使用
+      var rawPath = (targetIds.length > 0 ? targetIds[0] : '') || s.target_name;
+      displayPath = (rawPath && rawPath[0] !== '/') ? '/' + rawPath : rawPath;
+    } else if (s.target_type === 'dir') {
+      targetScope = 'personal';
+      // 构建个人目录的完整路径：从根到该目录
+      displayPath = buildPersonalPath(s.target_id, 0, s.user_id) || s.target_name;
+    } else if (s.target_type === 'file') {
+      targetScope = 'personal';
+      // 构建个人文件的完整路径：目录路径 + 文件名
+      var fileInfo = getFileInfo(s.target_id, s.user_id);
+      if (fileInfo) {
+        displayPath = (buildPersonalPath(fileInfo.dir_id, 0, s.user_id) || '') + '/' + fileInfo.name;
+      }
+    }
     return {
       id: s.id,
       hash: s.share_hash,
       target_type: s.target_type,
       target_name: s.target_name,
+      target_scope: targetScope,
+      display_path: displayPath,
       owner: s.owner || '',
       has_password: s.hasOwnProperty('extraction_code') && !!s.extraction_code,
       has_password_bool: !!s.extraction_code,
@@ -546,6 +568,14 @@ router.post('/share/save/:hash', requireAuth, function(req, res) {
   var hash = req.params.hash;
   var dirId = parseInt(req.body.dir_id || '0', 10);
   var extractionCode = req.body.extraction_code || '';
+
+  // 校验目标目录存在
+  if (dirId !== 0) {
+    var targetDir = require('../lib/db').VirtualDir.findById(dirId);
+    if (!targetDir || targetDir.user_id !== user.id) {
+      return res.json({ code: 1, message: '目标目录不存在或已被删除，请重新选择', data: null });
+    }
+  }
 
   var share = Share.getByHash(hash);
   if (!share) return res.json({ code: 1, message: '分享不存在或已过期', data: null });
@@ -1022,5 +1052,34 @@ router.get('/share/qr', function(req, res) {
     res.json({ code: 0, data: dataUrl });
   });
 });
+
+// ==================== 辅助：构建个人目录/文件的完整路径 ====================
+// 从目录ID向上追溯到根，返回如 "/根目录/子目录/目标目录"
+function buildPersonalPath(dirId, parentStopId, userId) {
+  if (!dirId || dirId <= 0) return '';
+  var VirtualDir = require('../lib/db').VirtualDir;
+  var parts = [];
+  var cur = dirId;
+  var depth = 0;
+  while (cur > 0 && depth < 20) {
+    var d = VirtualDir.findById(cur);
+    if (!d) break;
+    if (d.user_id !== userId && userId !== 0) break;
+    if (parentStopId > 0 && cur === parentStopId) break;
+    parts.unshift(d.name);
+    cur = d.parent_id;
+    depth++;
+  }
+  return parts.length > 0 ? '/' + parts.join('/') : '';
+}
+
+// 获取个人文件的信息（dir_id + name）
+function getFileInfo(fileId, userId) {
+  if (!fileId || fileId <= 0) return null;
+  var VirtualFile = require('../lib/db').VirtualFile;
+  var f = VirtualFile.findById(fileId);
+  if (!f || (userId > 0 && f.user_id !== userId)) return null;
+  return { dir_id: f.dir_id || 0, name: f.name };
+}
 
 module.exports = router;

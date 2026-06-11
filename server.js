@@ -90,6 +90,10 @@ var requestLog = {}; // { ip: { times: [timestamp, ...], banUntil: ts } }
 
 var getClientIp = utils.getClientIp;
 
+// 加载频率限制缓存
+var rateLimitCache = null;
+try { rateLimitCache = require('./lib/rate-limit-cache'); } catch (e) {}
+
 // 清理过期的请求记录（每2分钟执行一次）
 setInterval(function() {
   var now = Date.now();
@@ -97,8 +101,8 @@ setInterval(function() {
     var r = requestLog[ip];
     // 清理超过10分钟未活跃的 IP 记录
     if (r.times.length === 0 && r.banUntil < now) { delete requestLog[ip]; return; }
-    // 清理60秒前的旧时间戳
-    r.times = r.times.filter(function(t) { return now - t < 60000; });
+    // 清理120秒前的旧时间戳（保留足够长的窗口以适应不同的 window_seconds 配置）
+    r.times = r.times.filter(function(t) { return now - t < 120000; });
   });
 }, 120000);
 
@@ -178,49 +182,60 @@ app.use(function(req, res, next) {
   if (!requestLog[ip]) requestLog[ip] = { times: [], banUntil: 0 };
   var rec = requestLog[ip];
 
-  // 封禁中：拒绝并清除计数
-  if (rec.banUntil > now) {
-    rec.times = []; // 解封后从零开始
-    var remaining = Math.ceil((rec.banUntil - now) / 60000);
-    return res.status(403).json({ code: 403, message: '访问被拒绝，请' + remaining + '分钟后再试', data: null });
-  }
-  // 解封：清除旧计数
+  // 解封：封禁到期自动清除
   if (rec.banUntil > 0 && rec.banUntil <= now) {
-    rec.times = [];
     rec.banUntil = 0;
   }
 
-  // 滑动窗口：只保留60秒内的时间戳
-  rec.times = rec.times.filter(function(t) { return now - t < 60000; });
+  // 滑动窗口：只保留120秒内的时间戳（支持最大 window_seconds=3600 的规则）
+  rec.times = rec.times.filter(function(t) { return now - t < 120000; });
+  // 封禁中也记录时间戳，以便在封禁期内升级到更高等级
   rec.times.push(now);
   var count = rec.times.length;
 
+  var isBanned = rec.banUntil > now;
+
   var isWebDAV = path.startsWith('/webdav/');
-  var isApi = path.startsWith('/api/');
   // 检查是否已登录（有 session userId）—— 现在 Session 已初始化，可以正确识别
   var isAuthenticated = !!(req.session && req.session.userId);
 
-  // 频率阈值配置
-  var thresholds;
-
-  // 移动端版本检查接口：高频合法请求，放宽限制
-  if (path === '/api/version/latest') {
-    thresholds = [{ limit: 1000, banMin: 1 }];
-  } else if (isWebDAV) {
-    var tokenMatch = path.match(/^\/webdav\/([A-Za-z0-9]+)/);
-    var isValidToken = false;
-    if (tokenMatch) {
-      try {
-        var WebDAVLink = require('./lib/db').WebDAVLink;
-        var wlink = WebDAVLink.findByToken(tokenMatch[1]);
-        isValidToken = !!(wlink && !WebDAVLink.checkExpired(wlink));
-      } catch(e) {}
+  // 从缓存获取频率限制规则
+  var userType, thresholds;
+  if (rateLimitCache) {
+    // 白名单路径：跳过频率限制
+    if (rateLimitCache.isWhitelisted(path)) {
+      return next();
     }
-    if (isValidToken) {
-      // 有效 WebDAV token：10000次/分钟封1分钟，不封永久
-      thresholds = [{ limit: 10000, banMin: 1 }];
+
+    // WebDAV token 有效性判断（有效 token 视为已登录）
+    if (isWebDAV) {
+      var tokenMatch = path.match(/^\/webdav\/([A-Za-z0-9]+)/);
+      var isValidToken = false;
+      if (tokenMatch) {
+        try {
+          var WebDAVLink = require('./lib/db').WebDAVLink;
+          var wlink = WebDAVLink.findByToken(tokenMatch[1]);
+          isValidToken = !!(wlink && !WebDAVLink.checkExpired(wlink));
+        } catch(e) {}
+      }
+      userType = isValidToken ? 'authenticated' : 'anonymous';
     } else {
-      // 无效 token：60次起封
+      userType = isAuthenticated ? 'authenticated' : 'anonymous';
+    }
+    var rules = rateLimitCache.getRules(userType);
+    // 转换为 middleware 使用的格式：{ limit, banMin }
+    thresholds = rules.map(function(r) {
+      return { limit: r.max_requests, banMin: Math.ceil(r.ban_duration_seconds / 60), windowSec: r.window_seconds };
+    });
+  } else {
+    // 缓存不可用时的回退：使用旧的硬编码值
+    if (path === '/api/version/latest') {
+      thresholds = [{ limit: 1000, banMin: 1 }];
+    } else if (isWebDAV) {
+      thresholds = [{ limit: 10000, banMin: 1 }];
+    } else if (isAuthenticated) {
+      thresholds = [{ limit: 1000, banMin: 1 }];
+    } else {
       thresholds = [
         { limit: 60,  banMin: 1 },
         { limit: 120, banMin: 60 },
@@ -228,30 +243,52 @@ app.use(function(req, res, next) {
         { limit: 400, banMin: 0 },
       ];
     }
-  } else if (isAuthenticated) {
-    // 已登录用户：1000次/分钟封1分钟，不封永久
-    thresholds = [{ limit: 1000, banMin: 1 }];
-  } else {
-    // 未登录/未认证：60次起封，按等级
-    thresholds = [
-      { limit: 60,  banMin: 1 },
-      { limit: 120, banMin: 60 },
-      { limit: 200, banMin: 10080 },
-      { limit: 400, banMin: 0 },
-    ];
   }
 
-  // 检查是否超过阈值
+  // 检查是否超过阈值（从高到低，匹配最高等级）
+  var hitRule = null;
   for (var i = thresholds.length - 1; i >= 0; i--) {
-    if (count >= thresholds[i].limit) {
-      var banMin = thresholds[i].banMin;
-      var label = banMin <= 0 ? '永久' : (banMin >= 10080 ? Math.round(banMin/10080) + '周' : (banMin >= 60 ? Math.round(banMin/60) + '小时' : banMin + '分钟'));
-      log.info('[Anti-Scrap] 高频请求，IP:', ip, '路径:', path, '频率:', count + '次/60秒 → 封禁' + label);
-      banIP(ip, '高频请求（' + count + '次/60秒），路径: ' + path, banMin);
-      rec.banUntil = banMin <= 0 ? now + 365*24*3600*1000 : now + banMin * 60 * 1000;
-      rec.times = [];
+    var rule = thresholds[i];
+    var windowMs = (rule.windowSec || 60) * 1000;
+    // 统计窗口内的请求数（当前请求已经 push 进 times）
+    var windowCount = rec.times.filter(function(t) { return now - t < windowMs; }).length;
+    if (windowCount >= rule.limit) {
+      hitRule = rule;
+      break; // 从高到低遍历，命中即最高等级
+    }
+  }
+
+  if (hitRule) {
+    var banMin = hitRule.banMin;
+    var newBanUntil = banMin <= 0 ? now + 365*24*3600*1000 : now + banMin * 60 * 1000;
+    var label = banMin <= 0 ? '永久' : (banMin >= 10080 ? Math.round(banMin/10080) + '周' : (banMin >= 60 ? Math.round(banMin/60) + '小时' : banMin + '分钟'));
+
+    if (isBanned) {
+      // 已在封禁中 → 检查是否需要升级
+      if (newBanUntil > rec.banUntil) {
+        var oldRemaining = Math.ceil((rec.banUntil - now) / 60000);
+        log.info('[Anti-Scrap] 封禁升级！IP:', ip, '路径:', path, '用户类型:', userType||'unknown',
+          '原剩余:', oldRemaining + '分钟', '→ 升级为:', label);
+        banIP(ip, '封禁升级（' + windowCount + '次/' + (hitRule.windowSec||60) + '秒），路径: ' + path, banMin);
+        rec.banUntil = newBanUntil;
+      }
+      // 未达到升级条件 → 保持原封禁，继续 403
+      var remaining = Math.ceil((rec.banUntil - now) / 60000);
+      return res.status(403).json({ code: 403, message: '访问被拒绝，请' + remaining + '分钟后再试', data: null });
+    } else {
+      // 首次触发封禁
+      log.info('[Anti-Scrap] 高频请求，IP:', ip, '路径:', path, '用户类型:', userType||'unknown',
+        '频率:', windowCount + '次/' + (hitRule.windowSec||60) + '秒 → 封禁' + label);
+      banIP(ip, '高频请求（' + windowCount + '次/' + (hitRule.windowSec||60) + '秒），路径: ' + path, banMin);
+      rec.banUntil = newBanUntil;
       return res.status(403).json({ code: 403, message: '访问被拒绝，检测到异常请求行为', data: null });
     }
+  }
+
+  // 已封禁但未达到更高等级 → 继续返回 403
+  if (isBanned) {
+    var remaining = Math.ceil((rec.banUntil - now) / 60000);
+    return res.status(403).json({ code: 403, message: '访问被拒绝，请' + remaining + '分钟后再试', data: null });
   }
 
   next();
@@ -308,7 +345,8 @@ app.use(function(req, res, next) {
   // 跳过公开 API（它们在登录前调用，没有 session）
   var publicPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/send-register-code',
                      '/api/auth/send-login-code', '/api/auth/send-reset-code', '/api/auth/reset-password',
-                     '/api/auth/qr-login/', '/api/auth/captcha/', '/api/share', '/api/offline/', '/api/admin/',
+                     '/api/auth/qr-login/', '/api/auth/captcha/', '/api/auth/setup',
+                     '/api/share', '/api/offline/', '/api/admin/',
                      '/api/files/upload', '/api/public-files/upload', '/api/auth/logout'];
   for (var i = 0; i < publicPaths.length; i++) {
     if (req.path.startsWith(publicPaths[i])) {

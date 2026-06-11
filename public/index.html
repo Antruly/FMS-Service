@@ -185,7 +185,12 @@
   <header class="header">
     <div class="header-left">
       <div class="logo-icon"><img src="/favicon.png" alt="FMS" style="width:40px;height:40px"></div>
-      <div class="logo-text"><h1>FMS</h1><span>SYS://DASHBOARD</span></div>
+      <div class="logo-text"><h1>FMS</h1><span id="headerVersion">SYS://DASHBOARD</span></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a href="https://github.com/Antruly/FMS-Service" target="_blank" class="btn" style="padding:6px 12px;font-size:11px" title="GitHub">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg> 开源
+      </a>
     </div>
     <div class="header-right" id="headerRight">
       <span style="color:var(--text3);font-size:12px">加载中...</span>
@@ -225,20 +230,20 @@
       <div class="feature-card">
         <span class="fc-icon">&#128229;</span><h4>离线下载</h4><p>远程 HTTP 资源自动下载到您的空间</p>
       </div>
-      <div class="feature-card" onclick="openAppDownload()" style="cursor:pointer">
-        <span class="fc-icon">&#128241;</span><h4>移动端 App</h4><p>Android 扫码下载，支持扫码登录</p>
+      <div class="feature-card">
+        <span class="fc-icon">&#128209;</span><h4>WebDAV 协议</h4><p>挂载为网络驱动器，标准协议支持</p>
       </div>
     </div>
 
-    <!-- Updates + Download -->
+    <!-- Updates + Download + GitHub -->
     <div class="main-grid">
       <div class="card">
-        <div class="card-header"><span class="card-title">&#128640; 最新更新</span><span class="card-badge new">v2.4.0</span></div>
-        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>公共目录文件分享</h4><p>管理员可分享公共目录，普通用户限1天</p></div><span class="update-time">06-04</span></div>
-        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>下载次数限制 + 首页仪表盘</h4><p>分享支持下载上限，登录前后不同内容</p></div><span class="update-time">06-05</span></div>
-        <div class="update-item"><div class="update-dot security"></div><div class="update-content"><h4>CSRF 安全防护增强</h4><p>修复扫码登录安全漏洞，加固请求防护</p></div><span class="update-time">06-04</span></div>
-        <div class="update-item"><div class="update-dot fix"></div><div class="update-content"><h4>大文件上传优化</h4><p>流式写入临时文件，最大支持 3.5GB</p></div><span class="update-time">06-04</span></div>
-        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>离线下载支持 GitHub</h4><p>支持暂停/取消/重试，同源自动携带认证</p></div><span class="update-time">06-03</span></div>
+        <div class="card-header"><span class="card-title">&#128640; 最新更新</span><span class="card-badge new" id="badgeVersion">v1.0.1</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>WebDAV 协议完整支持</h4><p>公共+个人加密目录挂载为网络驱动器</p></div><span class="update-time">06-10</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>安全秒传 + 引用计数</h4><p>SHA-256哈希+随机字节质询，防伪造秒传</p></div><span class="update-time">06-08</span></div>
+        <div class="update-item"><div class="update-dot security"></div><div class="update-content"><h4>可配置频率限制系统</h4><p>按登录/匿名分级封禁，路径白名单</p></div><span class="update-time">06-07</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>存储组+镜像架构</h4><p>多存储组权重负载均衡，镜像自动同步</p></div><span class="update-time">06-06</span></div>
+        <div class="update-item"><div class="update-dot fix"></div><div class="update-content"><h4>物理文件清理+失效检测</h4><p>管理后台支持异步清理，用户端显示失效图标</p></div><span class="update-time">06-10</span></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">&#128241; 移动端下载</span></div>
@@ -246,6 +251,20 @@
           <div id="mobileDlQr" onclick="openAppDownload()" style="cursor:pointer;width:140px;height:140px;margin:0 auto 12px;background:#fff;border-radius:10px;padding:6px;display:flex;align-items:center;justify-content:center;color:#0d1117;font-size:11px">加载中...</div>
           <a id="mobileDlLink" href="#" onclick="openAppDownload();return false" style="color:var(--accent);font-size:13px;text-decoration:none">&#128229; 下载 App</a>
           <p style="font-size:11px;color:var(--text3);margin-top:8px">扫码下载 Android App，支持扫码登录</p>
+        </div>
+      </div>
+      <!-- GitHub repos -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">🐙 开源仓库</span></div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <a href="https://github.com/Antruly/FMS-Service" target="_blank" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text2);text-decoration:none;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+            <div><div style="font-size:12px;font-weight:700;color:var(--text)">FMS-Service</div><div style="font-size:10px;color:var(--text3)">服务端 · Node.js · MIT</div></div>
+          </a>
+          <a href="https://github.com/Antruly/FMS-Service-app" target="_blank" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text2);text-decoration:none;transition:all .2s" onmouseover="this.style.borderColor='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)'">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+            <div><div style="font-size:12px;font-weight:700;color:var(--text)">FMS-Service-app</div><div style="font-size:10px;color:var(--text3)">Android · Capacitor · MIT</div></div>
+          </a>
         </div>
       </div>
     </div>
@@ -290,10 +309,10 @@
       </div>
       <!-- Updates (condensed) -->
       <div class="card">
-        <div class="card-header"><span class="card-title">&#128640; 更新日志</span></div>
-        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>公共目录分享 + 下载限制</h4><p>管理员可分享公共目录，普通用户限1天/30次</p></div><span class="update-time">06-04</span></div>
-        <div class="update-item"><div class="update-dot fix"></div><div class="update-content"><h4>大文件上传 + CSRF修复</h4><p>支持3.5GB上传，修复扫码登录问题</p></div><span class="update-time">06-04</span></div>
-        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>全新首页仪表盘</h4><p>个性化内容展示</p></div><span class="update-time">06-05</span></div>
+        <div class="card-header"><span class="card-title">&#128640; 更新日志</span><span class="card-badge new" id="badgeUserVer">v1.0.1</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>WebDAV 协议完整支持</h4><p>公共+个人加密目录均可映射为网络驱动器</p></div><span class="update-time">06-10</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>安全秒传 + 物理文件清理</h4><p>随机字节质询防伪造，异步清理零引用文件</p></div><span class="update-time">06-10</span></div>
+        <div class="update-item"><div class="update-dot security"></div><div class="update-content"><h4>存储组+镜像+频率限制</h4><p>多存储组负载均衡，分级封禁管理</p></div><span class="update-time">06-07</span></div>
       </div>
     </div>
   </div>
@@ -356,6 +375,21 @@
   });
 
   var user=null,isAdmin=false;
+
+  // ====== Load server version ======
+  (function loadVersion(){
+    axios.get('/api/version/server').then(function(r){
+      if(r.data.code===0&&r.data.data){
+        var v=r.data.data.serverVersion||'1.0.1';
+        var el=document.getElementById('headerVersion');
+        if(el)el.textContent='SYS://v'+v;
+        var badge=document.getElementById('badgeVersion');
+        if(badge)badge.textContent='v'+v;
+        var badge2=document.getElementById('badgeUserVer');
+        if(badge2)badge2.textContent='v'+v;
+      }
+    }).catch(function(){});
+  })();
 
   // ====== Check login & load data ======
   axios.get('/api/auth/me',{withCredentials:true}).then(function(res){

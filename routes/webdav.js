@@ -294,6 +294,15 @@ function resolvePersonalWebDAV(link, subPath, req, res) {
   var User = require('../lib/db').User;
   var linkDirId = parseInt(link.target_path, 10) || 0;
 
+  // 校验根目录是否存在（可能已被用户删除）
+  if (linkDirId !== 0) {
+    var rootDir = VirtualDir.findById(linkDirId);
+    if (!rootDir || rootDir.user_id !== link.user_id) {
+      res.status(410).json({ error: '目录不存在或已被删除，WebDAV链接已失效' }).end();
+      return null;
+    }
+  }
+
   // Basic Auth
   if (link.require_auth) {
     var authHeader = req.headers.authorization || '';
@@ -491,10 +500,10 @@ function personalPropfind(resolved, subPath, req, res) {
   xml += '</D:multistatus>\n';
 
   // PROPFIND 响应诊断日志
-  log.info('[PROPFIND-PERSONAL] ===== 响应 XML 开始 =====');
-  log.info('[PROPFIND-PERSONAL] depth=' + depth + ' subPath=' + (subPath||'(root)') + ' dirId=' + dirId);
-  log.info('[PROPFIND-PERSONAL] XML body:\n' + xml);
-  log.info('[PROPFIND-PERSONAL] ===== 响应 XML 结束 =====');
+  log.debug('[PROPFIND-PERSONAL] ===== 响应 XML 开始 =====');
+  log.debug('[PROPFIND-PERSONAL] depth=' + depth + ' subPath=' + (subPath||'(root)') + ' dirId=' + dirId);
+  log.debug('[PROPFIND-PERSONAL] XML body:\n' + xml);
+  log.debug('[PROPFIND-PERSONAL] ===== 响应 XML 结束 =====');
 
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
   res.status(207).send(xml);
@@ -823,107 +832,107 @@ function personalMove(resolved, subPath, destSubPath, req, res) {
     var VirtualFile = require('../lib/db').VirtualFile, VirtualDir = require('../lib/db').VirtualDir;
     var dirId = resolved.rootDirId;
 
-    log.info('[MOVE-PERSONAL] ===== 个人目录 MOVE 开始 =====');
-    log.info('[MOVE-PERSONAL] rootDirId: ' + dirId + ' userId: ' + resolved.userId);
-    log.info('[MOVE-PERSONAL] subPath (源参数): "' + subPath + '"');
-    log.info('[MOVE-PERSONAL] destSubPath (目标参数, 原始HTTP头): "' + destSubPath + '"');
+    log.debug('[MOVE-PERSONAL] ===== 个人目录 MOVE 开始 =====');
+    log.debug('[MOVE-PERSONAL] rootDirId: ' + dirId + ' userId: ' + resolved.userId);
+    log.debug('[MOVE-PERSONAL] subPath (源参数): "' + subPath + '"');
+    log.debug('[MOVE-PERSONAL] destSubPath (目标参数, 原始HTTP头): "' + destSubPath + '"');
 
     // destSubPath 来自 Destination 头（原始 HTTP 头，未URL解码），需要解码
     var destDecoded = decodeURIComponent(destSubPath);
-    log.info('[MOVE-PERSONAL] destDecoded: "' + destDecoded + '"');
+    log.debug('[MOVE-PERSONAL] destDecoded: "' + destDecoded + '"');
     var destParts = destDecoded.split('/').filter(Boolean);
     var destName = destParts.pop() || '';
-    log.info('[MOVE-PERSONAL] destParts: [' + destParts.join(', ') + ']  destName: "' + destName + '"');
-    if (!destName) { log.info('[MOVE-PERSONAL] 目标名称为空 → 400'); res.status(400).end('Destination name required'); return; }
+    log.debug('[MOVE-PERSONAL] destParts: [' + destParts.join(', ') + ']  destName: "' + destName + '"');
+    if (!destName) { log.debug('[MOVE-PERSONAL] 目标名称为空 → 400'); res.status(400).end('Destination name required'); return; }
 
     // subPath 来自 Express req.params[0]，已被 Express URL解码过，不再重复解码
     var parts = subPath.split('/').filter(Boolean);
     var srcName = parts.pop() || '';
-    log.info('[MOVE-PERSONAL] srcParts: [' + parts.join(', ') + ']  srcName: "' + srcName + '"');
+    log.debug('[MOVE-PERSONAL] srcParts: [' + parts.join(', ') + ']  srcName: "' + srcName + '"');
 
     // ---- 源目录导航 ----
-    log.info('[MOVE-PERSONAL] --- 导航源目录 ---');
-    log.info('[MOVE-PERSONAL] 起始 dirId=' + dirId);
+    log.debug('[MOVE-PERSONAL] --- 导航源目录 ---');
+    log.debug('[MOVE-PERSONAL] 起始 dirId=' + dirId);
     for (var i = 0; i < parts.length; i++) {
       var sd = VirtualDir.listPersonalByParent(resolved.userId, dirId);
-      log.info('[MOVE-PERSONAL]   源目录 [' + i + '] dirId=' + dirId + ' 子目录: ' + sd.map(function(d){return d.name+'('+d.id+')';}).join(', '));
+      log.debug('[MOVE-PERSONAL]   源目录 [' + i + '] dirId=' + dirId + ' 子目录: ' + sd.map(function(d){return d.name+'('+d.id+')';}).join(', '));
       var f = sd.find(function(d) { return d.name === parts[i]; });
-      if (!f) { log.info('[MOVE-PERSONAL]   ✗ 源目录段 "' + parts[i] + '" 未找到 → 404'); res.status(404).end('Source path not found: ' + parts[i]); return; }
+      if (!f) { log.debug('[MOVE-PERSONAL]   ✗ 源目录段 "' + parts[i] + '" 未找到 → 404'); res.status(404).end('Source path not found: ' + parts[i]); return; }
       dirId = f.id;
-      log.info('[MOVE-PERSONAL]   ✓ 匹配 "' + parts[i] + '" → dirId=' + dirId);
+      log.debug('[MOVE-PERSONAL]   ✓ 匹配 "' + parts[i] + '" → dirId=' + dirId);
     }
 
     // ---- 目标目录导航 ----
-    log.info('[MOVE-PERSONAL] --- 导航目标目录 ---');
+    log.debug('[MOVE-PERSONAL] --- 导航目标目录 ---');
     var destDirId = resolved.rootDirId;
-    log.info('[MOVE-PERSONAL] 起始 destDirId=' + destDirId);
+    log.debug('[MOVE-PERSONAL] 起始 destDirId=' + destDirId);
     for (var j = 0; j < destParts.length; j++) {
       var dsd = VirtualDir.listPersonalByParent(resolved.userId, destDirId);
-      log.info('[MOVE-PERSONAL]   目标目录 [' + j + '] destDirId=' + destDirId + ' 子目录: ' + dsd.map(function(d){return d.name+'('+d.id+')';}).join(', '));
+      log.debug('[MOVE-PERSONAL]   目标目录 [' + j + '] destDirId=' + destDirId + ' 子目录: ' + dsd.map(function(d){return d.name+'('+d.id+')';}).join(', '));
       var df = dsd.find(function(d) { return d.name === destParts[j]; });
-      if (!df) { log.info('[MOVE-PERSONAL]   ✗ 目标目录段 "' + destParts[j] + '" 未找到 → 409'); res.status(409).end('Destination parent not found: ' + destParts[j]); return; }
+      if (!df) { log.debug('[MOVE-PERSONAL]   ✗ 目标目录段 "' + destParts[j] + '" 未找到 → 409'); res.status(409).end('Destination parent not found: ' + destParts[j]); return; }
       destDirId = df.id;
-      log.info('[MOVE-PERSONAL]   ✓ 匹配 "' + destParts[j] + '" → destDirId=' + destDirId);
+      log.debug('[MOVE-PERSONAL]   ✓ 匹配 "' + destParts[j] + '" → destDirId=' + destDirId);
     }
 
     // ---- 查找源文件 ----
-    log.info('[MOVE-PERSONAL] --- 查找源文件 ---');
-    log.info('[MOVE-PERSONAL] 源 dirId=' + dirId + ' 目标 destDirId=' + destDirId);
+    log.debug('[MOVE-PERSONAL] --- 查找源文件 ---');
+    log.debug('[MOVE-PERSONAL] 源 dirId=' + dirId + ' 目标 destDirId=' + destDirId);
     var files = VirtualFile.listByDir(resolved.userId, dirId);
-    log.info('[MOVE-PERSONAL] 源目录文件列表 (' + files.length + '个): ' + files.map(function(f){return f.name+'('+f.id+', size='+f.size+')';}).join(', '));
+    log.debug('[MOVE-PERSONAL] 源目录文件列表 (' + files.length + '个): ' + files.map(function(f){return f.name+'('+f.id+', size='+f.size+')';}).join(', '));
     var file = files.find(function(f) { return f.name === srcName; });
     // 构建目标 URL 用于 Location 头（RFC 4918 要求 MOVE 201 必须带 Location）
     var destUrl = '/webdav/' + resolved.link.token + '/' + destParts.concat([destName]).map(encodeURIComponent).join('/');
 
     if (file) {
-      log.info('[MOVE-PERSONAL] ✓ 找到源文件: ' + file.name + ' id=' + file.id + ' size=' + file.size);
+      log.debug('[MOVE-PERSONAL] ✓ 找到源文件: ' + file.name + ' id=' + file.id + ' size=' + file.size);
       require('../lib/db').run('UPDATE virtual_files SET dir_id = ?, name = ?, updated_at = datetime("now") WHERE id = ?',
         [destDirId, destName, file.id]);
       cacheInvalidate(resolved.userId, dirId);
       cacheInvalidate(resolved.userId, destDirId);
-      log.info('[MOVE-PERSONAL] ✓ DB已更新, Location: ' + destUrl + ' → 201');
+      log.debug('[MOVE-PERSONAL] ✓ DB已更新, Location: ' + destUrl + ' → 201');
       res.setHeader('Location', destUrl);
       res.status(201).end();
-      log.info('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (成功) =====');
+      log.debug('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (成功) =====');
       return;
     }
 
     // 源文件不存在 → 检查是否已移动到目标（幂等：Windows 可能发两次 MOVE）
-    log.info('[MOVE-PERSONAL] ✗ 源文件 "' + srcName + '" 在 dirId=' + dirId + ' 中未找到');
+    log.debug('[MOVE-PERSONAL] ✗ 源文件 "' + srcName + '" 在 dirId=' + dirId + ' 中未找到');
     var destFiles = VirtualFile.listByDir(resolved.userId, destDirId);
-    log.info('[MOVE-PERSONAL] 目标目录文件列表 (' + destFiles.length + '个): ' + destFiles.map(function(f){return f.name+'('+f.id+')';}).join(', '));
+    log.debug('[MOVE-PERSONAL] 目标目录文件列表 (' + destFiles.length + '个): ' + destFiles.map(function(f){return f.name+'('+f.id+')';}).join(', '));
     var alreadyMoved = destFiles.find(function(f) { return f.name === destName; });
     if (alreadyMoved) {
-      log.info('[MOVE-PERSONAL] ✓ 幂等: 文件已在目标 → 204, Location: ' + destUrl);
+      log.debug('[MOVE-PERSONAL] ✓ 幂等: 文件已在目标 → 204, Location: ' + destUrl);
       res.setHeader('Location', destUrl);
       res.status(204).end();
-      log.info('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (幂等204) =====');
+      log.debug('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (幂等204) =====');
       return;
     }
 
-    log.info('[MOVE-PERSONAL] 检查是否目录移动...');
+    log.debug('[MOVE-PERSONAL] 检查是否目录移动...');
     var dirs = VirtualDir.listPersonalByParent(resolved.userId, dirId);
-    log.info('[MOVE-PERSONAL] 源目录子目录列表 (' + dirs.length + '个): ' + dirs.map(function(d){return d.name+'('+d.id+')';}).join(', '));
+    log.debug('[MOVE-PERSONAL] 源目录子目录列表 (' + dirs.length + '个): ' + dirs.map(function(d){return d.name+'('+d.id+')';}).join(', '));
     var dir = dirs.find(function(d) { return d.name === srcName; });
     if (dir) {
-      log.info('[MOVE-PERSONAL] ✓ 找到源目录: ' + dir.name + ' id=' + dir.id + ', 更新parent ' + dirId + ' → ' + destDirId);
+      log.debug('[MOVE-PERSONAL] ✓ 找到源目录: ' + dir.name + ' id=' + dir.id + ', 更新parent ' + dirId + ' → ' + destDirId);
       require('../lib/db').run('UPDATE virtual_dirs SET parent_id = ?, name = ? WHERE id = ?',
         [destDirId, destName, dir.id]);
       cacheInvalidate(resolved.userId, dirId);
       cacheInvalidate(resolved.userId, destDirId);
       res.setHeader('Location', destUrl);
       res.status(201).end();
-      log.info('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (目录移动成功) =====');
+      log.debug('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (目录移动成功) =====');
       return;
     }
 
-    log.info('[MOVE-PERSONAL] ✗ 源 "' + srcName + '" 既不是文件也不是目录 → 404');
-    log.info('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (源未找到) =====');
+    log.debug('[MOVE-PERSONAL] ✗ 源 "' + srcName + '" 既不是文件也不是目录 → 404');
+    log.debug('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (源未找到) =====');
     log.warn('[WebDAV-MOVE] Source not found: srcName=' + srcName + ' in dirId=' + dirId);
     res.status(404).end('Source not found: ' + srcName);
   } catch(e) {
     log.error('[MOVE-PERSONAL] !!! 异常:', e.message, e.stack);
-    log.info('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (异常) =====');
+    log.debug('[MOVE-PERSONAL] ===== 个人目录 MOVE 结束 (异常) =====');
     if (!res.headersSent) res.status(500).end('Move error: ' + e.message);
   }
 }
@@ -1066,10 +1075,10 @@ function propfindHandler(req, res) {
   xml += '</D:multistatus>\n';
 
   // PROPFIND 响应诊断日志
-  log.info('[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====');
-  log.info('[PROPFIND-PUBLIC] depth=' + depth + ' subPath=' + (subPath||'(root)') + ' fullPath=' + fullPath);
-  log.info('[PROPFIND-PUBLIC] XML body:\n' + xml);
-  log.info('[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====');
+  log.debug('[PROPFIND-PUBLIC] ===== 响应 XML 开始 =====');
+  log.debug('[PROPFIND-PUBLIC] depth=' + depth + ' subPath=' + (subPath||'(root)') + ' fullPath=' + fullPath);
+  log.debug('[PROPFIND-PUBLIC] XML body:\n' + xml);
+  log.debug('[PROPFIND-PUBLIC] ===== 响应 XML 结束 =====');
 
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
   res.status(207).send(xml);
@@ -1298,52 +1307,52 @@ router.all('/webdav/:token/*', function(req, res, next) {
   var subPath = req.params[0] || '';
 
   // ========== MOVE 请求报文诊断日志 ==========
-  log.info('━━━━━━ [MOVE-REQ] ━━━━━━');
-  log.info('[MOVE-REQ] URL: ' + req.originalUrl);
-  log.info('[MOVE-REQ] Method: ' + req.method);
-  log.info('[MOVE-REQ] token: ' + token);
-  log.info('[MOVE-REQ] subPath (req.params[0]): "' + subPath + '"');
-  log.info('[MOVE-REQ] Destination header (raw): "' + (req.headers.destination || '') + '"');
-  log.info('[MOVE-REQ] Depth: ' + (req.headers.depth || '(none)'));
-  log.info('[MOVE-REQ] Overwrite: ' + (req.headers.overwrite || '(none)'));
-  log.info('[MOVE-REQ] User-Agent: ' + (req.headers['user-agent'] || '(none)'));
-  log.info('[MOVE-REQ] All headers: ' + JSON.stringify(req.headers, null, 2));
+  log.debug('━━━━━━ [MOVE-REQ] ━━━━━━');
+  log.debug('[MOVE-REQ] URL: ' + req.originalUrl);
+  log.debug('[MOVE-REQ] Method: ' + req.method);
+  log.debug('[MOVE-REQ] token: ' + token);
+  log.debug('[MOVE-REQ] subPath (req.params[0]): "' + subPath + '"');
+  log.debug('[MOVE-REQ] Destination header (raw): "' + (req.headers.destination || '') + '"');
+  log.debug('[MOVE-REQ] Depth: ' + (req.headers.depth || '(none)'));
+  log.debug('[MOVE-REQ] Overwrite: ' + (req.headers.overwrite || '(none)'));
+  log.debug('[MOVE-REQ] User-Agent: ' + (req.headers['user-agent'] || '(none)'));
+  log.debug('[MOVE-REQ] All headers: ' + JSON.stringify(req.headers, null, 2));
 
   var resolved = resolveWebDAV(token, subPath, req, res);
-  if (!resolved) { log.info('[MOVE-REQ] resolveWebDAV returned null'); return; }
-  log.info('[MOVE-REQ] resolved.isPersonal=' + resolved.isPersonal);
-  log.info('[MOVE-REQ] resolved: ' + JSON.stringify({ isPersonal: resolved.isPersonal, rootDirId: resolved.rootDirId, userId: resolved.userId, baseDir: resolved.baseDir, fullPath: resolved.fullPath }));
+  if (!resolved) { log.debug('[MOVE-REQ] resolveWebDAV returned null'); return; }
+  log.debug('[MOVE-REQ] resolved.isPersonal=' + resolved.isPersonal);
+  log.debug('[MOVE-REQ] resolved: ' + JSON.stringify({ isPersonal: resolved.isPersonal, rootDirId: resolved.rootDirId, userId: resolved.userId, baseDir: resolved.baseDir, fullPath: resolved.fullPath }));
 
   // 解析目标路径（必须在 isPersonal 分支之前，两边都需要）
   var destHeader = req.headers.destination || '';
   var destMatch = destHeader.match(/\/webdav\/[^/]+\/(.*)/);
-  if (!destMatch) { log.info('[MOVE-REQ] destMatch FAILED on: "' + destHeader + '"'); res.status(400).end('Bad destination'); return; }
-  log.info('[MOVE-REQ] destMatch[1] (raw capture): "' + destMatch[1] + '"');
-  log.info('[MOVE-REQ] destMatch[1] decoded: "' + decodeURIComponent(destMatch[1]) + '"');
-  log.info('━━━━━━━━━━━━━━━━━━━━━━━━');
+  if (!destMatch) { log.debug('[MOVE-REQ] destMatch FAILED on: "' + destHeader + '"'); res.status(400).end('Bad destination'); return; }
+  log.debug('[MOVE-REQ] destMatch[1] (raw capture): "' + destMatch[1] + '"');
+  log.debug('[MOVE-REQ] destMatch[1] decoded: "' + decodeURIComponent(destMatch[1]) + '"');
+  log.debug('━━━━━━━━━━━━━━━━━━━━━━━━');
 
   if (resolved.isPersonal) { personalMove(resolved, subPath, destMatch[1], req, res); return; }
 
-  log.info('[MOVE-PUBLIC] ===== 公共目录 MOVE 开始 =====');
-  log.info('[MOVE-PUBLIC] baseDir: ' + resolved.baseDir);
-  log.info('[MOVE-PUBLIC] fullPath (源): ' + resolved.fullPath);
+  log.debug('[MOVE-PUBLIC] ===== 公共目录 MOVE 开始 =====');
+  log.debug('[MOVE-PUBLIC] baseDir: ' + resolved.baseDir);
+  log.debug('[MOVE-PUBLIC] fullPath (源): ' + resolved.fullPath);
   var destPath = path.join(resolved.baseDir, decodeURIComponent(destMatch[1]));
-  log.info('[MOVE-PUBLIC] destPath (目标): ' + destPath);
+  log.debug('[MOVE-PUBLIC] destPath (目标): ' + destPath);
 
-  if (destPath.indexOf(resolved.baseDir) !== 0) { log.info('[MOVE-PUBLIC] 路径穿越拦截'); res.status(403).end('Forbidden'); return; }
-  if (!fs.existsSync(resolved.fullPath)) { log.info('[MOVE-PUBLIC] 源不存在: ' + resolved.fullPath); res.status(404).end('Not found'); return; }
-  log.info('[MOVE-PUBLIC] 源文件存在: ' + resolved.fullPath + ' (size=' + fs.statSync(resolved.fullPath).size + ')');
+  if (destPath.indexOf(resolved.baseDir) !== 0) { log.debug('[MOVE-PUBLIC] 路径穿越拦截'); res.status(403).end('Forbidden'); return; }
+  if (!fs.existsSync(resolved.fullPath)) { log.debug('[MOVE-PUBLIC] 源不存在: ' + resolved.fullPath); res.status(404).end('Not found'); return; }
+  log.debug('[MOVE-PUBLIC] 源文件存在: ' + resolved.fullPath + ' (size=' + fs.statSync(resolved.fullPath).size + ')');
 
   var destDir = path.dirname(destPath);
-  log.info('[MOVE-PUBLIC] destDir: ' + destDir + ' exists=' + fs.existsSync(destDir));
-  if (!fs.existsSync(destDir)) { fs.mkdirSync(destDir, { recursive: true }); log.info('[MOVE-PUBLIC] 自动创建目标父目录'); }
+  log.debug('[MOVE-PUBLIC] destDir: ' + destDir + ' exists=' + fs.existsSync(destDir));
+  if (!fs.existsSync(destDir)) { fs.mkdirSync(destDir, { recursive: true }); log.debug('[MOVE-PUBLIC] 自动创建目标父目录'); }
 
   fs.renameSync(resolved.fullPath, destPath);
   // RFC 4918: MOVE 201 必须带 Location 头指向新位置，否则 Windows 可能重试
   var locationUrl = '/webdav/' + token + '/' + destMatch[1];
   res.setHeader('Location', locationUrl);
-  log.info('[MOVE-PUBLIC] ✓ 移动成功 → 201, Location: ' + locationUrl);
-  log.info('[MOVE-PUBLIC] ===== 公共目录 MOVE 结束 =====');
+  log.debug('[MOVE-PUBLIC] ✓ 移动成功 → 201, Location: ' + locationUrl);
+  log.debug('[MOVE-PUBLIC] ===== 公共目录 MOVE 结束 =====');
   res.status(201).end();
 });
 
@@ -1451,8 +1460,33 @@ var requireAuth = require('./auth').requireAuth || function(req, res, next) {
 // GET /api/webdav/links - 获取我的 WebDAV 链接列表
 router.get('/api/webdav/links', requireAuth, function(req, res) {
   var WebDAVLink = require('../lib/db').WebDAVLink;
+  var VirtualDir = require('../lib/db').VirtualDir;
   var links = WebDAVLink.listByUser(req.user.id);
   var result = links.map(function(l) {
+    // 计算显示路径
+    var displayPath = l.target_path || '/';
+    if ((l.target_type || 'public') === 'personal') {
+      var linkDirId = parseInt(l.target_path, 10) || 0;
+      if (linkDirId > 0) {
+        var parts = [];
+        var cur = linkDirId;
+        var depth = 0;
+        while (cur > 0 && depth < 20) {
+          var d = VirtualDir.findById(cur);
+          if (!d) break;
+          parts.unshift(d.name);
+          cur = d.parent_id;
+          depth++;
+        }
+        displayPath = parts.length > 0 ? '/' + parts.join('/') : l.target_name;
+      } else {
+        displayPath = '/';
+      }
+    } else {
+      // 公共链接：统一加 / 前缀
+      var rawPath = l.target_path || l.target_name || '';
+      displayPath = (rawPath && rawPath[0] !== '/') ? '/' + rawPath : (rawPath || '/');
+    }
     return {
       id: l.id,
       token: l.token,
@@ -1460,6 +1494,7 @@ router.get('/api/webdav/links', requireAuth, function(req, res) {
       display_token: l.is_revealed ? l.token.substring(0, 8) + '••••••••••••••••' + l.token.substring(24) : l.token,
       target_path: l.target_path,
       target_name: l.target_name,
+      display_path: displayPath,
       is_directory: !!l.is_directory,
       is_revealed: !!l.is_revealed,
       require_auth: !!l.require_auth,
