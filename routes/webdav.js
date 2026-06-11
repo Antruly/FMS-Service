@@ -690,54 +690,66 @@ function personalMkcol(resolved, subPath, res) {
 
 // MOVE - 个人文件移动/重命名
 function personalMove(resolved, subPath, destSubPath, req, res) {
-  var VirtualFile = require('../lib/db').VirtualFile, VirtualDir = require('../lib/db').VirtualDir;
-  var dirId = resolved.rootDirId;
+  try {
+    var VirtualFile = require('../lib/db').VirtualFile, VirtualDir = require('../lib/db').VirtualDir;
+    var dirId = resolved.rootDirId;
 
-  var destParts = decodeURIComponent(destSubPath).split('/').filter(Boolean);
-  var destName = destParts.pop() || '';
-  if (!destName) { res.status(400).end('Destination name required'); return; }
+    // destSubPath 来自 Destination 头（原始 HTTP 头，未URL解码），需要解码
+    var destDecoded = decodeURIComponent(destSubPath);
+    var destParts = destDecoded.split('/').filter(Boolean);
+    var destName = destParts.pop() || '';
+    if (!destName) { res.status(400).end('Destination name required'); return; }
 
-  // 定位源文件/目录
-  var parts = subPath.split('/').filter(Boolean);
-  var srcName = decodeURIComponent(parts.pop() || '');
-  for (var i = 0; i < parts.length; i++) {
-    var sd = VirtualDir.listPersonalByParent(resolved.userId, dirId);
-    var f = sd.find(function(d) { return d.name === decodeURIComponent(parts[i]); });
-    if (!f) { res.status(404).end('Not found'); return; }
-    dirId = f.id;
+    // subPath 来自 Express req.params[0]，已被 Express URL解码过，不再重复解码
+    var parts = subPath.split('/').filter(Boolean);
+    var srcName = parts.pop() || '';
+    for (var i = 0; i < parts.length; i++) {
+      var sd = VirtualDir.listPersonalByParent(resolved.userId, dirId);
+      var f = sd.find(function(d) { return d.name === parts[i]; });
+      if (!f) { res.status(404).end('Source path not found: ' + parts[i]); return; }
+      dirId = f.id;
+    }
+
+    // 定位目标目录（destParts 是解码后的目录名，直接比较）
+    var destDirId = resolved.rootDirId;
+    for (var j = 0; j < destParts.length; j++) {
+      var dsd = VirtualDir.listPersonalByParent(resolved.userId, destDirId);
+      var df = dsd.find(function(d) { return d.name === destParts[j]; });
+      if (!df) { res.status(409).end('Destination parent not found: ' + destParts[j]); return; }
+      destDirId = df.id;
+    }
+
+    log.debug('[WebDAV-MOVE] src=' + subPath + ' → dest=' + destDecoded + ' dirId=' + dirId + ' destDirId=' + destDirId + ' srcName=' + srcName + ' destName=' + destName);
+
+    // 查找源文件/目录
+    var files = VirtualFile.listByDir(resolved.userId, dirId);
+    var file = files.find(function(f) { return f.name === srcName; });
+    if (file) {
+      require('../lib/db').run('UPDATE virtual_files SET dir_id = ?, name = ?, updated_at = datetime("now") WHERE id = ?',
+        [destDirId, destName, file.id]);
+      cacheInvalidate(resolved.userId, dirId);
+      cacheInvalidate(resolved.userId, destDirId);
+      res.status(201).end('Moved');
+      return;
+    }
+
+    var dirs = VirtualDir.listPersonalByParent(resolved.userId, dirId);
+    var dir = dirs.find(function(d) { return d.name === srcName; });
+    if (dir) {
+      require('../lib/db').run('UPDATE virtual_dirs SET parent_id = ?, name = ? WHERE id = ?',
+        [destDirId, destName, dir.id]);
+      cacheInvalidate(resolved.userId, dirId);
+      cacheInvalidate(resolved.userId, destDirId);
+      res.status(201).end('Moved');
+      return;
+    }
+
+    log.warn('[WebDAV-MOVE] Source not found: srcName=' + srcName + ' in dirId=' + dirId);
+    res.status(404).end('Source not found: ' + srcName);
+  } catch(e) {
+    log.error('[WebDAV-MOVE] Error:', e.message, e.stack);
+    if (!res.headersSent) res.status(500).end('Move error: ' + e.message);
   }
-
-  // 定位目标目录
-  var destDirId = resolved.rootDirId;
-  for (var j = 0; j < destParts.length; j++) {
-    var dsd = VirtualDir.listPersonalByParent(resolved.userId, destDirId);
-    var df = dsd.find(function(d) { return d.name === destParts[j]; });
-    if (!df) { res.status(409).end('Destination parent not found'); return; }
-    destDirId = df.id;
-  }
-
-  // 查找源文件/目录
-  var files = VirtualFile.listByDir(resolved.userId, dirId);
-  var file = files.find(function(f) { return f.name === srcName; });
-  if (file) {
-    // 文件 MOVE：更新 dir_id 和/或 name
-    require('../lib/db').run('UPDATE virtual_files SET dir_id = ?, name = ?, updated_at = datetime("now") WHERE id = ?',
-      [destDirId, destName, file.id]);
-    res.status(201).end('Moved');
-    return;
-  }
-
-  var dirs = VirtualDir.listPersonalByParent(resolved.userId, dirId);
-  var dir = dirs.find(function(d) { return d.name === srcName; });
-  if (dir) {
-    // 目录 MOVE：更新 parent_id 和/或 name
-    require('../lib/db').run('UPDATE virtual_dirs SET parent_id = ?, name = ? WHERE id = ?',
-      [destDirId, destName, dir.id]);
-    res.status(201).end('Moved');
-    return;
-  }
-
-  res.status(404).end('Not found');
 }
 
 // COPY - 个人文件复制（通过引用计数）
@@ -1108,6 +1120,7 @@ router.all('/webdav/:token/*', function(req, res, next) {
   // 解析目标路径（必须在 isPersonal 分支之前，两边都需要）
   var destHeader = req.headers.destination || '';
   var destMatch = destHeader.match(/\/webdav\/[^/]+\/(.*)/);
+  log.debug('[WebDAV-MOVE] destHeader=' + destHeader + ' match=' + (destMatch ? destMatch[1] : 'null'));
   if (!destMatch) { res.status(400).end('Bad destination'); return; }
 
   if (resolved.isPersonal) { personalMove(resolved, subPath, destMatch[1], req, res); return; }
