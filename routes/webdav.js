@@ -545,6 +545,8 @@ function personalPutFile(resolved, subPath, res, req) {
   }
   if (!fileName) { res.status(400).end('Filename required'); return; }
 
+  log.debug('[WebDAV-PUT] upload target: fileName=' + fileName + ' dirId=' + dirId + ' userId=' + resolved.userId + ' subPath=' + (subPath||'(root)'));
+
   // 流式写入临时文件 + 增量计算 SHA256（避免 finish 后全量 fs.readFileSync）
   var tmpPath = path.join(tmpDir, 'webdav_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'));
   var ws = fs.createWriteStream(tmpPath);
@@ -587,7 +589,7 @@ function personalPutFile(resolved, subPath, res, req) {
         require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
         cacheInvalidate(resolved.userId, dirId);
         logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
-        log.info('[WebDAV-PUT] 秒传命中: ' + fileName + ' hash=' + fileHash.substring(0,12));
+        log.info('[WebDAV-PUT] 秒传命中: ' + fileName + ' dirId=' + dirId + ' hash=' + fileHash.substring(0,12));
         res.status(201).end('Created');
         return;
       }
@@ -613,6 +615,7 @@ function personalPutFile(resolved, subPath, res, req) {
       require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
       cacheInvalidate(resolved.userId, dirId);
       logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
+      log.debug('[WebDAV-PUT] success: ' + fileName + ' dirId=' + dirId + ' size=' + Math.round(totalBytes/1024) + 'KB storageId=' + storageId + ' vfId=' + vfId);
       res.status(201).end('Created');
     } catch(e) {
       log.error('[WebDAV-PUT] Error:', e.message);
