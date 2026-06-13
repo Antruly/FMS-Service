@@ -386,7 +386,16 @@ body {
   body.sidebar-collapsed .page-panel[data-type="admin-blacklist"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="admin-traffic"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="admin-logs"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="share"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="admin-storage"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="admin-backup"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="admin-tasks"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="admin-version"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="admin-rate-limit"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="webdav"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="profile"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="change-password"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="about"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="offline"] .page-panel-body {
     margin-left: var(--sidebar-collapsed-width) !important;
   }
@@ -2595,6 +2604,139 @@ body {
   .sm-url-input { width: 100%; flex: none; }
 }
 
+/* ===== 分享卡片网格/列表视图切换 ===== */
+/* Grid 模式：响应式卡片网格 */
+.sm-cards.sm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 10px;
+  padding: 0;
+}
+/* List 模式：紧凑表格行 */
+.sm-cards.sm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+}
+.sm-cards.sm-list .sm-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-radius: 6px;
+}
+.sm-cards.sm-list .sm-card:hover { transform: none; }
+.sm-cards.sm-list .sm-card-header { margin-bottom: 0; }
+.sm-cards.sm-list .sm-card-name { font-size: 13px; }
+.sm-cards.sm-list .sm-card-status { font-size: 11px; white-space: nowrap; }
+.sm-cards.sm-list .sm-card-meta,
+.sm-cards.sm-list .sm-card-expire,
+.sm-cards.sm-list .sm-card-url,
+.sm-cards.sm-list .sm-card-actions { display: none; }
+.sm-cards.sm-list .sm-card-actions-list {
+  display: flex !important;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.sm-cards.sm-list .sm-card-actions-list .sm-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* 列表模式下隐藏卡片内的详情文本（路径、日期等只保留标题+状态+按钮） */
+.sm-cards.sm-list .sm-card > div:not(.sm-card-header):not(.sm-card-actions-list) {
+  display: none;
+}
+
+/* WebDAV 卡片网格/列表 */
+.wd-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wd-cards.wd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 12px;
+}
+.wd-cards.wd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wd-cards.wd-list > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  flex-wrap: nowrap;
+}
+.wd-cards.wd-list > div > div:first-child {
+  /* name + status row: make it flex, take remaining space */
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0 !important;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wd-cards.wd-list > div > div:first-child > span:first-child {
+  /* file/folder name */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wd-cards.wd-list > div > div:first-child > span:last-child {
+  /* status badge */
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.wd-cards.wd-list .wd-card-detail { display: none; }
+.wd-cards.wd-list .wd-card-actions-list {
+  display: flex !important;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-top: 0 !important;
+}
+.wd-cards.wd-list .wd-card-actions-list button {
+  padding: 3px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 移动端：网格单列，列表简化 */
+@media (max-width: 768px) {
+  .sm-cards.sm-grid {
+    grid-template-columns: 1fr;
+  }
+  .sm-cards.sm-list .sm-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .sm-cards.sm-list .sm-card-status { display: none; }
+  .wd-cards.wd-grid {
+    grid-template-columns: 1fr;
+  }
+  .wd-cards.wd-list > div {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .wd-cards.wd-list > div > div:first-child > span:last-child {
+    display: none;
+  }
+  .wd-cards.wd-list .wd-card-actions-list button {
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+}
+
 .sel-btn-delete {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.25);
@@ -3907,6 +4049,7 @@ body {
   gap: 16px;
   padding: 16px 24px;
   background: var(--bg-secondary);
+  transition: margin-left var(--transition-slow);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(20px);
 }
@@ -3965,8 +4108,9 @@ body {
 
 .page-panel-body {
   padding: 24px;
-  max-width: 640px;
+  max-width: 1200px;
   margin: 0 auto;
+  transition: margin-left var(--transition-slow);
 }
 
 /* 移动端适配 */
@@ -4006,14 +4150,23 @@ body {
 }
 
 /* admin页面 + 离线下载页面全宽（桌面端：侧边栏偏移） */
+.page-panel[data-type="share"] .page-panel-body,
 .page-panel[data-type="admin-users"] .page-panel-body,
 .page-panel[data-type="admin-files"] .page-panel-body,
 .page-panel[data-type="admin-shares"] .page-panel-body,
 .page-panel[data-type="admin-blacklist"] .page-panel-body,
 .page-panel[data-type="admin-traffic"] .page-panel-body,
 .page-panel[data-type="admin-logs"] .page-panel-body,
+.page-panel[data-type="admin-version"] .page-panel-body,
+.page-panel[data-type="admin-rate-limit"] .page-panel-body,
+.page-panel[data-type="webdav"] .page-panel-body,
+.page-panel[data-type="profile"] .page-panel-body,
+.page-panel[data-type="change-password"] .page-panel-body,
+.page-panel[data-type="about"] .page-panel-body,
 .page-panel[data-type="offline"] .page-panel-body,
-.page-panel[data-type="admin-storage"] .page-panel-body {
+.page-panel[data-type="admin-storage"] .page-panel-body,
+.page-panel[data-type="admin-backup"] .page-panel-body,
+.page-panel[data-type="admin-tasks"] .page-panel-body {
   max-width: none !important;
   margin-left: var(--sidebar-width) !important;
   margin-right: 0 !important;
@@ -4022,21 +4175,42 @@ body {
   padding: 20px 24px;
 }
 
-/* 存储管理面板：iframe 全屏，零 padding */
-.page-panel[data-type="admin-storage"] .page-panel-body {
+/* 存储管理/备份/任务面板：iframe 全屏，零 padding */
+.page-panel[data-type="admin-storage"] .page-panel-body,
+.page-panel[data-type="admin-backup"] .page-panel-body,
+.page-panel[data-type="admin-tasks"] .page-panel-body {
   padding: 0 !important;
   height: calc(100vh - 60px);
 }
 
+/* 桌面端：page-panel 所有直接子元素避开侧边栏 */
+@media (min-width: 769px) {
+  .page-panel.show .page-panel-header {
+    margin-left: var(--sidebar-width);
+  }
+  body.sidebar-collapsed .page-panel.show .page-panel-header {
+    margin-left: var(--sidebar-collapsed-width);
+  }
+}
+
 /* 移动端：admin页面和离线下载页面不需要 margin-left */
 @media (max-width: 768px) {
+  .page-panel[data-type="share"] .page-panel-body,
   .page-panel[data-type="admin-users"] .page-panel-body,
   .page-panel[data-type="admin-files"] .page-panel-body,
   .page-panel[data-type="admin-shares"] .page-panel-body,
   .page-panel[data-type="admin-blacklist"] .page-panel-body,
   .page-panel[data-type="admin-traffic"] .page-panel-body,
   .page-panel[data-type="admin-logs"] .page-panel-body,
+  .page-panel[data-type="admin-version"] .page-panel-body,
+  .page-panel[data-type="admin-rate-limit"] .page-panel-body,
+  .page-panel[data-type="webdav"] .page-panel-body,
+  .page-panel[data-type="profile"] .page-panel-body,
+  .page-panel[data-type="change-password"] .page-panel-body,
+  .page-panel[data-type="about"] .page-panel-body,
   .page-panel[data-type="admin-storage"] .page-panel-body,
+  .page-panel[data-type="admin-backup"] .page-panel-body,
+  .page-panel[data-type="admin-tasks"] .page-panel-body,
   .page-panel[data-type="offline"] .page-panel-body {
     margin-left: 0 !important;
     padding: 12px;

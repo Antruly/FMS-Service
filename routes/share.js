@@ -187,6 +187,14 @@ router.post('/share', requireAuth, function(req, res) {
 router.get('/share', requireAuth, function(req, res) {
   var user = req.user;
   var shares = Share.list(user.id);
+  var total = shares.length;
+
+  // 分页
+  var limit = parseInt(req.query.limit, 10) || 0;
+  var offset = parseInt(req.query.offset, 10) || 0;
+  if (limit > 0) {
+    shares = shares.slice(offset, offset + limit);
+  }
 
     var result = shares.map(function(s) {
     var validity = Share.checkValidity(s);
@@ -240,7 +248,7 @@ router.get('/share', requireAuth, function(req, res) {
     };
   });
 
-  res.json({ code: 0, message: '', data: result });
+  res.json({ code: 0, message: '', data: { total: total, shares: result } });
 });
 
 // ==================== API: 删除分享 ====================

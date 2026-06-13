@@ -265,12 +265,14 @@
         renderOfflineTasks();
       }
     } else if (action === 'completed') {
-      // 下载完成
+      // 下载完成：保留已下载字节数（= 总大小），不清零
       if (task) {
         task.status = 'completed';
         task.progress = 100;
-        console.log('[WS] 调用 updateOfflineTaskInList');
-        updateOfflineTaskInList(taskId, 'completed', 100, 0);
+        if (data.total_bytes) task.total_bytes = data.total_bytes;
+        if (data.downloaded_bytes > 0) task.downloaded_bytes = data.downloaded_bytes;
+        else if (!task.downloaded_bytes && task.total_bytes) task.downloaded_bytes = task.total_bytes;
+        updateOfflineTaskInList(taskId, 'completed', 100, task.downloaded_bytes || task.total_bytes || null);
         showToast('下载完成！', '&#10004;');
       } else if (data.task) {
         // 任务不在列表中，用推送的完整对象添加
@@ -596,6 +598,7 @@
     state.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
+    localStorage.setItem('fms-theme', theme);
     // 更新按钮显示状态
     var themeToggle = $('#theme-toggle');
     if (themeToggle) {
@@ -604,12 +607,14 @@
       if (sun) sun.style.display = theme === 'light' ? 'block' : 'none';
       if (moon) moon.style.display = theme === 'dark' ? 'block' : 'none';
     }
-    // 通知嵌入的 iframe（如存储管理页面）同步主题
+    // 通知嵌入的 iframe 同步主题
     try {
-      var storageIframe = document.getElementById('storage-iframe');
-      if (storageIframe && storageIframe.contentWindow) {
-        storageIframe.contentWindow.postMessage({ type: 'theme-change', theme: theme }, '*');
-      }
+      ['storage-iframe','backup-iframe','tasks-iframe'].forEach(function(id) {
+        var iframe = document.getElementById(id);
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'theme-change', theme: theme }, '*');
+        }
+      });
     } catch (e) {}
   }
   function toggleTheme() {
@@ -1100,7 +1105,7 @@
   var HASH_VIEWS = [
     'files', 'share', 'profile', 'change-password', 'offline', 'webdav', 'admin-storage',
     'admin-users', 'admin-logs', 'admin-files', 'admin-shares', 'admin-blacklist',
-    'admin-traffic', 'admin-version', 'admin-rate-limit', 'about'
+    'admin-traffic', 'admin-version', 'admin-rate-limit', 'admin-backup', 'admin-tasks', 'about'
   ];
 
   function setHash(name) {
@@ -1115,7 +1120,7 @@
   function restoreFromHash(hash) {
     // 移除可能的子路径（如 files/personal → files）
     var viewName = hash.split('/')[0];
-    var adminViews = ['admin-users','admin-logs','admin-files','admin-shares','admin-blacklist','admin-traffic','admin-version','admin-storage','admin-rate-limit'];
+    var adminViews = ['admin-users','admin-logs','admin-files','admin-shares','admin-blacklist','admin-traffic','admin-version','admin-storage','admin-rate-limit','admin-backup','admin-tasks'];
     if (adminViews.indexOf(viewName) !== -1 && !state.isAdmin) {
       // 非管理员无法访问管理视图，更新 URL 再切回文件
       setHash('files');
@@ -1239,6 +1244,14 @@
         if (panelTitle) panelTitle.innerHTML = '&#128190; 存储管理';
         updateNavHighlight('admin-storage', state.dirType);
         loadAdminStorage();
+      } else if (name === 'admin-backup') {
+        if (panelTitle) panelTitle.innerHTML = '&#128451; 数据库备份';
+        updateNavHighlight('admin-backup', state.dirType);
+        loadAdminBackup();
+      } else if (name === 'admin-tasks') {
+        if (panelTitle) panelTitle.innerHTML = '&#9881; 异步任务';
+        updateNavHighlight('admin-tasks', state.dirType);
+        loadAdminTasks();
       } else if (name === 'about') {
         if (panelTitle) panelTitle.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> 关于';
         updateNavHighlight('about', state.dirType);
@@ -2896,13 +2909,20 @@
   }
 
   // 加载分享管理内容到 page-panel
+  var _sharePage = 1;
+  var _sharePageSize = 12; // grid default
   function loadShareManage() {
     var container = $('#page-panel-body');
     if (!container) return;
 
     container.innerHTML = '<div id="share-manage-loading" style="text-align:center;padding:40px;color:var(--text-secondary,#7a8194)">加载中...</div>';
 
-    apiGet('/share').then(function(res) {
+    var viewMode = localStorage.getItem('shareManageViewMode') || 'grid';
+    var pageSize = viewMode === 'list' ? 20 : 12;
+    _sharePageSize = pageSize;
+    var offset = (_sharePage - 1) * pageSize;
+
+    apiGet('/share?limit=' + pageSize + '&offset=' + offset).then(function(res) {
       if (res.code !== 0) {
         if (res.code === 401) {
           container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">请先 <a href="/login.html" style="color:var(--accent)">登录</a></div>';
@@ -2911,20 +2931,49 @@
         }
         return;
       }
-      renderShareManageList(res.data || []);
+      var data = res.data || {};
+      renderShareManageList(data.shares || data || [], data.total || (data.shares ? data.shares.length : (Array.isArray(data) ? data.length : 0)));
     }).catch(function() {
       if (container) container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--error)">加载失败，请检查网络</div>';
     });
   }
 
-  function renderShareManageList(shares) {
+  function renderShareManageList(shares, total) {
     _setShareManageData(shares);
     var container = $('#page-panel-body');
     if (!container) return;
 
+    total = total || shares.length;
+
+    // View mode toggle
+    var viewMode = localStorage.getItem('shareManageViewMode') || 'grid';
+    var modeClass = 'sm-' + viewMode;
+
+    // Add toggle button to page-panel-actions
+    var actionsEl = $('#page-panel-actions');
+    if (actionsEl) {
+      actionsEl.innerHTML = '<div class="view-toggle" role="group" aria-label="视图切换" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+        '<button class="view-btn' + (viewMode === 'grid' ? ' active' : '') + '" data-view="grid" onclick="window.__fm._toggleShareView(\'grid\')" title="网格视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'grid' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'grid' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>' +
+        '<button class="view-btn' + (viewMode === 'list' ? ' active' : '') + '" data-view="list" onclick="window.__fm._toggleShareView(\'list\')" title="列表视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'list' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'list' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>' +
+        '</div>';
+    }
+
     if (shares.length === 0) {
       container.innerHTML = '<div class="empty-state" style="margin-top:80px"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><h3>暂无分享记录</h3><p>在文件列表中选中文件或文件夹，点击三点菜单中的"分享"按钮即可创建分享链接</p></div>';
       return;
+    }
+
+    // Build pagination HTML
+    var totalPages = Math.ceil(total / _sharePageSize);
+    var paginationHtml = '';
+    if (totalPages > 1) {
+      paginationHtml = '<div class="sm-pagination" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:16px 0 8px;font-size:12px;color:var(--text-muted)">';
+      paginationHtml += '<button class="btn btn-outline btn-xs" onclick="window.__fm._goSharePage(' + (_sharePage - 1) + ')" ' + (_sharePage <= 1 ? 'disabled' : '') + '>← 上一页</button>';
+      paginationHtml += '<span>第 ' + _sharePage + '/' + totalPages + ' 页 (共 ' + total + ' 条)</span>';
+      paginationHtml += '<button class="btn btn-outline btn-xs" onclick="window.__fm._goSharePage(' + (_sharePage + 1) + ')" ' + (_sharePage >= totalPages ? 'disabled' : '') + '>下一页 →</button>';
+      paginationHtml += '</div>';
     }
 
     var activeShares = shares.filter(function(s) { return !s.is_expired && !s.invalid_reason; });
@@ -2933,12 +2982,16 @@
     var html = '';
     html += '<div class="sm-page">';
 
-    // 有效分享卡片
+    // 有效分享
     if (activeShares.length > 0) {
       html += '<div class="sm-section">';
       html += '<div class="sm-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>有效分享 <span class="sm-count">' + activeShares.length + '</span></div>';
-      html += '<div class="sm-cards">';
-      activeShares.forEach(function(s) { html += _buildShareCard(s, false); });
+      // List header
+      if (viewMode === 'list') {
+        html += '<div class="sm-list-header" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:6px 14px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);margin-bottom:2px"><span>分享名称 / 状态</span><span>操作</span></div>';
+      }
+      html += '<div class="sm-cards ' + modeClass + '">';
+      activeShares.forEach(function(s) { html += _buildShareCard(s, false, viewMode); });
       html += '</div></div>';
     }
 
@@ -2946,16 +2999,18 @@
     if (expiredShares.length > 0) {
       html += '<div class="sm-section sm-section-gray">';
       html += '<div class="sm-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>已失效 <span class="sm-count">' + expiredShares.length + '</span></div>';
-      html += '<div class="sm-cards">';
-      expiredShares.forEach(function(s) { html += _buildShareCard(s, true); });
+      html += '<div class="sm-cards ' + modeClass + '">';
+      expiredShares.forEach(function(s) { html += _buildShareCard(s, true, viewMode); });
       html += '</div></div>';
     }
 
+    html += paginationHtml;
     html += '</div>';
     container.innerHTML = html;
   }
 
-  function _buildShareCard(s, expired) {
+  function _buildShareCard(s, expired, viewMode) {
+    viewMode = viewMode || 'grid';
     var isDir = s.target_type === 'dir' || (s.target_type === 'public' && s.is_directory);
     var typeIcon = isDir
       ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="#ffc107" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
@@ -2963,7 +3018,6 @@
 
     var statusLabel = expired ? '已过期' : '有效';
     var statusColor = expired ? 'var(--error)' : 'var(--success)';
-    // 目录范围标签
     var scopeLabel = s.target_scope === 'public' ? '🌐 公共目录' : '👤 个人目录';
     var scopeColor = s.target_scope === 'public' ? 'var(--accent)' : 'var(--accent2)';
 
@@ -2994,7 +3048,6 @@
     html += '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     html += s.remaining_text || '永久';
     html += '<span style="margin-left:10px;font-size:11px;color:var(--text-muted);opacity:0.6">' + formatDateTime(s.created_at) + '</span>';
-    // 下载次数
     var dlCount = s.download_count || 0;
     var maxDl = s.max_downloads || 0;
     if (maxDl > 0) {
@@ -3016,6 +3069,7 @@
       html += '</button>';
       html += '</div>';
     }
+    // Grid mode: full action bar
     html += '<div class="sm-card-actions">';
     if (!expired) {
       html += '<button class="sm-btn sm-btn-view" onclick="window.__fm.viewShare(' + s.id + ')" title="在新窗口打开">';
@@ -3025,6 +3079,13 @@
     }
     html += '<button class="sm-btn sm-btn-del" onclick="window.__fm.deleteShareRecord(' + s.id + ')" title="删除">';
     html += '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>删除</button>';
+    html += '</div>';
+    // List mode: compact action buttons (hidden by default, shown in list mode via CSS)
+    html += '<div class="sm-card-actions-list" style="display:none">';
+    if (!expired) {
+      html += '<button class="sm-btn sm-btn-view" style="padding:3px 8px;font-size:10px" onclick="window.__fm.viewShare(' + s.id + ')">查看</button>';
+    }
+    html += '<button class="sm-btn sm-btn-del" style="padding:3px 8px;font-size:10px" onclick="window.__fm.deleteShareRecord(' + s.id + ')">删除</button>';
     html += '</div>';
     if (expired) {
       html += '<div class="sm-card-expired-tip" style="font-size:12px;color:var(--error);opacity:0.7;text-align:center;padding:6px 0">该分享已失效，无法访问</div>';
@@ -3596,11 +3657,13 @@
       if (canShare) {
         items.push({ label: '&#128279; 分享', action: function() { closeItemMenu(); doSingleShare(item); } });
       }
-      // WebDAV（公共目录管理员 + 个人目录所有用户）
-      if (state.dirType === 'public' && state.isAdmin) {
-        items.push({ label: '&#128194; WebDAV', action: function() { closeItemMenu(); createWebDAVLink(item, 'public'); } });
-      } else if (state.dirType === 'personal') {
-        items.push({ label: '&#128194; WebDAV', action: function() { closeItemMenu(); createWebDAVLink(item, 'personal'); } });
+      // WebDAV（仅目录，公共目录管理员 + 个人目录所有用户）
+      if (item.isDirectory) {
+        if (state.dirType === 'public' && state.isAdmin) {
+          items.push({ label: '&#128194; WebDAV', action: function() { closeItemMenu(); createWebDAVLink(item, 'public'); } });
+        } else if (state.dirType === 'personal') {
+          items.push({ label: '&#128194; WebDAV', action: function() { closeItemMenu(); createWebDAVLink(item, 'personal'); } });
+        }
       }
     }
 
@@ -8074,6 +8137,12 @@
     } else if (viewName === 'admin-storage') {
       var storageNav = $('#nav-storage');
       if (storageNav) storageNav.classList.add('active');
+    } else if (viewName === 'admin-backup') {
+      var backupNav = $('#nav-backup');
+      if (backupNav) backupNav.classList.add('active');
+    } else if (viewName === 'admin-tasks') {
+      var tasksNav = $('#nav-tasks');
+      if (tasksNav) tasksNav.classList.add('active');
     } else if (viewName === 'admin-rate-limit') {
       var rlNav = $('#nav-rate-limit');
       if (rlNav) rlNav.classList.add('active');
@@ -8091,16 +8160,18 @@
     var toolbar = $('#file-toolbar');
     var wrapper = $('#file-toolbar-wrapper');
     var selectBtn = $('#select-btn');
-    // 公共目录：管理员可新建目录，普通用户隐藏整个工具栏
-    if (state.dirType === 'public') {
-      if (toolbar) toolbar.style.display = state.isAdmin ? 'flex' : 'none';
-      if (wrapper) wrapper.style.display = state.isAdmin ? 'block' : 'none';
-      if (selectBtn) selectBtn.style.display = state.isAdmin ? 'flex' : 'none';
-    } else {
-      if (toolbar) toolbar.style.display = 'flex';
-      if (wrapper) wrapper.style.display = 'block';
-      if (selectBtn) selectBtn.style.display = 'flex';
-    }
+    var uploadBtn = $('#toolbar-upload-btn');
+    var newFolderBtn = $('#toolbar-new-folder-btn');
+
+    // 工具栏、包装器和选择按钮始终可见
+    if (toolbar) toolbar.style.display = 'flex';
+    if (wrapper) wrapper.style.display = 'block';
+    if (selectBtn) selectBtn.style.display = 'flex';
+
+    // 公共目录中的管理员专属操作：对非管理员用户隐藏
+    var hideAdminActions = (state.dirType === 'public' && !state.isAdmin);
+    if (uploadBtn) uploadBtn.style.display = hideAdminActions ? 'none' : '';
+    if (newFolderBtn) newFolderBtn.style.display = hideAdminActions ? 'none' : '';
   }
 
   // 控制管理员专用导航项的可见性
@@ -8747,60 +8818,107 @@
     loadWebDAVManage();
   }
 
+  var _webdavPage = 1;
+  var _webdavPageSize = 12;
   function loadWebDAVManage() {
-    axios.get('/api/webdav/links').then(function(res) {
-      var links = res.data.data || [];
-      renderWebDAVManage(links);
+    var viewMode = localStorage.getItem('webdavViewMode') || 'grid';
+    var pageSize = viewMode === 'list' ? 20 : 12;
+    _webdavPageSize = pageSize;
+    var offset = (_webdavPage - 1) * pageSize;
+
+    axios.get('/api/webdav/links?limit=' + pageSize + '&offset=' + offset).then(function(res) {
+      var data = res.data.data || {};
+      var links = data.links || data || [];
+      var total = data.total || (data.links ? data.links.length : (Array.isArray(data) ? data.length : 0));
+      renderWebDAVManage(links, total);
     }).catch(function() {
       $('#page-panel-body').innerHTML = '<p style="text-align:center;padding:40px;color:var(--text-muted)">加载失败</p>';
     });
   }
 
-  function renderWebDAVManage(links) {
+  function renderWebDAVManage(links, total) {
     var container = $('#page-panel-body');
     if (!container) return;
+
+    total = total || links.length;
+    var viewMode = localStorage.getItem('webdavViewMode') || 'grid';
+    var modeClass = 'wd-' + viewMode;
+
+    // Add toggle button
+    var actionsEl = $('#page-panel-actions');
+    if (actionsEl) {
+      actionsEl.innerHTML = '<div class="view-toggle" role="group" aria-label="视图切换" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+        '<button class="view-btn' + (viewMode === 'grid' ? ' active' : '') + '" data-view="grid" onclick="window.__fm._toggleWebDAVView(\'grid\')" title="网格视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'grid' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'grid' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>' +
+        '<button class="view-btn' + (viewMode === 'list' ? ' active' : '') + '" data-view="list" onclick="window.__fm._toggleWebDAVView(\'list\')" title="列表视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'list' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'list' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>' +
+        '</div>';
+    }
+
     if (links.length === 0) {
       container.innerHTML = '<div style="text-align:center;padding:60px 20px"><p style="font-size:36px;margin-bottom:12px">&#128194;</p><p style="color:var(--text-muted)">暂无 WebDAV 链接</p><p style="font-size:12px;color:var(--text-muted)">在公共目录中右键文件/文件夹创建</p></div>';
       return;
     }
-    var html = '<div style="display:flex;flex-direction:column;gap:12px">';
+
+    // Build pagination
+    var totalPages = Math.ceil(total / _webdavPageSize);
+    var paginationHtml = '';
+    if (totalPages > 1) {
+      paginationHtml = '<div class="wd-pagination" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:16px 0 8px;font-size:12px;color:var(--text-muted)">';
+      paginationHtml += '<button class="btn btn-outline btn-xs" onclick="window.__fm._goWebDAVPage(' + (_webdavPage - 1) + ')" ' + (_webdavPage <= 1 ? 'disabled' : '') + '>← 上一页</button>';
+      paginationHtml += '<span>第 ' + _webdavPage + '/' + totalPages + ' 页 (共 ' + total + ' 条)</span>';
+      paginationHtml += '<button class="btn btn-outline btn-xs" onclick="window.__fm._goWebDAVPage(' + (_webdavPage + 1) + ')" ' + (_webdavPage >= totalPages ? 'disabled' : '') + '>下一页 →</button>';
+      paginationHtml += '</div>';
+    }
+
+    // List header
+    var listHeader = '';
+    if (viewMode === 'list') {
+      listHeader = '<div class="wd-list-header" style="display:flex;align-items:center;gap:10px;padding:5px 12px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);margin-bottom:2px"><span style="flex:1;min-width:0">名称 / 状态</span><span style="flex-shrink:0">操作</span></div>';
+    }
+
+    var html = listHeader + '<div class="wd-cards ' + modeClass + '">';
     links.forEach(function(l) {
       var expired = l.is_expired;
       var revealed = l.is_revealed;
       var requireAuth = l.require_auth;
       var statusColor = expired ? 'var(--error)' : 'var(--success)';
       var statusLabel = expired ? '已过期' : '有效';
-      // 需认证的链接：始终显示完整 token + 复制按钮（安全，因为有密码保护）
-      // 无需认证的链接：复制后隐藏 token（防止泄露）
       var showToken = requireAuth ? l.token : (revealed ? l.display_token : l.token);
       var showCopyBtn = !expired && (requireAuth || !revealed);
       html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px' + (expired ? ';opacity:0.5' : '') + '">';
       html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
       html += '<span style="font-weight:700">' + escHtml(l.target_name) + '</span>';
       html += '<span style="font-size:12px;color:' + statusColor + '">' + statusLabel + '</span></div>';
-      // 类型标签
       var typeLabel = l.target_type === 'personal' ? '👤 个人目录' : '🌐 公共目录';
       var typeColor = l.target_type === 'personal' ? 'var(--accent2)' : 'var(--accent)';
-      // 逻辑路径（从根目录开始）
-      html += '<div style="font-size:11px;margin-bottom:4px">';
+      html += '<div class="wd-card-detail" style="font-size:11px;margin-bottom:4px">';
       html += '<span style="color:' + typeColor + ';font-size:10px;font-weight:600;margin-right:8px">' + typeLabel + '</span>';
       html += '<span style="font-family:monospace;color:var(--text-muted);word-break:break-all">📂 ' + escHtml(l.display_path || l.target_path || '/') + '</span>';
       html += '</div>';
-      // Token（需认证链接始终显示完整 token）
-      html += '<div style="font-family:monospace;font-size:12px;color:var(--accent);margin-bottom:6px">' + escHtml(showToken) + '</div>';
-      html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">';
+      html += '<div class="wd-card-detail" style="font-family:monospace;font-size:12px;color:var(--accent);margin-bottom:6px">' + escHtml(showToken) + '</div>';
+      html += '<div class="wd-card-detail" style="font-size:11px;color:var(--text-muted);margin-bottom:8px">';
       html += '创建: ' + (l.created_at ? l.created_at.substring(0,10) : '-');
-      html += ' &middot; 过期: ' + (l.expires_at ? l.expires_at.substring(0,10) : '永久');
-      html += ' &middot; 访问: ' + l.access_count + '次';
-      html += ' &middot; <span style="color:' + (requireAuth ? 'var(--warning)' : 'var(--text-muted)') + ';font-size:10px">' + (requireAuth ? '&#128274; 需认证' : '&#128275; 无认证') + '</span></div>';
-      html += '<div style="display:flex;gap:8px;align-items:center">';
+      html += ' · 过期: ' + (l.expires_at ? l.expires_at.substring(0,10) : '永久');
+      html += ' · 访问: ' + l.access_count + '次';
+      html += ' · <span style="color:' + (requireAuth ? 'var(--warning)' : 'var(--text-muted)') + ';font-size:10px">' + (requireAuth ? '🔒 需认证' : '🔓 无认证') + '</span></div>';
+      html += '<div class="wd-card-detail" style="display:flex;gap:8px;align-items:center">';
       if (showCopyBtn) {
-        html += '<button class="modal-btn modal-btn-primary" style="font-size:11px;padding:4px 12px" onclick="window.__fm._copyWebDAVUrl(\'' + l.token + '\',\'' + window.location.origin + '\',' + (requireAuth ? 'true' : 'false') + ')">&#128203; 复制链接</button>';
+        html += '<button class="modal-btn modal-btn-primary" style="font-size:11px;padding:4px 12px" onclick="window.__fm._copyWebDAVUrl(\'' + l.token + '\',\'' + window.location.origin + '\',' + (requireAuth ? 'true' : 'false') + ')">📋 复制链接</button>';
       }
       html += '<button class="modal-btn modal-btn-secondary" style="font-size:11px;padding:4px 12px" onclick="if(confirm(\'确定删除此 WebDAV 链接？\'))window.__fm.deleteWebDAVLink(\'' + l.token + '\')">删除</button>';
-      html += '</div></div>';
+      html += '</div>';
+      // List mode compact actions
+      html += '<div class="wd-card-actions-list" style="display:none;margin-top:4px">';
+      if (showCopyBtn) {
+        html += '<button class="modal-btn modal-btn-primary" style="font-size:10px;padding:2px 8px" onclick="window.__fm._copyWebDAVUrl(\'' + l.token + '\',\'' + window.location.origin + '\',' + (requireAuth ? 'true' : 'false') + ')">复制</button>';
+      }
+      html += '<button class="modal-btn modal-btn-secondary" style="font-size:10px;padding:2px 8px" onclick="if(confirm(\'确定删除？\'))window.__fm.deleteWebDAVLink(\'' + l.token + '\')">删除</button>';
+      html += '</div>';
+      html += '</div>';
     });
     html += '</div>';
+    html += paginationHtml;
     container.innerHTML = html;
   }
 
@@ -8829,11 +8947,32 @@
   window.__fm._copyQrUrl = _copyQrUrlFn;
   window.__fm.deleteShareRecord = deleteShareRecordFn;
   window.__fm.showShareManage = function() { showShareManage(); };
+  window.__fm._toggleShareView = function(mode) {
+    localStorage.setItem('shareManageViewMode', mode);
+    _sharePage = 1;
+    loadShareManage();
+  };
+  window.__fm._goSharePage = function(page) {
+    var totalPages = Math.ceil((_getShareManageData().length || _sharePageSize) / _sharePageSize);
+    if (page < 1 || page > totalPages) return;
+    _sharePage = page;
+    loadShareManage();
+  };
   window.__fm.createShareForSelected = function() { createShareForSelected(); };
   window.__fm.goOffline = function() { showView('offline'); };
   // WebDAV 相关函数
   window.__fm.createWebDAVLink = function(item) { createWebDAVLink(item); };
   window.__fm.showWebDAVManage = function() { showWebDAVManage(); };
+  window.__fm._toggleWebDAVView = function(mode) {
+    localStorage.setItem('webdavViewMode', mode);
+    _webdavPage = 1;
+    loadWebDAVManage();
+  };
+  window.__fm._goWebDAVPage = function(page) {
+    if (page < 1) return;
+    _webdavPage = page;
+    loadWebDAVManage();
+  };
   window.__fm.showStorageManage = function() { showView('admin-storage'); };
 
   // 关于页面
@@ -8978,6 +9117,36 @@
       'id="storage-iframe"></iframe>';
     // 高亮侧边栏
     updateNavHighlight('admin-storage');
+  }
+  function loadAdminBackup() {
+    var container = $('#page-panel-body');
+    if (!container) return;
+    container.innerHTML = '<iframe src="/admin-backup.html?embed=1&v=3" ' +
+      'style="width:100%;height:100%;border:none;min-height:600px" ' +
+      'id="backup-iframe"></iframe>';
+    updateNavHighlight('admin-backup');
+    // 发送当前主题到 iframe
+    setTimeout(function() {
+      var iframe = document.getElementById('backup-iframe');
+      if (iframe && iframe.contentWindow && state && state.theme) {
+        iframe.contentWindow.postMessage({ type: 'theme-change', theme: state.theme }, '*');
+      }
+    }, 300);
+  }
+  function loadAdminTasks() {
+    var container = $('#page-panel-body');
+    if (!container) return;
+    container.innerHTML = '<iframe src="/admin-tasks.html?embed=1&v=4" ' +
+      'style="width:100%;height:100%;border:none;min-height:600px" ' +
+      'id="tasks-iframe"></iframe>';
+    updateNavHighlight('admin-tasks');
+    // 发送当前主题到 iframe
+    setTimeout(function() {
+      var iframe = document.getElementById('tasks-iframe');
+      if (iframe && iframe.contentWindow && state && state.theme) {
+        iframe.contentWindow.postMessage({ type: 'theme-change', theme: state.theme }, '*');
+      }
+    }, 300);
   }
   window.__fm.deleteWebDAVLink = function(token) { deleteWebDAVLink(token); };
   // 将分享卡片 onclick 中调用的内部函数暴露到全局

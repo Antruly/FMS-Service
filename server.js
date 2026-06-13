@@ -25,6 +25,7 @@ utils.getClientIp = utils.getClientIp || function(req) {
 const wsService = require('./lib/ws');
 const webdavRoutes = require('./routes/webdav');
 const storageRoutes = require('./routes/storage');
+const backupRoutes = require('./routes/backup');
 
 // 让 Express 支持 WebDAV 非常规 HTTP 方法（安全方式）
 var methods = require('methods');
@@ -428,6 +429,7 @@ app.use('/api', fileRoutes);
 // 日志管理路由（仅管理员）
 app.use('/api/logs', logRoutes);
 app.use('/api', storageRoutes);
+app.use('/api', backupRoutes);
 
 // WebDAV 路由（协议端点 + API 管理）
 // 先设置 DAV 头（在 CORS 之前，避免 CORS 短路 OPTIONS）
@@ -881,6 +883,13 @@ async function startServer() {
 
     startReminderScheduler();
     startFileCleanupScheduler();
+
+    // 数据库备份调度器
+    try {
+      require('./lib/backup-scheduler').startBackupScheduler();
+    } catch(e) {
+      log.warn('[Server] 备份调度器启动失败:', e.message);
+    }
 
     // 存储池健康检查（每分钟）
     setInterval(function() {

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>异步任务 — FMS</title>
+<script src="/axios.min.js"></script>
+<style>
+/* ====== CSS Variables — 匹配 FMS 主题 ====== */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap');
+
+:root {
+  --bg-primary: #07090f; --bg-secondary: #0d1526;
+  --bg-card: #0f1a2e; --bg-card-hover: #142035; --bg-input: #0a1220;
+  --border: rgba(0, 212, 255, 0.1); --border-accent: rgba(0, 212, 255, 0.4);
+  --accent: #00d4ff; --accent-glow: rgba(0, 212, 255, 0.3);
+  --accent2: #7b61ff; --accent2-glow: rgba(123, 97, 255, 0.25);
+  --text-primary: #d4e5f7; --text-secondary: #7a90b5; --text-muted: #4a6080;
+  --success: #10b981; --error: #ef4444; --warning: #f59e0b; --info: #3b82f6;
+  --purple: #8b5cf6;
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 212, 255, 0.1);
+  --shadow-glow: 0 0 30px rgba(0, 212, 255, 0.08);
+  --radius-xs: 4px; --radius-sm: 8px; --radius: 8px; --radius-md: 12px; --radius-lg: 16px;
+  --transition-fast: 0.15s ease; --transition-normal: 0.25s ease;
+}
+[data-theme="light"] {
+  --bg-primary: #eef2f8; --bg-secondary: #f8fafc;
+  --bg-card: #ffffff; --bg-card-hover: #f5f8ff; --bg-input: #edf2f9;
+  --border: rgba(100, 140, 220, 0.12); --border-accent: rgba(0, 112, 224, 0.35);
+  --accent: #0070e0; --accent-glow: rgba(0, 112, 224, 0.18);
+  --accent2: #6050e8; --accent2-glow: rgba(96, 80, 232, 0.18);
+  --text-primary: #1a2848; --text-secondary: #4a6090; --text-muted: #8aa0c0;
+  --shadow-card: 0 2px 16px rgba(0, 30, 80, 0.08), 0 1px 3px rgba(0, 60, 160, 0.04);
+  --shadow-glow: 0 4px 24px rgba(0, 112, 224, 0.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font:14px/1.6 'Syne', sans-serif;
+  background:var(--bg-primary);color:var(--text-primary);
+  min-height:100vh;overflow-x:hidden;
+}
+.mono, code, pre, .log-viewer{font-family:'Share Tech Mono', monospace}
+input:focus,button:focus,select:focus{outline:none;box-shadow:0 0 0 2px var(--accent-glow)}
+a{color:var(--accent);text-decoration:none;transition:color var(--transition-fast)}
+a:hover{color:var(--text-primary)}
+
+/* ====== Header ====== */
+header{
+  background:var(--bg-secondary);backdrop-filter:blur(20px) saturate(1.8);
+  -webkit-backdrop-filter:blur(20px) saturate(1.8);
+  padding:0 20px;display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;height:56px;
+}
+header h1{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text-primary)}
+header nav{display:flex;gap:12px;align-items:center;font-size:13px}
+.theme-toggle{
+  cursor:pointer;background:var(--bg-card);border:1px solid var(--border);
+  color:var(--text-secondary);padding:6px 12px;border-radius:var(--radius-sm);
+  font-size:13px;font-family:'Syne',sans-serif;font-weight:600;
+  transition:all var(--transition-normal);
+}
+.theme-toggle:hover{border-color:var(--border-accent);color:var(--accent);box-shadow:0 0 12px var(--accent-glow)}
+
+/* ====== Layout ====== */
+main{max-width:1440px;margin:0 auto;padding:20px 24px}
+
+/* ====== Stats ====== */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{
+  background:var(--bg-card);padding:16px;border-radius:var(--radius-md);
+  border:1px solid var(--border);text-align:center;
+  transition:all var(--transition-normal);position:relative;overflow:hidden;
+}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity var(--transition-normal)}
+.stat-card:hover{box-shadow:var(--shadow-glow);border-color:var(--border-accent)}
+.stat-card:hover::before{opacity:1}
+.stat-val{font-size:28px;font-weight:700;color:var(--accent);font-family:'Share Tech Mono',monospace;text-shadow:0 0 20px var(--accent-glow)}
+.stat-label{font-size:10px;color:var(--text-muted);margin-top:4px;text-transform:uppercase;letter-spacing:1px;font-weight:600}
+
+/* ====== Section ====== */
+.section{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;margin-bottom:16px;box-shadow:var(--shadow-card)}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.section-header h2{font-size:15px;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:6px}
+
+/* ====== Buttons ====== */
+.btn{
+  display:inline-flex;align-items:center;gap:4px;padding:8px 16px;border:1px solid var(--border);
+  border-radius:var(--radius-sm);font-size:12px;font-weight:600;cursor:pointer;
+  background:var(--bg-card);color:var(--text-primary);font-family:'Syne',sans-serif;
+  transition:all var(--transition-fast);white-space:nowrap;
+}
+.btn:hover{border-color:var(--border-accent);box-shadow:0 0 12px var(--accent-glow)}
+.btn-primary{background:var(--accent);color:#000;border-color:var(--accent);font-weight:700}
+.btn-primary:hover{background:var(--accent2);border-color:var(--accent2);color:#fff;box-shadow:0 0 20px var(--accent2-glow)}
+.btn-outline{background:transparent;border:1px solid var(--border)}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+.btn-warn{background:transparent;border:1px solid var(--warning);color:var(--warning)}
+.btn-warn:hover{background:var(--warning);color:#000}
+.btn-danger{background:transparent;border:1px solid var(--error);color:var(--error)}
+.btn-danger:hover{background:var(--error);color:#fff}
+.btn-info{background:transparent;border:1px solid var(--info);color:var(--info)}
+.btn-info:hover{background:var(--info);color:#fff}
+.btn-xs{padding:3px 10px;font-size:11px}
+.btn-sm{padding:5px 12px;font-size:11px}
+.btn-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+/* ====== Table ====== */
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead{background:var(--bg-secondary)}
+th{text-align:left;padding:10px 12px;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.03);vertical-align:middle}
+tbody tr{transition:background var(--transition-fast)}
+tbody tr:hover{background:var(--bg-card-hover)}
+tbody tr:last-child td{border-bottom:none}
+
+/* ====== Badges ====== */
+.badge{display:inline-block;padding:2px 8px;border-radius:var(--radius-xs);font-size:10px;font-weight:600;letter-spacing:0.3px}
+.badge-ok{background:rgba(16,185,129,0.12);color:var(--success);border:1px solid rgba(16,185,129,0.3)}
+.badge-info{background:rgba(59,130,246,0.12);color:var(--info);border:1px solid rgba(59,130,246,0.3)}
+.badge-err{background:rgba(239,68,68,0.12);color:var(--error);border:1px solid rgba(239,68,68,0.3)}
+.badge-warn{background:rgba(245,158,11,0.12);color:var(--warning);border:1px solid rgba(245,158,11,0.3)}
+.badge-gray{background:rgba(100,116,139,0.12);color:var(--text-muted);border:1px solid rgba(100,116,139,0.3)}
+.badge-purple{background:rgba(139,92,246,0.12);color:var(--purple);border:1px solid rgba(139,92,246,0.3)}
+
+/* ====== Progress ====== */
+.progress-bar{width:100%;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;margin-top:2px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width 0.5s ease}
+.progress-fill.err{background:linear-gradient(90deg,var(--error),#f87171)}
+.progress-fill.warn{background:linear-gradient(90deg,var(--warning),#fbbf24)}
+
+/* ====== Modal ====== */
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:90%;max-width:700px;max-height:85vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,0.5)}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:12px;color:var(--text-primary)}
+.modal label{display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase}
+.modal input,.modal select{width:100%;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:13px;font-family:'Share Tech Mono',monospace;margin-bottom:12px}
+.modal .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+/* ====== Log Viewer ====== */
+.log-viewer{background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;max-height:300px;overflow-y:auto;font-size:11px;font-family:'Share Tech Mono',monospace;line-height:1.6}
+.log-line{display:flex;gap:8px}
+.log-time{color:var(--text-muted);white-space:nowrap;min-width:65px}
+.log-info{color:var(--text-secondary)}
+.log-warn{color:var(--warning)}
+.log-error{color:var(--error)}
+
+/* ====== Empty ====== */
+.empty{text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px}
+.empty-icon{font-size:36px;margin-bottom:8px;opacity:0.5}
+
+/* ====== Toolbar ====== */
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+
+/* Embed Mode */
+body.embed-mode header{display:none!important}
+body.embed-mode main{padding:8px 0 0 0;max-width:100%}
+body.embed-mode .section{border-radius:0;border-left:none;border-right:none;margin-bottom:0}
+body.embed-mode .stats{margin-bottom:12px}
+
+/* Toast */
+.toast{position:fixed;top:20px;right:20px;padding:12px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-primary);font-size:13px;z-index:3000;box-shadow:var(--shadow-card);animation:slideIn 0.3s ease;max-width:400px}
+.toast.toast-ok{border-color:var(--success)}
+.toast.toast-err{border-color:var(--error)}
+@keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+select{background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;font-family:'Share Tech Mono',monospace}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚙️ 异步任务</h1>
+  <nav>
+    <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
+    <a href="/home.html">← 返回首页</a>
+  </nav>
+</header>
+
+<main>
+<!-- Stats -->
+<div class="stats">
+  <div class="stat-card"><div class="stat-val" id="stat-running" style="color:var(--info)">0</div><div class="stat-label">运行中</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-pending" style="color:var(--warning)">0</div><div class="stat-label">等待中</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-completed" style="color:var(--success)">0</div><div class="stat-label">已完成(今日)</div></div>
+  <div class="stat-card"><div class="stat-val" id="stat-error" style="color:var(--error)">0</div><div class="stat-label">错误</div></div>
+</div>
+
+<!-- Task List -->
+<div class="section">
+  <div class="section-header">
+    <h2>📋 任务列表</h2>
+    <div class="btn-group">
+      <select id="task-filter" onchange="loadTasks(true)">
+        <option value="all">全部</option>
+        <option value="running">运行中</option>
+        <option value="pending">等待中</option>
+        <option value="completed">已完成</option>
+        <option value="error">错误</option>
+        <option value="cancelled">已取消</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="loadTasks(true)">🔄 刷新</button>
+      <button class="btn btn-warn btn-sm" onclick="unlockAllPools()">🔓 强制解锁</button>
+    </div>
+  </div>
+  <div id="tasks-container"><div class="empty">加载中...</div></div>
+</div>
+</main>
+
+<!-- Task Detail Modal -->
+<div class="modal-overlay" id="modal-task-detail">
+  <div class="modal">
+    <h3>📝 任务详情</h3>
+    <div id="task-detail-content"><div class="empty">加载中...</div></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modal-task-detail')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====== Theme ======
+function toggleTheme(){
+  var h=document.documentElement;
+  var cur=h.getAttribute('data-theme');
+  var next=cur==='dark'?'light':'dark';
+  h.setAttribute('data-theme',next);
+  localStorage.setItem('fms-theme',next);
+  try{window.parent.postMessage({type:'theme-change',theme:next},'*')}catch(e){}
+}
+function $(id){return document.getElementById(id)}
+
+// ====== API wrapper (returns r.data, i.e. JSON body) ======
+function api(url,params,method){
+  method=method||'get';
+  return axios({
+    method:method,url:url,
+    params:method==='get'?params:undefined,
+    data:method!=='get'?params:undefined,
+    withCredentials:true,
+    headers:{'X-Device-Id':localStorage.getItem('_fs_device_id')||'web_admin'}
+  }).then(function(r){return r.data}).catch(function(e){
+    var m='网络错误';if(e.response&&e.response.data&&e.response.data.message)m=e.response.data.message;
+    return{code:-1,message:m,data:null};
+  });
+}
+
+// ====== Toast ======
+function toast(msg,type){
+  var t=document.createElement('div');t.className='toast toast-'+(type||'ok');t.textContent=msg;document.body.appendChild(t);
+  setTimeout(function(){t.style.opacity='0';t.style.transition='opacity 0.3s';setTimeout(function(){t.remove()},300)},2500);
+}
+
+function fmtDate(d){if(!d)return'-';return d.replace('T',' ').substring(0,16)}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function openModal(id){$(id).classList.add('show')}
+function closeModal(id){$(id).classList.remove('show')}
+
+// ====== Change detection (avoid DOM rebuild when data unchanged) ======
+var _lastTasksHash='';
+var _lastCounts={running:-1,pending:-1,completed:-1,error:-1};
+
+function _tasksHash(tasks){
+  return tasks.map(function(t){return t.id+':'+t.status+':'+t.progress+':'+(t.processed_items||0)+':'+(t.error_items||0)}).join('|');
+}
+
+// ====== Render Task List ======
+function renderTaskList(tasks){
+  var html='';
+  if(tasks.length===0){
+    html='<div class="empty"><div class="empty-icon">✅</div>暂无任务</div>';
+  }else{
+    html='<div class="table-wrap"><table><thead><tr><th>ID</th><th>类型</th><th>标题</th><th>状态</th><th>进度</th><th>开始</th><th>完成</th><th>操作</th></tr></thead><tbody>';
+    tasks.forEach(function(t){
+      var sb='';
+      switch(t.status){
+        case 'completed':sb='<span class="badge badge-ok">已完成</span>';break;
+        case 'running':sb='<span class="badge badge-info">运行中</span>';break;
+        case 'error':sb='<span class="badge badge-err">错误</span>';break;
+        case 'cancelled':sb='<span class="badge badge-gray">已取消</span>';break;
+        case 'paused':sb='<span class="badge badge-warn">已暂停</span>';break;
+        default:sb='<span class="badge badge-gray">等待中</span>';
+      }
+      var typeLabels={pool_delete:'删除镜像',pool_delete_migrate:'删除+迁移',pool_migrate_disable:'迁移停用',group_migrate_disable:'组迁移停用',auto_migrate:'自动迁移',auto_upgrade:'自动升级',pool_reorganize:'数据重组',pool_rollback:'回滚',group_rollback:'组回滚',data_sync:'数据同步',repair_paths:'路径修复',repair_manual:'手动修复',repair_lost:'丢失修复',physical_cleanup:'物理清理',db_backup:'数据库备份',verify_data:'数据校验'};
+      var typeLabel=typeLabels[t.type]||t.type;
+      var pctFill='';
+      if(t.status==='error')pctFill=' err';
+      else if(t.status==='cancelled')pctFill=' warn';
+      html+='<tr>';
+      html+='<td>'+t.id+'</td>';
+      html+='<td><span class="badge badge-purple" style="font-size:10px">'+escHtml(typeLabel)+'</span></td>';
+      html+='<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(t.title)+'">'+escHtml(t.title)+'</td>';
+      html+='<td>'+sb+'</td>';
+      html+='<td style="min-width:120px"><div class="progress-bar"><div class="progress-fill'+pctFill+'" style="width:'+(t.progress||0)+'%"></div></div><span style="font-size:10px;color:var(--text-muted)">'+(t.processed_items||0)+'/'+(t.total_items||0)+' ('+(t.progress||0)+'%)</span></td>';
+      html+='<td style="font-size:11px">'+(t.started_at?fmtDate(t.started_at):'-')+'</td>';
+      html+='<td style="font-size:11px">'+(t.completed_at?fmtDate(t.completed_at):'-')+'</td>';
+      html+='<td><div class="btn-group">';
+      html+='<button class="btn btn-outline btn-xs" onclick="showTaskDetail('+t.id+')">详情</button>';
+      if(t.status==='running'||t.status==='pending')html+='<button class="btn btn-warn btn-xs" onclick="cancelTask('+t.id+')">停止</button>';
+      if(t.status==='completed'||t.status==='error'||t.status==='cancelled')html+='<button class="btn btn-danger btn-xs" onclick="deleteTask('+t.id+')">删除</button>';
+      html+='</div></td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div>';
+  }
+  $('tasks-container').innerHTML=html;
+}
+
+// ====== Load Tasks ======
+function loadTasks(force){
+  var filterEl=$('task-filter');
+  var status=filterEl?filterEl.value:'all';
+  api('/api/admin/tasks',{limit:20,status:status}).then(function(r){
+    if(r.code!==0){
+      $('tasks-container').innerHTML='<div class="empty"><div class="empty-icon">⚠️</div>错误: '+(r.message||'未知')+'</div>';
+      _lastTasksHash='';
+      return;
+    }
+    var tasks=r.data.tasks||[];
+
+    // Update stat counters (always — textContent has no visual flicker)
+    var running=0,pending=0,completed=0,errors=0;
+    tasks.forEach(function(t){
+      if(t.status==='running')running++;
+      else if(t.status==='pending')pending++;
+      else if(t.status==='completed')completed++;
+      else if(t.status==='error')errors++;
+    });
+    // Only touch DOM if values changed
+    if(running!==_lastCounts.running){$('stat-running').textContent=running;_lastCounts.running=running;}
+    if(pending!==_lastCounts.pending){$('stat-pending').textContent=pending;_lastCounts.pending=pending;}
+    if(completed!==_lastCounts.completed){$('stat-completed').textContent=completed;_lastCounts.completed=completed;}
+    if(errors!==_lastCounts.error){$('stat-error').textContent=errors;_lastCounts.error=errors;}
+
+    // Skip table rebuild if data unchanged (prevents polling flicker)
+    var newHash=_tasksHash(tasks);
+    if(!force && newHash===_lastTasksHash && _lastTasksHash!=='')return;
+    _lastTasksHash=newHash;
+
+    renderTaskList(tasks);
+  });
+}
+
+function showTaskDetail(id){
+  openModal('modal-task-detail');
+  $('task-detail-content').innerHTML='<div class="empty">加载中...</div>';
+  api('/api/admin/tasks/'+id).then(function(r){
+    if(r.code!==0)return;
+    var t=r.data;
+    var html='<p><strong>状态:</strong> '+t.status+' | <strong>进度:</strong> '+t.progress+'% ('+t.processed_items+'/'+t.total_items+') | <strong>失败:</strong> '+(t.error_items||0)+'</p>';
+    html+='<p style="font-size:12px;color:var(--text-muted)">开始: '+(t.started_at||'-')+' | 完成: '+(t.completed_at||'-')+'</p>';
+    if(t.metadata&&Object.keys(t.metadata).length>0){
+      html+='<p style="font-size:11px;color:var(--text-muted);margin-top:4px">元数据: '+escHtml(JSON.stringify(t.metadata))+'</p>';
+    }
+    html+='<h4 style="margin-top:14px;margin-bottom:6px">📝 日志</h4>';
+    var logs=t.logs||[];
+    if(logs.length===0){
+      html+='<div class="empty">暂无日志</div>';
+    }else{
+      html+='<div class="log-viewer">';
+      logs.forEach(function(l){
+        var cls='log-'+(l.level==='error'?'error':(l.level==='warn'?'warn':'info'));
+        html+='<div class="log-line '+cls+'"><span class="log-time">['+(l.time||'').substring(11,19)+']</span>'+escHtml(l.msg)+'</div>';
+      });
+      html+='</div>';
+    }
+    $('task-detail-content').innerHTML=html;
+  });
+}
+
+function cancelTask(id){
+  if(!confirm('确定停止此任务？关联的存储池将被解锁。'))return;
+  api('/api/admin/tasks/'+id+'/cancel',{},'post').then(function(r){
+    toast(r.message||'操作成功','ok');loadTasks(true);
+  });
+}
+function deleteTask(id){
+  if(!confirm('确定删除此任务记录？关联的池会被解锁。'))return;
+  api('/api/admin/tasks/'+id,{},'delete').then(function(r){
+    toast(r.message||'操作成功','ok');loadTasks(true);
+  });
+}
+function unlockAllPools(){
+  if(!confirm('强制解锁所有被锁的存储池？'))return;
+  api('/api/admin/storage/unlock',{},'post').then(function(r){
+    toast(r.message||'操作成功','ok');
+  });
+}
+
+// Modal click-outside
+document.addEventListener('click',function(e){
+  if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('show');
+});
+
+// ====== Init (IIFE — runs immediately when script executes) ======
+(function init(){
+  // Restore theme
+  var saved=localStorage.getItem('fms-theme');
+  if(saved)document.documentElement.setAttribute('data-theme',saved);
+  // Embed mode
+  if(window.location.search.indexOf('embed=1')!==-1)document.body.classList.add('embed-mode');
+  // Theme sync from parent
+  window.addEventListener('message',function(e){
+    if(e.data&&e.data.theme)document.documentElement.setAttribute('data-theme',e.data.theme);
+  });
+
+  // Auth check: use axios directly (same proven pattern as admin-backup.html)
+  axios.get('/api/auth/me',{withCredentials:true}).then(function(resp){
+    var r=resp.data;
+    if(r.code!==0||!r.data||!r.data.user){
+      window.location.href='/login.html?return='+encodeURIComponent('/admin-tasks.html');
+      return;
+    }
+    if(!r.data.user.is_admin){
+      document.body.innerHTML='<div style="text-align:center;padding:100px 20px;color:var(--text-primary)"><h2>🛡️ 需要管理员权限</h2><p style="color:var(--text-muted);margin-top:8px">此页面仅限管理员访问</p></div>';
+      return;
+    }
+    // Initial load — force render
+    loadTasks(true);
+    // Poll every 10s — only updates DOM if data changed (no flicker)
+    setInterval(function(){loadTasks(false)},10000);
+  }).catch(function(){
+    window.location.href='/login.html?return='+encodeURIComponent('/admin-tasks.html');
+  });
+})();
+</script>
+</body>
+</html>

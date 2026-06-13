@@ -443,13 +443,36 @@ router.post('/admin/storage/pools/:groupId/sync', requireAdmin, function(req, re
     return res.json({ code: 1, message: '该组没有镜像需要同步（至少需要 2 个路径）' });
   }
 
-  // 源: 任何可读的镜像（活跃/已停用/降级/只读 都可以作为同步源）
-  // 停用存储组后镜像变为 stopped，但仍保留文件数据可供同步
-  var sourcePools = allPools.filter(function(p) {
-    return p.status === 'active' || p.status === 'stopped' || p.status === 'disabled' || p.status === 'degraded';
+  // 目标: 停用且未同步的镜像（可指定单个镜像ID只同步那一个）
+  var targetMirrorId = parseInt(req.body.mirror_id, 10) || 0;
+  var targetMirrors = allPools.filter(function(p) {
+    if (targetMirrorId > 0) return p.id === targetMirrorId && (p.status === 'stopped' || p.status === 'degraded') && p.sync_status === 'unsynced';
+    return (p.status === 'stopped' || p.status === 'degraded') && p.sync_status === 'unsynced';
   });
+  if (targetMirrors.length === 0) {
+    return res.json({ code: targetMirrorId > 0 ? 1 : 0, message: targetMirrorId > 0 ? '指定镜像不需要同步或不处于未同步状态' : '所有镜像已同步', data: { synced: true } });
+  }
+
+  // 收集目标镜像 ID（排除作为源候选，防止自己同步到自己）
+  var targetIds = {};
+  targetMirrors.forEach(function(m) { targetIds[m.id] = true; });
+
+  // 源: 已同步的镜像（只有 sync_status='synced' 的镜像才有完整数据）
+  // 同时排除目标镜像自身
+  var sourcePools = allPools.filter(function(p) {
+    return (p.status === 'active' || p.status === 'stopped' || p.status === 'disabled' || p.status === 'degraded')
+        && p.sync_status === 'synced'
+        && !targetIds[p.id];
+  });
+  // 如果没有已同步的源，尝试放宽条件（允许未同步但有实际数据的源）
   if (sourcePools.length === 0) {
-    return res.json({ code: 1, message: '没有可用的源镜像（所有镜像可能均已删除）' });
+    sourcePools = allPools.filter(function(p) {
+      return (p.status === 'active' || p.status === 'stopped' || p.status === 'disabled' || p.status === 'degraded')
+          && !targetIds[p.id];
+    });
+  }
+  if (sourcePools.length === 0) {
+    return res.json({ code: 1, message: '没有可用的源镜像（所有镜像可能均是同步目标或已删除）' });
   }
 
   // 源优先级：活跃 > 已停用(已同步) > 降级 > 停用/未同步
@@ -463,22 +486,12 @@ router.post('/admin/storage/pools/:groupId/sync', requireAdmin, function(req, re
     return synca - syncb;
   });
 
-  // 目标: 停用且未同步的镜像（可指定单个镜像ID只同步那一个）
-  var targetMirrorId = parseInt(req.body.mirror_id, 10) || 0;
-  var targetMirrors = allPools.filter(function(p) {
-    if (targetMirrorId > 0) return p.id === targetMirrorId && (p.status === 'stopped' || p.status === 'degraded') && p.sync_status === 'unsynced';
-    return (p.status === 'stopped' || p.status === 'degraded') && p.sync_status === 'unsynced';
-  });
-  if (targetMirrors.length === 0) {
-    return res.json({ code: targetMirrorId > 0 ? 1 : 0, message: targetMirrorId > 0 ? '指定镜像不需要同步或不处于未同步状态' : '所有镜像已同步', data: { synced: true } });
-  }
-
   // 标记目标镜像为同步中（锁定）
   targetMirrors.forEach(function(m) {
     db.run("UPDATE storage_pools SET status = 'syncing' WHERE id = ?", [m.id]);
   });
 
-  var sourcePool = sourcePools[0]; // 使用第一个活跃镜像作为源
+  var sourcePool = sourcePools[0];
 
   // 获取需要同步的文件列表（只同步 ref_count > 0 的文件）
   var allFiles = db.query(

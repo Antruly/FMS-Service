@@ -291,10 +291,12 @@ tr:hover td{background:rgba(0,212,255,0.03)}
 <style>
 /* 嵌入模式：隐藏 header，适配主应用 iframe */
 body.embed-mode header { display: none !important; }
-body.embed-mode main { padding-top: 8px; }
+body.embed-mode main { padding: 8px 0 0 0; max-width: 100%; }
 body.embed-mode { background: transparent; }
-body.embed-mode .section { box-shadow: none; }
+body.embed-mode .section { box-shadow: none; border-radius: 0; border-left: none; border-right: none; margin-bottom: 0; }
 body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
+body.embed-mode .stats { margin-bottom: 12px; }
+body.embed-mode .tabs { margin-bottom: 12px; }
 </style>
 </head>
 <body>
@@ -315,7 +317,6 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
   <div class="stat-card"><div class="stat-val" id="stat-refs">-</div><div class="stat-label">总引用数</div></div>
   <div class="stat-card"><div class="stat-val" id="stat-bytes">-</div><div class="stat-label">总容量</div></div>
   <div class="stat-card"><div class="stat-val" id="stat-groups">-</div><div class="stat-label">存储组</div></div>
-  <div class="stat-card"><div class="stat-val" id="stat-tasks">-</div><div class="stat-label">活跃任务</div></div>
 </div>
 
 <!-- Tab Navigation -->
@@ -325,7 +326,6 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
   <button class="tab-btn" data-tab="repair">🔧 修复工具</button>
   <button class="tab-btn" data-tab="migration">🔄 文件迁移</button>
   <button class="tab-btn" data-tab="upgrade">🔐 加密升级 <span class="tab-badge" id="upgrade-badge" style="display:none">0</span></button>
-  <button class="tab-btn" data-tab="tasks">⚙️ 异步任务 <span class="tab-badge" id="task-badge" style="display:none">0</span></button>
 </div>
 
 <!-- ======================== TAB 1: 存储组 ======================== -->
@@ -336,6 +336,7 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
       <div class="btn-group">
         <button class="btn btn-outline btn-sm" onclick="loadPools()">🔄 刷新</button>
         <button class="btn btn-primary" onclick="openAddGroupModal()">+ 新增存储组</button>
+        <button class="btn btn-warn btn-sm" onclick="unlockAllPools()">🔓 强制解锁</button>
       </div>
     </div>
     <div id="groups-container"><div class="empty">加载中...</div></div>
@@ -472,27 +473,6 @@ body.embed-mode .section:hover { box-shadow: 0 0 20px var(--accent-glow); }
     <div id="up-log" style="display:none;margin-top:12px">
       <div class="log-viewer" id="up-log-content" style="max-height:150px"></div>
     </div>
-  </div>
-</div>
-
-<!-- ======================== TAB 6: 异步任务 ======================== -->
-<div class="tab-panel" id="panel-tasks">
-  <div class="section">
-    <div class="section-header">
-      <h2>⚙️ 异步任务列表</h2>
-      <div class="btn-group">
-        <select id="task-filter" onchange="loadTasks()" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:12px;font-family:'Share Tech Mono',monospace">
-          <option value="all">全部</option>
-          <option value="running">运行中</option>
-          <option value="pending">等待中</option>
-          <option value="completed">已完成</option>
-          <option value="error">错误</option>
-        </select>
-        <button class="btn btn-outline btn-sm" onclick="loadTasks()">🔄 刷新</button>
-        <button class="btn btn-warn btn-sm" onclick="unlockAllPools()">🔓 强制解锁</button>
-      </div>
-    </div>
-    <div id="tasks-container"><div class="empty">加载中...</div></div>
   </div>
 </div>
 
@@ -640,7 +620,6 @@ document.getElementById('tab-nav').addEventListener('click',function(e){
   if(tab==='groups')loadPools();
   else if(tab==='files')loadFiles(0);
   else if(tab==='upgrade')loadUpgradeStats();
-  else if(tab==='tasks')loadTasks();
   else if(tab==='migration')loadMigrationStatus();
   // 更新 URL 参数以便刷新保持
   updateTabParam(tab);
@@ -889,15 +868,15 @@ function verifyGroup(groupId){
   if(!confirm('数据校验将扫描存储组#'+groupId+'所有镜像的物理文件，\n并自动更新同步状态。\n\n校验期间镜像将被锁定，停止后可取消。\n\n继续？'))return;
   api('/api/admin/storage/groups/'+groupId+'/verify',{},'post').then(function(r){
     toast(r.message,'ok');
-    loadPools();loadTasks();
+    loadPools();
     // 切换到任务标签查看进度
-    document.querySelector('.tab-btn[data-tab="tasks"]').click();
+    
   });
 }
 function migrateAndDisable(groupId){
   if(!confirm('确定迁移存储组#'+groupId+'的全部数据并停用？\n\n所有文件将迁移到其他活跃存储组，之后该组被停用。'))return;
   api('/api/admin/storage/groups/'+groupId+'/migrate-and-disable',{},'post').then(function(r){
-    toast(r.message,'ok');loadPools();loadTasks();
+    toast(r.message,'ok');loadPools();
   });
 }
 function reorganizePool(groupId){
@@ -909,7 +888,7 @@ function reorganizePool(groupId){
 function rollbackPool(groupId){
   if(!confirm('确定回滚存储组#'+groupId+'？\n\n将已迁出的文件重新移回本组。通常推荐使用"重组"。'))return;
   api('/api/admin/storage/groups/'+groupId+'/rollback',{},'post').then(function(r){
-    toast(r.message,'ok');loadPools();loadTasks();
+    toast(r.message,'ok');loadPools();
   });
 }
 function syncMirror(groupId,mirrorId){
@@ -920,7 +899,7 @@ function syncMirror(groupId,mirrorId){
       var count=0;
       var t=setInterval(function(){count++;
         api('/api/admin/storage/sync-status/'+groupId).then(function(sr){
-          if(sr.code===0&&sr.data&&!sr.data.is_syncing){clearInterval(t);toast('同步完成！','ok');loadPools();loadTasks();}
+          if(sr.code===0&&sr.data&&!sr.data.is_syncing){clearInterval(t);toast('同步完成！','ok');loadPools();}
         }).catch(function(){clearInterval(t)});
         if(count>180){clearInterval(t);toast('同步超时','err')}
       },1000);
@@ -973,7 +952,7 @@ function deleteMirror(id,name,mirrorIndex,groupId,isOnly){
   msgs.push('此操作不可撤销，确定要继续吗？');
   if(!confirm(msgs.join('\n')))return;
   api('/api/admin/storage/pools/'+id,{},'delete').then(function(r){
-    toast(r.message,'ok');loadPools();loadTasks();
+    toast(r.message,'ok');loadPools();
   }).catch(function(){});
 }
 
@@ -1155,7 +1134,7 @@ function executeCleanup(){
       setTimeout(function(){
         if(confirm('清理任务已创建，是否跳转到任务列表查看进度？')){
           goToTab('tasks');
-          loadTasks();
+          
         }
       },1000);
     }else{
@@ -1283,7 +1262,7 @@ function startRepair(){
     toast(r.message,'ok');
     $('auto-repair-result').innerHTML='<p style="color:var(--accent);margin-top:8px">✅ '+r.message+'</p>';
     btn.disabled=false;btn.textContent='🔍 开始自动修复';
-    loadTasks();
+    
   }).catch(function(){btn.disabled=false;btn.textContent='🔍 开始自动修复'});
 }
 
@@ -1296,7 +1275,7 @@ function startManualRepair(){
     var html='<p style="color:var(--accent);margin-top:8px">✅ '+r.message+'</p>';
     if(r.data&&r.data.disk_files)html+='<p style="font-size:11px;color:var(--text-muted)">扫描:'+r.data.disk_files+' 丢失:'+r.data.lost_files+' 模式:'+(r.data.mode||'')+'</p>';
     $('manual-repair-result').innerHTML=html;
-    loadTasks();
+    
   });
 }
 
@@ -1337,7 +1316,7 @@ function repairLostFiles(){
   var vh=$('chk-verify-hash2')?$('chk-verify-hash2').checked:true;
   if(!confirm('确定要修复丢失文件吗？'+(vh?'(哈希校验模式)':'')+''))return;
   api('/api/admin/storage/repair-with-hash',{verify_hash:vh},'post').then(function(r){
-    toast(r.message,'ok');loadTasks();
+    toast(r.message,'ok');
   });
 }
 
@@ -1380,7 +1359,7 @@ function loadMigrationStatus(){
 function startMigration(){
   var btn=$('btn-migrate');btn.disabled=true;btn.textContent='迁移中...';
   api('/api/admin/storage/migrate',{batch_size:10},'post').then(function(r){
-    toast(r.message,'ok');loadMigrationStatus();loadTasks();
+    toast(r.message,'ok');loadMigrationStatus();
     btn.disabled=false;btn.textContent='📦 批量迁移 (10个)';
   }).catch(function(){btn.disabled=false;btn.textContent='📦 批量迁移 (10个)'});
 }
@@ -1390,16 +1369,16 @@ function retryFailed(){
   var btn=$('btn-retry-failed');btn.disabled=true;btn.textContent='⏳ 重试中...';
   api('/api/admin/storage/retry-failed',{},'post').then(function(r){
     toast(r.message,'ok');
-    loadMigrationStatus();loadTasks();
+    loadMigrationStatus();
     var poll=setInterval(function(){
-      loadTasks();loadMigrationStatus();
+      loadMigrationStatus();
       api('/api/admin/tasks?limit=1').then(function(tr){
         var tasks=tr.data.tasks||[];
         var running=tasks.filter(function(t){return (t.type==='auto_migrate'||t.type==='auto_upgrade')&&(t.status==='running'||t.status==='pending')});
         if(running.length===0){
           clearInterval(poll);
           btn.disabled=false;btn.textContent='🔄 重试失败文件';
-          toast('重试完成','ok');loadMigrationStatus();loadTasks();
+          toast('重试完成','ok');loadMigrationStatus();
         } else { btn.textContent='⏳ 迁移中...'; }
       });
     },3000);
@@ -1412,111 +1391,24 @@ function startAutoMigration(){
   api('/api/admin/storage/auto-migrate',{},'post').then(function(r){
     toast(r.message,'ok');
     btn.textContent='迁移中...';
-    loadMigrationStatus();loadTasks();
+    loadMigrationStatus();
     var poll=setInterval(function(){
-      loadTasks();loadMigrationStatus();
+      loadMigrationStatus();
       api('/api/admin/tasks?limit=1').then(function(tr){
         var tasks=tr.data.tasks||[];
         var running=tasks.filter(function(t){return (t.type==='auto_migrate'||t.type==='auto_upgrade')&&(t.status==='running'||t.status==='pending')});
         if(running.length===0){
           clearInterval(poll);
           btn.disabled=false;btn.textContent='🚀 自动迁移全部';
-          toast('迁移完成','ok');loadMigrationStatus();loadTasks();
+          toast('迁移完成','ok');loadMigrationStatus();
         }
       });
     },3000);
   }).catch(function(){btn.disabled=false;btn.textContent='🚀 自动迁移全部'});
 }
 
-// ==================== TASKS ====================
-function loadTasks(){
-  var status=$('task-filter')?$('task-filter').value:'all';
-  api('/api/admin/tasks',{limit:20,status:status}).then(function(r){
-    if(r.code!==0)return;
-    var tasks=r.data.tasks||[],html='';
-    var activeCount=tasks.filter(function(t){return t.status==='running'||t.status==='pending'}).length;
-    $('stat-tasks').textContent=activeCount;
-    var badge=$('task-badge');
-    if(activeCount>0){badge.textContent=activeCount;badge.style.display=''}else{badge.style.display='none'}
-
-    if(tasks.length===0){
-      html='<div class="empty"><div class="empty-icon">✅</div>暂无任务</div>';
-    }else{
-      html='<div class="table-wrap"><table><thead><tr><th>ID</th><th>类型</th><th>标题</th><th>状态</th><th>进度</th><th>开始</th><th>完成</th><th>操作</th></tr></thead><tbody>';
-      tasks.forEach(function(t){
-        var sb='';
-        switch(t.status){
-          case 'completed':sb='<span class="badge badge-ok">已完成</span>';break;
-          case 'running':sb='<span class="badge badge-info">运行中</span>';break;
-          case 'error':sb='<span class="badge badge-err">错误</span>';break;
-          case 'cancelled':sb='<span class="badge badge-gray">已取消</span>';break;
-          case 'paused':sb='<span class="badge badge-warn">已暂停</span>';break;
-          default:sb='<span class="badge badge-gray">等待中</span>';
-        }
-        var typeLabel={pool_delete:'删除镜像',pool_delete_migrate:'删除+迁移',pool_migrate_disable:'迁移停用',group_migrate_disable:'组迁移停用',auto_migrate:'自动迁移',auto_upgrade:'自动升级',pool_reorganize:'数据重组',pool_rollback:'回滚',group_rollback:'组回滚',data_sync:'数据同步',repair_paths:'路径修复',repair_manual:'手动修复',repair_lost:'丢失修复'}[t.type]||t.type;
-        var pctFill='';
-        if(t.status==='error')pctFill=' err';
-        else if(t.status==='cancelled')pctFill=' warn';
-        html+='<tr>';
-        html+='<td>'+t.id+'</td>';
-        html+='<td><span class="badge badge-purple" style="font-size:10px">'+typeLabel+'</span></td>';
-        html+='<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(t.title)+'">'+escHtml(t.title)+'</td>';
-        html+='<td>'+sb+'</td>';
-        html+='<td style="min-width:120px"><div class="progress-bar"><div class="progress-fill'+pctFill+'" style="width:'+(t.progress||0)+'%"></div></div><span style="font-size:10px;color:var(--text-muted)">'+(t.processed_items||0)+'/'+(t.total_items||0)+' ('+(t.progress||0)+'%)</span></td>';
-        html+='<td style="font-size:11px">'+(t.started_at?fmtDate(t.started_at):'-')+'</td>';
-        html+='<td style="font-size:11px">'+(t.completed_at?fmtDate(t.completed_at):'-')+'</td>';
-        html+='<td><div class="btn-group">';
-        html+='<button class="btn btn-outline btn-xs" onclick="showTaskDetail('+t.id+')">详情</button>';
-        if(t.status==='running'||t.status==='pending')html+='<button class="btn btn-warn btn-xs" onclick="cancelTask('+t.id+')">停止</button>';
-        if(t.status==='completed'||t.status==='error'||t.status==='cancelled')html+='<button class="btn btn-danger btn-xs" onclick="deleteTask('+t.id+')">删除</button>';
-        html+='</div></td>';
-        html+='</tr>';
-      });
-      html+='</tbody></table></div>';
-    }
-    $('tasks-container').innerHTML=html;
-  });
-}
-
-function showTaskDetail(id){
-  openModal('modal-task-detail');
-  $('task-detail-content').innerHTML='<div class="empty">加载中...</div>';
-  api('/api/admin/tasks/'+id).then(function(r){
-    if(r.code!==0)return;
-    var t=r.data;
-    var html='<p><strong>状态:</strong> '+t.status+' | <strong>进度:</strong> '+t.progress+'% ('+t.processed_items+'/'+t.total_items+') | <strong>失败:</strong> '+(t.error_items||0)+'</p>';
-    html+='<p style="font-size:12px;color:var(--text-muted)">开始: '+(t.started_at||'-')+' | 完成: '+(t.completed_at||'-')+'</p>';
-    if(t.metadata&&Object.keys(t.metadata).length>0){
-      html+='<p style="font-size:11px;color:var(--text-muted);margin-top:4px">元数据: '+escHtml(JSON.stringify(t.metadata))+'</p>';
-    }
-    html+='<h4 style="margin-top:14px;margin-bottom:6px">📝 日志</h4>';
-    var logs=t.logs||[];
-    if(logs.length===0){
-      html+='<div class="empty">暂无日志</div>';
-    }else{
-      html+='<div class="log-viewer">';
-      logs.forEach(function(l){
-        var cls='log-'+((l.level==='error')?'error':(l.level==='warn')?'warn':'info');
-        html+='<div class="log-line '+cls+'"><span class="log-time">['+(l.time||'').substring(11,19)+']</span>'+escHtml(l.msg)+'</div>';
-      });
-      html+='</div>';
-    }
-    $('task-detail-content').innerHTML=html;
-  });
-}
-
-function cancelTask(id){
-  if(!confirm('确定停止此任务？关联的存储池将被解锁。'))return;
-  api('/api/admin/tasks/'+id+'/cancel',{},'post').then(function(r){
-    toast(r.message,'ok');loadTasks();loadPools();
-  });
-}
-function deleteTask(id){
-  if(!confirm('确定删除此任务记录？关联的池会被解锁。'))return;
-  api('/api/admin/tasks/'+id,{},'delete').then(function(r){
-    toast(r.message,'ok');loadTasks();loadPools();
-  });
-}
+// ==================== TASKS (moved to admin-tasks.html) ====================
+// unlockAllPools kept for storage groups usage
 function unlockAllPools(){
   if(!confirm('强制解锁所有被锁的存储池？'))return;
   api('/api/admin/storage/unlock',{},'post').then(function(r){
@@ -1644,10 +1536,10 @@ function startAutoUpgradeAll(){
     if(r.code!==0){toast(r.message||'启动失败','err');btn.disabled=false;btn.textContent='🚀 自动升级全部';return}
     toast(r.message||'自动升级任务已启动','ok');
     btn.textContent='⏳ 后台执行中...';
-    loadTasks();
+    
     // 轮询直到任务完成
     var poll=setInterval(function(){
-      loadTasks();loadUpgradeStats();
+      loadUpgradeStats();
       api('/api/admin/tasks?limit=5').then(function(tr){
         var tasks=tr.data.tasks||[];
         var running=tasks.filter(function(t){return t.type==='auto_upgrade'&&(t.status==='running'||t.status==='pending')});
@@ -1655,7 +1547,7 @@ function startAutoUpgradeAll(){
           clearInterval(poll);
           btn.disabled=false;btn.textContent='🚀 自动升级全部';
           loadUpgradeStats();
-          loadTasks();
+          
         }
       }).catch(function(){});
     },3000);
@@ -1682,14 +1574,13 @@ document.addEventListener('DOMContentLoaded',function(){
       // 默认加载存储组
       loadPools();
     }
-    loadTasks();
+    
     // Poll: 只在当前可见标签时更新
     setInterval(function(){
       var activeTab=document.querySelector('.tab-btn.active');
       if(!activeTab)return;
       var tab=activeTab.getAttribute('data-tab');
       if(tab==='groups')loadPools();
-      else if(tab==='tasks')loadTasks();
       else if(tab==='migration')loadMigrationStatus();
     },15000); // 每15秒仅更新当前标签
   }).catch(function(){

@@ -1462,6 +1462,14 @@ router.get('/api/webdav/links', requireAuth, function(req, res) {
   var WebDAVLink = require('../lib/db').WebDAVLink;
   var VirtualDir = require('../lib/db').VirtualDir;
   var links = WebDAVLink.listByUser(req.user.id);
+  var total = links.length;
+
+  // 分页
+  var limit = parseInt(req.query.limit, 10) || 0;
+  var offset = parseInt(req.query.offset, 10) || 0;
+  if (limit > 0) {
+    links = links.slice(offset, offset + limit);
+  }
   var result = links.map(function(l) {
     // 计算显示路径
     var displayPath = l.target_path || '/';
@@ -1507,7 +1515,7 @@ router.get('/api/webdav/links', requireAuth, function(req, res) {
       is_expired: WebDAVLink.checkExpired(l)
     };
   });
-  res.json({ code: 0, data: result });
+  res.json({ code: 0, data: { total: total, links: result } });
 });
 
 // POST /api/webdav/links - 创建 WebDAV 链接
