@@ -392,6 +392,7 @@ body {
   body.sidebar-collapsed .page-panel[data-type="admin-tasks"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="admin-version"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="admin-rate-limit"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="admin-webdav"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="webdav"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="profile"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="change-password"] .page-panel-body,
@@ -2574,15 +2575,16 @@ body {
 .sm-card-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 .sm-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 7px 14px;
+  gap: 4px;
+  padding: 6px 10px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
@@ -2591,10 +2593,12 @@ body {
   background: transparent;
   color: var(--text-secondary);
   transition: all 0.2s;
+  white-space: nowrap;
 }
 .sm-btn:hover { color: var(--text-primary); border-color: var(--border-accent); background: var(--bg-card-hover); }
 .sm-btn-view:hover { color: var(--accent); border-color: var(--accent); background: var(--input-bg-focus); }
 .sm-btn-qr:hover { color: #ffc107; border-color: rgba(255,193,7,0.4); background: rgba(255,193,7,0.06); }
+.sm-btn-share:hover { color: #4caf50; border-color: rgba(76,175,80,0.4); background: rgba(76,175,80,0.06); }
 .sm-btn-del:hover { color: var(--error); border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.06); }
 
 @media (max-width: 640px) {
@@ -2608,50 +2612,53 @@ body {
 /* Grid 模式：响应式卡片网格 */
 .sm-cards.sm-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   gap: 10px;
   padding: 0;
 }
-/* List 模式：紧凑表格行 */
-.sm-cards.sm-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0;
+/* Share / WebDAV table: fixed layout to respect column widths, prevent overflow */
+.sm-file-table {
+  table-layout: fixed;
+  width: 100%;
 }
-.sm-cards.sm-list .sm-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  border-radius: 6px;
+/* Share table defaults (7 cols → ~100%) */
+.sm-file-table .col-icon-sm   { width: 4%;  min-width: 38px; }
+.sm-file-table .col-name      { width: 32%; }
+.sm-file-table .col-share-info{ width: 14%; min-width: 80px; }
+.sm-file-table .col-share-dl  { width: 7%;  min-width: 44px; }
+.sm-file-table .col-share-view{ width: 7%;  min-width: 44px; }
+.sm-file-table .col-status-sm { width: 8%;  min-width: 52px; }
+.sm-file-table .col-menu      { width: 17%; min-width: 120px; }
+/* Share: 4+32+14+7+7+8+17 = 89% */
+
+/* WebDAV table overrides (7 cols → ~100%): add class "table-wd" to the table */
+.sm-file-table.table-wd .col-name      { width: 12%; }
+.sm-file-table.table-wd .col-wd-path   { width: 22%; min-width: 120px; }
+.sm-file-table.table-wd .col-wd-url    { width: 18%; min-width: 120px; }
+.sm-file-table.table-wd .col-wd-expiry { width: 13%; min-width: 100px; }
+.sm-file-table.table-wd .col-status-sm { width: 8%;  min-width: 52px; }
+.sm-file-table.table-wd .col-menu      { width: 18%; min-width: 130px; }
+/* WebDAV: 5+24+10+18+13+8+18 = 96% (remaining 4% distributes by ratio) */
+
+/* center narrow columns */
+.sm-file-table .td-icon,
+.sm-file-table .td-menu { text-align: center; }
+
+/* relax tight width/max-width from main file-table for sm tables */
+.sm-file-table .td-icon  { width: auto; max-width: none; }
+.sm-file-table .td-menu  { width: auto; max-width: none; }
+.sm-file-table .td-name  { max-width: none; }
+.sm-file-table .td-wd-expiry { width: auto; max-width: none; }
+.sm-file-table .td-wd-path,
+.sm-file-table .td-wd-url { overflow: hidden; text-overflow: ellipsis; }
+
+/* data cell text styles */
+.td-share-info, .td-wd-path, .td-wd-url {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
-.sm-cards.sm-list .sm-card:hover { transform: none; }
-.sm-cards.sm-list .sm-card-header { margin-bottom: 0; }
-.sm-cards.sm-list .sm-card-name { font-size: 13px; }
-.sm-cards.sm-list .sm-card-status { font-size: 11px; white-space: nowrap; }
-.sm-cards.sm-list .sm-card-meta,
-.sm-cards.sm-list .sm-card-expire,
-.sm-cards.sm-list .sm-card-url,
-.sm-cards.sm-list .sm-card-actions { display: none; }
-.sm-cards.sm-list .sm-card-actions-list {
-  display: flex !important;
-  gap: 4px;
-  align-items: center;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-.sm-cards.sm-list .sm-card-actions-list .sm-btn {
-  padding: 3px 10px;
-  font-size: 11px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-/* 列表模式下隐藏卡片内的详情文本（路径、日期等只保留标题+状态+按钮） */
-.sm-cards.sm-list .sm-card > div:not(.sm-card-header):not(.sm-card-actions-list) {
-  display: none;
-}
+.td-status-sm { font-size: 12px; font-weight: 600; white-space: nowrap; }
 
 /* WebDAV 卡片网格/列表 */
 .wd-cards {
@@ -2664,76 +2671,77 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   gap: 12px;
 }
-.wd-cards.wd-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+
+/* ---- Grid Card ---- */
+.wd-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.2s;
 }
-.wd-cards.wd-list > div {
+.wd-card:hover { border-color: var(--accent); }
+.wd-card.wd-expired { opacity: 0.5; }
+
+.wd-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 12px;
-  flex-wrap: nowrap;
+  gap: 8px;
+  margin-bottom: 8px;
 }
-.wd-cards.wd-list > div > div:first-child {
-  /* name + status row: make it flex, take remaining space */
+.wd-card-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.wd-card-name {
   flex: 1;
   min-width: 0;
-  margin-bottom: 0 !important;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.wd-cards.wd-list > div > div:first-child > span:first-child {
-  /* file/folder name */
+  font-weight: 700;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.wd-cards.wd-list > div > div:first-child > span:last-child {
-  /* status badge */
+.wd-card-status {
   flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
-}
-.wd-cards.wd-list .wd-card-detail { display: none; }
-.wd-cards.wd-list .wd-card-actions-list {
-  display: flex !important;
-  gap: 4px;
-  align-items: center;
-  flex-shrink: 0;
-  white-space: nowrap;
-  margin-top: 0 !important;
-}
-.wd-cards.wd-list .wd-card-actions-list button {
-  padding: 3px 10px;
-  font-size: 11px;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
-/* 移动端：网格单列，列表简化 */
+/* Grid-only detail rows */
+.wd-card-detail {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.wd-detail-url {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--accent);
+  word-break: break-all;
+  margin-bottom: 6px;
+}
+.wd-detail-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* Grid action buttons */
+.wd-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.wd-btn-del:hover { color: var(--error) !important; border-color: rgba(239,68,68,0.4) !important; background: rgba(239,68,68,0.06) !important; }
+
+/* ---- Mobile ---- */
 @media (max-width: 768px) {
-  .sm-cards.sm-grid {
-    grid-template-columns: 1fr;
-  }
-  .sm-cards.sm-list .sm-card {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .sm-cards.sm-list .sm-card-status { display: none; }
   .wd-cards.wd-grid {
     grid-template-columns: 1fr;
-  }
-  .wd-cards.wd-list > div {
-    gap: 6px;
-    padding: 6px 10px;
-  }
-  .wd-cards.wd-list > div > div:first-child > span:last-child {
-    display: none;
-  }
-  .wd-cards.wd-list .wd-card-actions-list button {
-    padding: 2px 8px;
-    font-size: 10px;
   }
 }
 
@@ -3711,6 +3719,9 @@ body {
   overflow-x: auto;
 }
 
+/* Log cards: hidden on desktop */
+.log-card-list { display: none; }
+
 .log-table {
   width: 100%;
   border-collapse: collapse;
@@ -4159,6 +4170,7 @@ body {
 .page-panel[data-type="admin-logs"] .page-panel-body,
 .page-panel[data-type="admin-version"] .page-panel-body,
 .page-panel[data-type="admin-rate-limit"] .page-panel-body,
+.page-panel[data-type="admin-webdav"] .page-panel-body,
 .page-panel[data-type="webdav"] .page-panel-body,
 .page-panel[data-type="profile"] .page-panel-body,
 .page-panel[data-type="change-password"] .page-panel-body,
@@ -4204,6 +4216,7 @@ body {
   .page-panel[data-type="admin-logs"] .page-panel-body,
   .page-panel[data-type="admin-version"] .page-panel-body,
   .page-panel[data-type="admin-rate-limit"] .page-panel-body,
+  .page-panel[data-type="admin-webdav"] .page-panel-body,
   .page-panel[data-type="webdav"] .page-panel-body,
   .page-panel[data-type="profile"] .page-panel-body,
   .page-panel[data-type="change-password"] .page-panel-body,
@@ -5838,6 +5851,12 @@ body {
   z-index: 1000;
   backdrop-filter: blur(4px);
 }
+.modal-content {
+  background: var(--card-bg);
+  border: 1px solid var(--border-accent);
+  border-radius: 16px;
+  width: 90%;
+}
 .modal-card {
   background: var(--card-bg);
   border: 1px solid var(--border-accent);
@@ -5920,6 +5939,101 @@ noscript {
   height: 100vh;
   font-family: 'Share Tech Mono', monospace;
   color: var(--text-secondary);
+}
+
+/* ==================== 版本管理 (page-panel 内) ==================== */
+.vm-upload-zone {
+  background: var(--bg-card);
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  padding: 28px 24px;
+  margin-bottom: 20px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+.vm-upload-zone:hover { border-color: var(--accent); }
+
+.vm-upload-icon { font-size: 40px; margin-bottom: 8px; }
+.vm-upload-title { color: var(--text-primary); font-size: 15px; font-weight: 500; margin: 0 0 4px; }
+.vm-upload-hint { color: var(--text-secondary); font-size: 12px; margin: 0 0 16px; }
+
+.vm-upload-form {
+  display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center;
+}
+.vm-file-label {
+  padding: 10px 20px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; color: var(--text-primary); font-size: 13px;
+  display: flex; align-items: center; gap: 6px; transition: border-color 0.2s;
+}
+.vm-file-label:hover { border-color: var(--accent); }
+.vm-notes-input {
+  padding: 10px 14px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text-primary); width: 220px; font-size: 13px;
+  outline: none; transition: border-color 0.2s;
+}
+.vm-notes-input:focus { border-color: var(--accent); }
+.vm-upload-btn {
+  padding: 10px 28px; background: #238636; color: #fff; border: none;
+  border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; white-space: nowrap;
+  transition: background 0.2s;
+}
+.vm-upload-btn:hover { background: #2ea043; }
+.vm-upload-status { margin: 12px 0 0; font-size: 12px; min-height: 18px; }
+
+/* 版本卡片 */
+.vm-card {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; transition: border-color 0.2s;
+}
+.vm-card + .vm-card { margin-top: 8px; }
+.vm-card.latest { border-color: var(--accent); }
+.vm-card-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 20px;
+}
+.vm-card-icon.latest { background: rgba(35,134,54,0.15); }
+.vm-card-icon.normal { background: var(--bg-card-hover); }
+.vm-card-info { flex: 1; min-width: 0; }
+.vm-card-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  color: var(--text-primary); font-weight: 600; font-size: 15px;
+}
+.vm-badge-latest {
+  background: #238636; color: #fff; font-size: 10px;
+  padding: 2px 6px; border-radius: 4px; font-weight: 500;
+}
+.vm-card-size { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+.vm-card-notes { color: var(--text-secondary); font-size: 12px; margin-top: 3px; line-height: 1.5; }
+.vm-card-time { color: var(--text-muted); font-size: 10px; margin-top: 3px; }
+.vm-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.vm-btn-dl {
+  padding: 7px 16px; background: var(--accent); color: #fff;
+  border-radius: 6px; border: none; cursor: pointer; font-size: 12px;
+  white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+  transition: filter 0.2s;
+}
+.vm-btn-dl:hover { filter: brightness(1.1); }
+.vm-btn-del {
+  padding: 7px 12px; background: transparent; border: 1px solid var(--border);
+  color: var(--error); border-radius: 6px; cursor: pointer; font-size: 12px;
+  transition: background 0.2s;
+}
+.vm-btn-del:hover { background: rgba(239,68,68,0.08); }
+
+/* 版本管理 响应式 */
+@media (max-width: 768px) {
+  .vm-card { flex-wrap: wrap; }
+  .vm-card-actions { width: 100%; justify-content: flex-end; margin-top: 4px; }
+}
+@media (max-width: 480px) {
+  .vm-upload-zone { padding: 16px 12px; }
+  .vm-upload-form { flex-direction: column; }
+  .vm-notes-input { width: 100%; box-sizing: border-box; }
+  .vm-upload-btn { width: 100%; }
+  .vm-card { padding: 12px; }
+  .vm-card-actions { flex-direction: column; width: 100%; }
+  .vm-btn-dl, .vm-btn-del { width: 100%; text-align: center; justify-content: center; }
 }
 
 /* ==================== 离线下载面板样式 (page-panel 内) ==================== */
@@ -7015,6 +7129,22 @@ noscript {
   .log-filter-btn { flex: 1; text-align: center; white-space: normal; }
   .log-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .log-table { min-width: 600px; }
+  /* Logs mobile: hide table, show cards */
+  .log-table-wrap { display: none; }
+  .log-card-list { display: flex; flex-direction: column; gap: 10px; }
+  .log-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .log-card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .log-card-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--text-secondary);
+  }
+  .log-card-row span:last-child { font-weight: 500; color: var(--text-primary); }
   .log-stats-row { grid-template-columns: repeat(2, 1fr); padding: 12px; }
   .log-stat-card { padding: 10px 12px; }
   .log-stat-value { font-size: 16px; }

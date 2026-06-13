@@ -60,7 +60,8 @@ function logTraffic(userId, guestIp, actionType, fileId, fileName, fileSize, byt
     file_id: fileId || 0,
     file_name: fileName || '',
     file_size: fileSize || 0,
-    bytes_count: bytesCount || 0
+    bytes_count: bytesCount || 0,
+    traffic_category: 'file_transfer'
   };
 
   if (TrafficBuffer) {
@@ -69,7 +70,7 @@ function logTraffic(userId, guestIp, actionType, fileId, fileName, fileSize, byt
   } else {
     // 没有 Redis：直接写入 DB 并更新配额
     try {
-      TrafficLog.log(record.user_id, record.guest_ip, record.action_type, record.file_id, record.file_name, record.file_size, record.bytes_count);
+      TrafficLog.log(record.user_id, record.guest_ip, record.action_type, record.file_id, record.file_name, record.file_size, record.bytes_count, record.traffic_category);
       var isGuest = !userId || userId === 0;
       if (isGuest) {
         TrafficQuota.addUsed(0, guestIp || '', true, bytesCount);
@@ -1383,7 +1384,8 @@ router.get('/files/download/:id', requireAuth, function(req, res) {
 
   // ========== 存储架构 V3: 解析实际文件路径（随机负载均衡） ==========
   var filePath = file.storage_path;
-  if (filePath && !require('path').isAbsolute(filePath)) {
+  // 秒传文件的 storage_path 为空但有 storage_id，同样需要从存储系统解析路径
+  if (!filePath || !require('path').isAbsolute(filePath)) {
     var fsEntry = require('../lib/db').FileStorage.findById(file.storage_id || 0);
     var StoragePool = require('../lib/db').StoragePool;
     // 从 file_storage_paths + 全组池收集所有可访问路径，随机选一个实现负载均衡
@@ -1407,6 +1409,7 @@ router.get('/files/download/:id', requireAuth, function(req, res) {
       var allPools = StoragePool.listAll().filter(function(p) { return p.group_id === groupId && p.status !== 'deleted'; });
       allPools.forEach(function(p) {
         if (seenPools[p.id]) return;
+        if (!filePath) return;  // 秒传文件无 storage_path，靠 file_storage_paths 解析即可
         var fp = require('path').join(p.local_path, filePath);
         try { if (fs.existsSync(fp)) validPaths.push(fp); } catch(e) {}
       });
@@ -1500,8 +1503,8 @@ router.get('/files/download/:id', requireAuth, function(req, res) {
   if (!isEncrypted) {
     // 未加密：直接返回
     logger.logDownload(req, file.name, fileId, true);
-    // 记录流量
-    logTraffic(user.id, '', 'download', fileId, file.name, decryptedSize, decryptedSize);
+    // 设置流量元数据，由全局中间件在响应完成时按实际传输字节记录
+    res._trafficMeta = { category: 'file_transfer', action_type: 'download', file_id: fileId, file_name: file.name, file_size: decryptedSize, user_id: user.id, guest_ip: '' };
     fs.createReadStream(filePath).pipe(res);
     return;
   }
@@ -1512,8 +1515,8 @@ router.get('/files/download/:id', requireAuth, function(req, res) {
       // V1 格式：完整文件流
       var v1Stream = createV1DecryptStream(filePath, 0, decryptedSize - 1);
       logger.logDownload(req, file.name, fileId, true);
-      // 记录流量
-      logTraffic(user.id, '', 'download', fileId, file.name, decryptedSize, decryptedSize);
+      // 设置流量元数据，由全局中间件在响应完成时按实际传输字节记录
+      res._trafficMeta = { category: 'file_transfer', action_type: 'download', file_id: fileId, file_name: file.name, file_size: decryptedSize, user_id: user.id, guest_ip: '' };
       v1Stream.on('error', function(err) {
         log.error('[Download] V1 流错误:', err.message);
         if (!res.headersSent) { res.statusCode = 500; res.end(); }
@@ -1523,8 +1526,8 @@ router.get('/files/download/:id', requireAuth, function(req, res) {
       // 旧格式
       var streamInfo = createDecryptStream(filePath);
       logger.logDownload(req, file.name, fileId, true);
-      // 记录流量
-      logTraffic(user.id, '', 'download', fileId, file.name, decryptedSize, decryptedSize);
+      // 设置流量元数据，由全局中间件在响应完成时按实际传输字节记录
+      res._trafficMeta = { category: 'file_transfer', action_type: 'download', file_id: fileId, file_name: file.name, file_size: decryptedSize, user_id: user.id, guest_ip: '' };
       streamInfo.readStream.on('error', function(err) {
         log.error('[Download] 流错误:', err.message);
         if (!res.headersSent) { res.statusCode = 500; res.end(); }
@@ -1866,8 +1869,8 @@ router.get('/public-files/download', requireAuth, function(req, res) {
   log.info('[PublicDownload] 用户 ' + req.user.email + ' 下载: ' + relPath);
   logger.logPublicDownload(req, relPath, true);
 
-  // 记录下载流量
-  logTraffic(req.user.id, '', 'download', 0, relPath, fileSize, fileSize);
+  // 设置流量元数据，由全局中间件在响应完成时按实际传输字节记录
+  res._trafficMeta = { category: 'file_transfer', action_type: 'download', file_id: 0, file_name: relPath, file_size: fileSize, user_id: req.user.id, guest_ip: '' };
 
   res.download(filePath, fileName);
 });
@@ -3614,12 +3617,8 @@ router.get('/files/thumb/:id?', requireAuth, async function(req, res) {
     }
   }
 
-  res.on('finish', function() {
-    var sentBytes = parseInt(res.getHeader('content-length') || '0', 10);
-    if (sentBytes > 0) {
-      logTraffic(thumbIsPublic ? 0 : user.id, thumbIsPublic ? getClientIp(req) : '', 'preview', thumbFileId, thumbFileName, thumbFileSize, sentBytes);
-    }
-  });
+  // 设置流量元数据，由全局中间件在响应完成时按实际传输字节记录
+  res._trafficMeta = { category: 'file_transfer', action_type: 'preview', file_id: thumbFileId, file_name: thumbFileName, file_size: thumbFileSize, user_id: thumbIsPublic ? 0 : user.id, guest_ip: thumbIsPublic ? getClientIp(req) : '' };
 
   var w = Math.min(Math.max(parseInt(req.query.w, 10) || 200, 20), 1920);
   var h = Math.min(Math.max(parseInt(req.query.h, 10) || 200, 20), 1920);
@@ -3897,16 +3896,9 @@ async function handleStreamRequest(req, res, mode) {
   var streamFileName = fileRecord ? fileRecord.name : rawId;
   var streamFileSize = fileRecord ? (fileRecord.size || 0) : meta.decryptedSize;
 
-  // 统一流量记录函数（注册一次，避免重复）
+  // 统一设置流量元数据（由全局中间件在响应完成时按实际传输字节记录）
   function recordStreamTraffic() {
-    res.on('finish', function() {
-      var sentBytes = parseInt(res.getHeader('content-length') || '0', 10);
-      if (sentBytes > 0) {
-        logTraffic(isPublicFile || isPublicRecycleFile ? 0 : user.id,
-                   isPublicFile || isPublicRecycleFile ? getClientIp(req) : '',
-                   'preview', streamFileId, streamFileName, streamFileSize, sentBytes);
-      }
-    });
+    res._trafficMeta = { category: 'file_transfer', action_type: 'preview', file_id: streamFileId, file_name: streamFileName, file_size: streamFileSize, user_id: isPublicFile || isPublicRecycleFile ? 0 : user.id, guest_ip: isPublicFile || isPublicRecycleFile ? getClientIp(req) : '' };
   }
 
   // HEAD 请求：只返回元数据，让浏览器知道文件总大小
@@ -4070,13 +4062,17 @@ router.get('/files/video-preview/:id?', requireAuth, async function(req, res) {
   var videoPreviewFileName = '';
   var videoPreviewTotalSize = 0;
 
-  // 视频预览流量统计（用 finish 事件）
+  // 设置流量元数据（懒求值，中间件在 finish 时读取变量的最新值）
   function setupVideoTrafficCounter() {
-    res.on('finish', function() {
-      if (videoPreviewFileId <= 0) return;
-      var bytes = parseInt(res.getHeader('content-length') || '0', 10);
-      if (bytes > 0) logTraffic(user.id, '', 'video_stream', videoPreviewFileId, videoPreviewFileName, videoPreviewTotalSize, bytes);
-    });
+    res._trafficMeta = {
+      category: 'file_transfer',
+      action_type: 'video_stream',
+      get file_id() { return videoPreviewFileId; },
+      get file_name() { return videoPreviewFileName; },
+      get file_size() { return videoPreviewTotalSize; },
+      user_id: user.id,
+      guest_ip: ''
+    };
   }
 
   var fileRecord = null;

@@ -183,6 +183,25 @@ body.embed-mode .tabs{margin-bottom:12px}
 .toast.toast-ok{border-color:var(--success)}
 .toast.toast-err{border-color:var(--error)}
 @keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ====== Mobile Cards ====== */
+/* Desktop: hide backup cards */
+.backup-card-list{display:none}
+.backup-card{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:12px;display:flex;flex-direction:column;gap:6px;
+}
+.backup-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.backup-card-name{font-weight:600;font-size:12px;word-break:break-all;flex:1;min-width:0}
+.backup-card-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary)}
+.backup-card-row span:last-child{font-weight:500;color:var(--text-primary)}
+.backup-card-actions{display:flex;gap:4px;margin-top:4px;justify-content:flex-end}
+@media(max-width:768px){
+  .table-wrap{display:none}
+  .backup-card-list{display:flex;flex-direction:column;gap:8px}
+  .search-bar{flex-direction:column}
+}
+
 </style>
 </head>
 <body>
@@ -324,12 +343,51 @@ body.embed-mode .tabs{margin-bottom:12px}
       <button class="btn btn-outline btn-sm" onclick="loadBackupList()">🔄 刷新</button>
     </div>
     <div id="backup-list-container"><div class="empty">加载中...</div></div>
+        <!-- Mobile backup cards -->
+        <div id="backup-cards" class="backup-card-list"></div>
     <div class="pagination" id="backup-pagination"></div>
   </div>
 </div>
 </main>
 
+
 <script>
+
+// ---- Mobile: sync backup cards from table rows (global) ----
+function syncBackupCards(){
+  var cardsEl=$('backup-cards');
+  var container=$('backup-list-container');
+  if(!cardsEl||!container)return;
+  var table=container.querySelector('table');
+  if(!table){cardsEl.innerHTML='';return;}
+  var rows=table.querySelectorAll('tbody tr');
+  var html='';
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    var cells=r.querySelectorAll('td');
+    if(!cells.length)continue;
+    // cells: [filename, size, compress, webdav, status, date, actions]
+    var name=cells[0].textContent.trim();
+    var size=cells[1].textContent.trim();
+    var compress=cells[2].innerHTML;
+    var webdav=cells[3].innerHTML;
+    var status=cells[4].innerHTML;
+    var date=cells[5].textContent.trim();
+    var actions=cells[6].innerHTML;
+    html+='<div class="backup-card">'+
+      '<div class="backup-card-header">'+
+        '<span class="backup-card-name" title="'+name+'">'+name+'</span>'+
+        status+
+      '</div>'+
+      '<div class="backup-card-row"><span>大小</span><span>'+size+'</span></div>'+
+      '<div class="backup-card-row"><span>压缩</span>'+compress+'</div>'+
+      '<div class="backup-card-row"><span>WebDAV</span>'+webdav+'</div>'+
+      '<div class="backup-card-row"><span>日期</span><span>'+date+'</span></div>'+
+      '<div class="backup-card-actions">'+actions+'</div>'+
+    '</div>';
+  }
+  cardsEl.innerHTML=html;
+}
 // ====== Theme ======
 function toggleTheme(){
   var h=document.documentElement;
@@ -590,6 +648,7 @@ function loadBackupList(page){
     });
     html+='</tbody></table></div>';
     container.innerHTML=html;
+    if(typeof syncBackupCards==='function')syncBackupCards();
 
     // Pagination
     var totalPages=Math.ceil(total/pageSize);
@@ -617,6 +676,10 @@ function deleteBackup(id){
 }
 
 // ====== Init ======
+  // ---- Mobile: auto-sync backup cards via MutationObserver ----
+  var backupContainer=$('backup-list-container');
+  if(backupContainer)new MutationObserver(function(){syncBackupCards();}).observe(backupContainer,{childList:true,subtree:true});
+
 document.addEventListener('DOMContentLoaded',function(){
   // Restore theme
   var saved=localStorage.getItem('fms-theme');

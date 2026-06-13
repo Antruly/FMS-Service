@@ -107,6 +107,25 @@ main{max-width:1440px;margin:0 auto;padding:20px 24px}
 .btn-sm{padding:5px 12px;font-size:11px}
 .btn-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 
+/* ====== Mobile Cards ====== */
+.task-card-list { display: none; }
+.task-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px; margin-bottom: 10px;
+}
+.task-card-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+}
+.task-card-title { font-size: 13px; font-weight: 700; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-card-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 11px; color: var(--text-secondary); }
+.task-card-row span:last-child { font-weight: 500; color: var(--text-primary); text-align: right; }
+.task-card-progress { margin: 8px 0; }
+.task-card-actions { display: flex; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+@media (max-width: 768px) {
+  .table-wrap { display: none; }
+  .task-card-list { display: block; }
+}
+
 /* ====== Table ====== */
 .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -207,6 +226,7 @@ select{background:var(--bg-input);color:var(--text-primary);border:1px solid var
     </div>
   </div>
   <div id="tasks-container"><div class="empty">加载中...</div></div>
+  <div id="tasks-cards" class="task-card-list"></div>
 </div>
 </main>
 
@@ -307,6 +327,46 @@ function renderTaskList(tasks){
     html+='</tbody></table></div>';
   }
   $('tasks-container').innerHTML=html;
+  // ---- Mobile cards ----
+  var cardsEl=$('tasks-cards');
+  if(cardsEl){
+    if(tasks.length===0){
+      cardsEl.innerHTML='<div class="empty"><div class="empty-icon">✅</div>暂无任务</div>';
+    }else{
+      var cardsHtml='';
+      tasks.forEach(function(t){
+        var sb='';
+        switch(t.status){
+          case 'completed':sb='<span class="badge badge-ok">已完成</span>';break;
+          case 'running':sb='<span class="badge badge-info">运行中</span>';break;
+          case 'error':sb='<span class="badge badge-err">错误</span>';break;
+          case 'cancelled':sb='<span class="badge badge-gray">已取消</span>';break;
+          case 'paused':sb='<span class="badge badge-warn">已暂停</span>';break;
+          default:sb='<span class="badge badge-gray">等待中</span>';
+        }
+        var typeLabels={pool_delete:'删除镜像',pool_delete_migrate:'删除+迁移',pool_migrate_disable:'迁移停用',group_migrate_disable:'组迁移停用',auto_migrate:'自动迁移',auto_upgrade:'自动升级',pool_reorganize:'数据重组',pool_rollback:'回滚',group_rollback:'组回滚',data_sync:'数据同步',repair_paths:'路径修复',repair_manual:'手动修复',repair_lost:'丢失修复',physical_cleanup:'物理清理',db_backup:'数据库备份',verify_data:'数据校验'};
+        var typeLabel=typeLabels[t.type]||t.type;
+        var pct=(t.progress||0);
+        var pctColor=t.status==='error'?'var(--error)':t.status==='cancelled'?'var(--warning)':'var(--accent)';
+        cardsHtml+='<div class="task-card">'+
+          '<div class="task-card-header">'+
+            '<span class="task-card-title">#'+t.id+' '+escHtml(t.title)+'</span>'+
+            sb+
+          '</div>'+
+          '<div class="task-card-row"><span>类型</span><span>'+escHtml(typeLabel)+'</span></div>'+
+          '<div class="task-card-row"><span>进度</span><span>'+(t.processed_items||0)+'/'+(t.total_items||0)+' ('+pct+'%)</span></div>'+
+          '<div class="task-card-progress"><div class="progress-bar"><div class="progress-fill" style="width:'+pct+'%;background:'+pctColor+'"></div></div></div>'+
+          '<div class="task-card-row"><span>开始</span><span>'+(t.started_at?fmtDate(t.started_at):'-')+'</span></div>'+
+          '<div class="task-card-row"><span>完成</span><span>'+(t.completed_at?fmtDate(t.completed_at):'-')+'</span></div>'+
+          '<div class="task-card-actions">'+
+            '<button class="btn btn-outline btn-xs" onclick="showTaskDetail('+t.id+')">详情</button>';
+        if(t.status==='running'||t.status==='pending')cardsHtml+='<button class="btn btn-warn btn-xs" onclick="cancelTask('+t.id+')">停止</button>';
+        if(t.status==='completed'||t.status==='error'||t.status==='cancelled')cardsHtml+='<button class="btn btn-danger btn-xs" onclick="deleteTask('+t.id+')">删除</button>';
+        cardsHtml+='</div></div>';
+      });
+      cardsEl.innerHTML=cardsHtml;
+    }
+  }
 }
 
 // ====== Load Tasks ======

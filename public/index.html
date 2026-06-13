@@ -529,7 +529,7 @@
       }
     }).catch(function(){});
     function renderQr(u,el){
-      function g(){if(window.QRCode&&window.QRCode.toDataURL){var r=window.QRCode.toDataURL(u,{width:200,margin:1,color:{dark:'#000',light:'#fff'}});if(r&&typeof r.then==='function'){r.then(function(d){el.innerHTML='<img src=\"'+d+'\" style=\"width:100%;height:100%;display:block\">'}).catch(function(){el.textContent='失败'})}else if(typeof r==='string'){el.innerHTML='<img src=\"'+r+'\" style=\"width:100%;height:100%;display:block\">'}}else{setTimeout(g,300)}}g()
+      function g(){var t=document.documentElement.getAttribute('data-theme')||'dark';fetch('/api/qr?text='+encodeURIComponent(u)+'&size=200&theme='+t).then(function(r){return r.json()}).then(function(d){if(d.code===0&&d.data){el.innerHTML='<img src="'+d.data+'" style="width:100%;height:100%;display:block">'}else{el.textContent='失败'}}).catch(function(){el.textContent='失败'})}g()
     }
   }
   setTimeout(loadMobileQR,800);
@@ -567,14 +567,12 @@
     var btn = document.getElementById('appDlBtn');
     var fullUrl = location.origin + data.url;
     function g(){
-      if (window.QRCode && window.QRCode.toDataURL) {
-        var r = window.QRCode.toDataURL(fullUrl, { width: 200, margin: 1, color: { dark: '#000', light: '#fff' } });
-        if (r && typeof r.then === 'function') {
-          r.then(function(d){ qrEl.innerHTML = '<img src="'+d+'" style="width:100%;height:100%;display:block">' }).catch(function(){ qrEl.textContent = '生成失败' });
-        } else if (typeof r === 'string') {
-          qrEl.innerHTML = '<img src="'+r+'" style="width:100%;height:100%;display:block">';
-        } else { qrEl.textContent = '格式错误'; }
-      } else { setTimeout(g, 300); }
+      var t=document.documentElement.getAttribute('data-theme')||'dark';
+      fetch('/api/qr?text='+encodeURIComponent(fullUrl)+'&size=200&theme='+t)
+        .then(function(r){return r.json()})
+        .then(function(d){
+          if(d.code===0&&d.data){qrEl.innerHTML='<img src="'+d.data+'" style="width:100%;height:100%;display:block">'}else{qrEl.textContent='生成失败'}
+        }).catch(function(){qrEl.textContent='生成失败'});
     }
     g();
     verEl.textContent = 'v' + (data.version || '') + ' | ' + Math.round((data.size || 0) / 1024 / 1024) + 'MB';

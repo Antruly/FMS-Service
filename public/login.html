@@ -1612,12 +1612,18 @@ body.login-page #mobile-floating-ball-corner { display: none !important; }
 
   function generateQrCode(container, text) {
     container.innerHTML = '';
-    if (window.QRCode && window.QRCode.toDataURL) {
-      window.QRCode.toDataURL(text, { width: 200, margin: 2, color: { dark: '#000000', light: '#ffffff' } }, function(err, url) {
-        if (err) { container.innerHTML = '<div style="color:var(--error);font-size:12px">生成失败</div>'; return; }
-        var img = document.createElement('img'); img.src = url; img.width = 200; img.height = 200; container.appendChild(img);
+    var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+    fetch('/api/qr?text=' + encodeURIComponent(text) + '&size=200&theme=' + theme)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.code === 0 && d.data) {
+          var img = document.createElement('img'); img.src = d.data; img.width = 200; img.height = 200; container.appendChild(img);
+        } else {
+          container.innerHTML = '<div style="color:var(--error);font-size:12px">生成失败</div>';
+        }
+      }).catch(function() {
+        container.innerHTML = '<div style="color:var(--error);font-size:12px">生成失败</div>';
       });
-    }
   }
 
   function connectQrWs() {
@@ -2156,20 +2162,16 @@ body.login-page #mobile-floating-ball-corner { display: none !important; }
         linkEl.href = d.data.url;
         linkEl.textContent = '📥 v'+d.data.version+' ('+Math.round(d.data.size/1024/1024)+'MB)';
         function gen() {
-          if (window.QRCode && window.QRCode.toDataURL) {
-            var result = window.QRCode.toDataURL(fullUrl, { width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
-            if (result && typeof result.then === 'function') {
-              result.then(function(dataUrl) {
-                qrEl.innerHTML = '<img src="'+dataUrl+'" style="width:100%;height:100%;display:block">';
-              }).catch(function(){ qrEl.textContent = '生成失败'; });
-            } else if (typeof result === 'string') {
-              qrEl.innerHTML = '<img src="'+result+'" style="width:100%;height:100%;display:block">';
-            } else {
-              qrEl.textContent = '格式错误';
-            }
-          } else {
-            setTimeout(gen, 300);
-          }
+          var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+          fetch('/api/qr?text=' + encodeURIComponent(fullUrl) + '&size=200&theme=' + theme)
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d.code === 0 && d.data) {
+                qrEl.innerHTML = '<img src="'+d.data+'" style="width:100%;height:100%;display:block">';
+              } else {
+                qrEl.textContent = '生成失败';
+              }
+            }).catch(function(){ qrEl.textContent = '生成失败'; });
         }
         gen();
       } else {

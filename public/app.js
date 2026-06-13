@@ -658,7 +658,8 @@
     // 隐藏 page-panel，显示主内容区
     if (pagePanel) pagePanel.classList.remove('show');
     if (mainContent) mainContent.style.display = 'block';
-    setHash('files'); // 同步 URL
+    // 文件子类型 hash: personal 用简洁的 #files，其他用 #files/recycle 等
+    setHash(type === 'personal' ? 'files' : 'files/' + type);
 
     // 回收站模式：隐藏下载、分享、移动按钮，显示恢复按钮
     var isRecycleMode = (type === 'recycle' || type === 'public-recycle');
@@ -1105,7 +1106,7 @@
   var HASH_VIEWS = [
     'files', 'share', 'profile', 'change-password', 'offline', 'webdav', 'admin-storage',
     'admin-users', 'admin-logs', 'admin-files', 'admin-shares', 'admin-blacklist',
-    'admin-traffic', 'admin-version', 'admin-rate-limit', 'admin-backup', 'admin-tasks', 'about'
+    'admin-traffic', 'admin-version', 'admin-rate-limit', 'admin-backup', 'admin-tasks', 'admin-webdav', 'about'
   ];
 
   function setHash(name) {
@@ -1118,13 +1119,24 @@
   }
 
   function restoreFromHash(hash) {
-    // 移除可能的子路径（如 files/personal → files）
+    // 移除可能的子路径（如 files/recycle → files）
     var viewName = hash.split('/')[0];
-    var adminViews = ['admin-users','admin-logs','admin-files','admin-shares','admin-blacklist','admin-traffic','admin-version','admin-storage','admin-rate-limit','admin-backup','admin-tasks'];
+    var adminViews = ['admin-users','admin-logs','admin-files','admin-shares','admin-blacklist','admin-traffic','admin-version','admin-storage','admin-rate-limit','admin-backup','admin-tasks','webdav','admin-webdav'];
     if (adminViews.indexOf(viewName) !== -1 && !state.isAdmin) {
       // 非管理员无法访问管理视图，更新 URL 再切回文件
       setHash('files');
       showView('files');
+      return;
+    }
+    // 文件子类型: files/personal files/public files/recycle files/public-recycle
+    if (viewName === 'files') {
+      var subType = hash.split('/')[1] || 'personal';
+      var validFileTypes = ['personal', 'public', 'recycle', 'public-recycle'];
+      if (validFileTypes.indexOf(subType) !== -1) {
+        setDirType(subType);
+      } else {
+        showView('files');
+      }
       return;
     }
     if (HASH_VIEWS.indexOf(viewName) !== -1) {
@@ -1150,9 +1162,10 @@
   // ==================== 视图切换 (使用 page-panel) ====================
 
   function showView(name) {
-    // 同步 URL hash（files 是默认视图，清掉 hash）
+    // 同步 URL hash（files 保留子类型如 #files/recycle）
     if (name === 'files') {
-      if (window.location.hash) setHash('files');
+      var fileHash = state.dirType === 'personal' ? 'files' : 'files/' + state.dirType;
+      setHash(fileHash);
     } else {
       setHash(name);
     }
@@ -1236,6 +1249,11 @@
         if (panelTitle) panelTitle.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 离线下载';
         updateNavHighlight('offline', state.dirType);
         loadOffline();
+      } else if (name === 'share') {
+        // 分享页走 setDirType 统一入口（设置 hash/nav/content/panel）
+        setDirType('share');
+        closeSidebar();
+        return;
       } else if (name === 'webdav') {
         if (panelTitle) panelTitle.innerHTML = '&#128194; WebDAV 管理';
         updateNavHighlight('webdav', state.dirType);
@@ -1256,6 +1274,10 @@
         if (panelTitle) panelTitle.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> 关于';
         updateNavHighlight('about', state.dirType);
         loadAboutPage();
+      } else if (name === 'admin-webdav') {
+        if (panelTitle) panelTitle.innerHTML = '&#128451; WebDAV 管理';
+        updateNavHighlight('admin-webdav', state.dirType);
+        loadAdminWebDAV();
       }
 
       // 显示面板
@@ -2945,18 +2967,19 @@
 
     total = total || shares.length;
 
-    // View mode toggle
     var viewMode = localStorage.getItem('shareManageViewMode') || 'grid';
     var modeClass = 'sm-' + viewMode;
 
-    // Add toggle button to page-panel-actions
     var actionsEl = $('#page-panel-actions');
     if (actionsEl) {
-      actionsEl.innerHTML = '<div class="view-toggle" role="group" aria-label="视图切换" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+      actionsEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px">' +
+        '<div class="view-toggle" role="group" aria-label="视图切换" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
         '<button class="view-btn' + (viewMode === 'grid' ? ' active' : '') + '" data-view="grid" onclick="window.__fm._toggleShareView(\'grid\')" title="网格视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'grid' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'grid' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>' +
         '<button class="view-btn' + (viewMode === 'list' ? ' active' : '') + '" data-view="list" onclick="window.__fm._toggleShareView(\'list\')" title="列表视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'list' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'list' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>' +
+        '</div>' +
+        '<button class="modal-btn modal-btn-danger" style="font-size:11px;padding:4px 12px" onclick="window.__fm._deleteExpiredShares()" title="删除所有已过期的分享">🗑 删除已过期</button>' +
         '</div>';
     }
 
@@ -2965,7 +2988,6 @@
       return;
     }
 
-    // Build pagination HTML
     var totalPages = Math.ceil(total / _sharePageSize);
     var paginationHtml = '';
     if (totalPages > 1) {
@@ -2979,34 +3001,77 @@
     var activeShares = shares.filter(function(s) { return !s.is_expired && !s.invalid_reason; });
     var expiredShares = shares.filter(function(s) { return s.is_expired || s.invalid_reason; });
 
-    var html = '';
-    html += '<div class="sm-page">';
+    var html = '<div class="sm-page">';
 
-    // 有效分享
     if (activeShares.length > 0) {
       html += '<div class="sm-section">';
       html += '<div class="sm-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>有效分享 <span class="sm-count">' + activeShares.length + '</span></div>';
-      // List header
       if (viewMode === 'list') {
-        html += '<div class="sm-list-header" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:6px 14px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);margin-bottom:2px"><span>分享名称 / 状态</span><span>操作</span></div>';
+        html += _buildShareTable(activeShares.concat(expiredShares), 'active');
+      } else {
+        html += '<div class="sm-cards sm-grid">';
+        activeShares.forEach(function(s) { html += _buildShareCard(s, false, 'grid'); });
+        html += '</div>';
       }
-      html += '<div class="sm-cards ' + modeClass + '">';
-      activeShares.forEach(function(s) { html += _buildShareCard(s, false, viewMode); });
-      html += '</div></div>';
+      html += '</div>';
     }
 
-    // 过期分享
     if (expiredShares.length > 0) {
       html += '<div class="sm-section sm-section-gray">';
       html += '<div class="sm-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>已失效 <span class="sm-count">' + expiredShares.length + '</span></div>';
-      html += '<div class="sm-cards ' + modeClass + '">';
-      expiredShares.forEach(function(s) { html += _buildShareCard(s, true, viewMode); });
-      html += '</div></div>';
+      if (viewMode === 'list') {
+        if (activeShares.length === 0) html += _buildShareTable(expiredShares, 'expired');
+      } else {
+        html += '<div class="sm-cards sm-grid">';
+        expiredShares.forEach(function(s) { html += _buildShareCard(s, true, 'grid'); });
+        html += '</div>';
+      }
+      html += '</div>';
     }
 
-    html += paginationHtml;
-    html += '</div>';
+    html += paginationHtml + '</div>';
     container.innerHTML = html;
+  }
+
+  function _buildShareTable(shares, section) {
+    return '<div class="file-table-wrap"><table class="file-table sm-file-table"><colgroup>' +
+      '<col class="col-icon-sm"><col class="col-name"><col class="col-share-info"><col class="col-share-dl"><col class="col-share-view"><col class="col-status-sm"><col class="col-menu">' +
+      '</colgroup><thead><tr>' +
+      '<th class="th-icon">类型</th><th>分享名称 / 路径</th><th>期限</th><th>下载</th><th>查看</th><th>状态</th><th class="th-menu">操作</th>' +
+      '</tr></thead><tbody>' +
+      shares.map(function(s) { return _buildShareRow(s, s.is_expired || s.invalid_reason); }).join('') +
+      '</tbody></table></div>';
+  }
+
+  function _buildShareRow(s, expired) {
+    var isDir = s.target_type === 'dir' || (s.target_type === 'public' && s.is_directory);
+    var typeIcon = isDir
+      ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="#ffc107" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
+      : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#90a4ae" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    var isDisabled = s.disabled;
+    var statusLabel = isDisabled ? '已禁用' : (expired ? '已过期' : '有效');
+    var statusColor = isDisabled ? 'var(--warning)' : (expired ? 'var(--error)' : 'var(--success)');
+    var scopeLabel = s.target_scope === 'public' ? '🌐 公共' : '👤 个人';
+    var infoText = (s.remaining_text || '永久');
+    var dlCount = s.download_count || 0;
+    var maxDl = s.max_downloads || 0;
+    var dlDisplay = maxDl > 0 ? dlCount + '/' + maxDl : dlCount;
+    var viewCount = s.view_count || 0;
+    var btnHtml = '';
+    if (!expired) {
+      btnHtml += '<button class="sm-btn sm-btn-view" style="padding:3px 7px;font-size:11px" onclick="window.__fm.viewShare(' + s.id + ')" title="查看">👁</button> ';
+      btnHtml += '<button class="sm-btn sm-btn-toggle" style="padding:3px 7px;font-size:11px;color:' + (isDisabled ? 'var(--success)' : 'var(--warning)') + '" onclick="window.__fm._toggleShareDisabled(' + s.id + ')" title="' + (isDisabled ? '启用' : '禁用') + '">' + (isDisabled ? '▶' : '⏸') + '</button> ';
+    }
+    btnHtml += '<button class="sm-btn sm-btn-del" style="padding:3px 7px;font-size:11px" onclick="window.__fm.deleteShareRecord(' + s.id + ')" title="删除">🗑</button>';
+    return '<tr class="fm-row' + ((expired || isDisabled) ? '" style="opacity:' + (expired ? '0.5' : '0.55') : '') + '">' +
+      '<td class="td-icon">' + typeIcon + '</td>' +
+      '<td class="td-name"><div style="font-weight:600">' + escapeHtml(s.target_name) + '</div><div style="font-size:10px;color:var(--text-muted);margin-top:1px">' + scopeLabel + ' · ' + escapeHtml(s.display_path || s.target_name) + '</div></td>' +
+      '<td class="td-share-info" style="font-size:12px;color:var(--text-muted);white-space:nowrap">' + infoText + '</td>' +
+      '<td class="td-share-dl" style="font-size:12px;font-weight:500;white-space:nowrap">' + dlDisplay + '</td>' +
+      '<td class="td-share-view" style="font-size:12px;color:var(--text-muted);white-space:nowrap">' + viewCount + '</td>' +
+      '<td class="td-status-sm" style="font-size:12px;color:' + statusColor + ';font-weight:600;white-space:nowrap">' + statusLabel + '</td>' +
+      '<td class="td-menu" style="white-space:nowrap">' + btnHtml + '</td>' +
+    '</tr>';
   }
 
   function _buildShareCard(s, expired, viewMode) {
@@ -3016,12 +3081,13 @@
       ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="#ffc107" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
       : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#90a4ae" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
 
-    var statusLabel = expired ? '已过期' : '有效';
-    var statusColor = expired ? 'var(--error)' : 'var(--success)';
+    var isDisabled = s.disabled;
+    var statusLabel = isDisabled ? '已禁用' : (expired ? '已过期' : '有效');
+    var statusColor = isDisabled ? 'var(--warning)' : (expired ? 'var(--error)' : 'var(--success)');
     var scopeLabel = s.target_scope === 'public' ? '🌐 公共目录' : '👤 个人目录';
     var scopeColor = s.target_scope === 'public' ? 'var(--accent)' : 'var(--accent2)';
 
-    var html = '<div class="sm-card' + (expired ? ' sm-card-expired' : '') + '">';
+    var html = '<div class="sm-card' + ((expired || isDisabled) ? (expired ? ' sm-card-expired' : '" style="opacity:0.55') : '') + '">';
     html += '<div class="sm-card-header">';
     html += '<div class="sm-card-title">';
     html += '<span class="sm-card-icon">' + typeIcon + '</span>';
@@ -3029,6 +3095,9 @@
     html += '</div>';
     html += '<div class="sm-card-status" style="color:' + statusColor + ';font-size:12px;font-weight:500">' + statusLabel + '</div>';
     html += '</div>';
+    // List-only columns: info + status
+    html += '<span class="sm-list-info">' + (s.remaining_text || '永久') + '</span>';
+    html += '<span class="sm-list-status" style="color:' + statusColor + '">' + statusLabel + '</span>';
     // 完整路径
     html += '<div style="font-size:11px;margin-bottom:4px;padding:0 16px">';
     html += '<span style="color:' + scopeColor + ';font-size:10px;font-weight:600;margin-right:6px">' + scopeLabel + '</span>';
@@ -3050,11 +3119,12 @@
     html += '<span style="margin-left:10px;font-size:11px;color:var(--text-muted);opacity:0.6">' + formatDateTime(s.created_at) + '</span>';
     var dlCount = s.download_count || 0;
     var maxDl = s.max_downloads || 0;
-    if (maxDl > 0) {
-      var dlRatio = maxDl > 0 ? Math.round(dlCount / maxDl * 100) : 0;
-      var dlColor = dlRatio >= 100 ? 'var(--error)' : dlRatio >= 80 ? 'var(--warning)' : 'var(--text-muted)';
-      html += '<span style="margin-left:10px;font-size:11px;color:' + dlColor + '">&#128229; ' + dlCount + '/' + maxDl + '</span>';
-    }
+    var viewCount = s.view_count || 0;
+    // 下载次数
+    var dlColor = maxDl > 0 && dlCount >= maxDl ? 'var(--error)' : maxDl > 0 && dlCount >= maxDl * 0.8 ? 'var(--warning)' : 'var(--text-muted)';
+    html += '<span style="margin-left:10px;font-size:11px;color:' + dlColor + '">&#128229; ' + (maxDl > 0 ? dlCount + '/' + maxDl : dlCount) + '</span>';
+    // 查看次数
+    html += '<span style="margin-left:10px;font-size:11px;color:var(--text-muted)">&#128065; ' + viewCount + '</span>';
     html += '</div>';
     if (!expired) {
       html += '<div class="sm-card-url">';
@@ -3064,7 +3134,7 @@
         ? cardOwner + '分享链接: ' + cardUrl + '\n提取码: ' + s.extraction_code + '\n有效期: ' + (s.expires_at ? formatDateTime(s.expires_at) : '永久') + '\n来自 FMS 文件管理系统'
         : cardOwner + '分享链接: ' + cardUrl + '\n有效期: ' + (s.expires_at ? formatDateTime(s.expires_at) : '永久') + '\n来自 FMS 文件管理系统';
       html += '<input type="text" value="' + escapeHtml(cardUrl) + '" readonly class="sm-url-input" data-copy-text="' + escapeHtml(cardCopyText) + '">';
-      html += '<button class="sm-url-copy" onclick="window.__fm.copyShare(' + s.id + ')" title="复制">';
+      html += '<button class="sm-url-copy" onclick="window.__fm.copyShareUrl(' + s.id + ')" title="复制链接">';
       html += '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
       html += '</button>';
       html += '</div>';
@@ -3076,6 +3146,8 @@
       html += '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>查看</button>';
       html += '<button class="sm-btn sm-btn-qr" onclick="window.__fm.showShareQr(' + s.id + ')" title="二维码">';
       html += '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>二维码</button>';
+      html += '<button class="sm-btn sm-btn-share" onclick="window.__fm.shareText(' + s.id + ')" title="复制分享信息">📋 分享</button>';
+      html += '<button class="sm-btn sm-btn-toggle" style="color:' + (isDisabled ? 'var(--success)' : 'var(--warning)') + '" onclick="window.__fm._toggleShareDisabled(' + s.id + ')" title="' + (isDisabled ? '启用' : '禁用') + '">' + (isDisabled ? '▶ 启用' : '⏸ 禁用') + '</button>';
     }
     html += '<button class="sm-btn sm-btn-del" onclick="window.__fm.deleteShareRecord(' + s.id + ')" title="删除">';
     html += '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>删除</button>';
@@ -3083,7 +3155,10 @@
     // List mode: compact action buttons (hidden by default, shown in list mode via CSS)
     html += '<div class="sm-card-actions-list" style="display:none">';
     if (!expired) {
+      html += '<button class="sm-btn sm-btn-qr" style="padding:3px 8px;font-size:10px" onclick="window.__fm.showShareQr(' + s.id + ')">二维码</button>';
+      html += '<button class="sm-btn sm-btn-share" style="padding:3px 8px;font-size:10px" onclick="window.__fm.shareText(' + s.id + ')">分享</button>';
       html += '<button class="sm-btn sm-btn-view" style="padding:3px 8px;font-size:10px" onclick="window.__fm.viewShare(' + s.id + ')">查看</button>';
+      html += '<button class="sm-btn sm-btn-toggle" style="padding:3px 8px;font-size:10px;color:' + (isDisabled ? 'var(--success)' : 'var(--warning)') + '" onclick="window.__fm._toggleShareDisabled(' + s.id + ')">' + (isDisabled ? '启用' : '禁用') + '</button>';
     }
     html += '<button class="sm-btn sm-btn-del" style="padding:3px 8px;font-size:10px" onclick="window.__fm.deleteShareRecord(' + s.id + ')">删除</button>';
     html += '</div>';
@@ -3094,11 +3169,23 @@
     return html;
   }
 
-  // 复制分享链接
-  var copyShareFn = function(id) {
+  // 复制分享URL（仅链接地址）
+  var copyShareUrlFn = function(id) {
     var shares = _getShareManageData() || [];
     var share = shares.find(function(s) { return s.id === id; });
-    // 独立分享管理页面用 window.__shareManageState
+    if (!share && window.__shareManageState && window.__shareManageState.shares) {
+      share = window.__shareManageState.shares.find(function(s) { return s.id === id; });
+    }
+    if (!share) { showToast('分享数据加载中，请稍后重试', '&#9888;'); return; }
+    var cleanUrl = window.location.origin + '/share/' + share.hash;
+    if (!cleanUrl || !share.hash) { showToast('复制失败', '&#9888;'); return; }
+    copyToClipboard(cleanUrl);
+  }
+
+  // 复制分享信息（完整分享文案）
+  var shareTextFn = function(id) {
+    var shares = _getShareManageData() || [];
+    var share = shares.find(function(s) { return s.id === id; });
     if (!share && window.__shareManageState && window.__shareManageState.shares) {
       share = window.__shareManageState.shares.find(function(s) { return s.id === id; });
     }
@@ -3146,19 +3233,22 @@
     overlay.innerHTML = '<div class="modal-card" style="max-width:380px;text-align:center">'
       + '<h3 style="margin:0 0 20px;font-size:16px;color:var(--text-primary)">' + escapeHtml(share.target_name) + ' - 二维码</h3>'
       + '<div id="qrLoadingWrap" style="display:flex;align-items:center;justify-content:center;min-height:200px"><div class="share-spinner"></div></div>'
-      + '<img id="qrImg" style="display:none;max-width:200px;border-radius:12px;border:1px solid var(--border-accent);margin-bottom:16px" alt="二维码">'
+      + '<img id="qrImg" style="display:none;max-width:200px;border-radius:12px;border:1px solid var(--border-accent);margin:0 auto 16px" alt="QR">'
       + (code ? '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">提取码 <span style="font-size:18px;font-weight:700;color:var(--accent);letter-spacing:4px">' + escapeHtml(code) + '</span></div>' : '')
-      + '<div style="display:flex;gap:8px;margin-bottom:8px">'
-      + '<input type="text" value="' + escapeHtml(url) + '" readonly class="modal-text-input" style="font-family:monospace;flex:1;font-size:12px">'
-      + '<button onclick="window.__fm._copyQrUrl(this)" class="modal-btn modal-btn-primary" style="white-space:nowrap">复制</button>'
+      + '<div style="margin-bottom:8px">'
+      + '<input type="text" value="' + escapeHtml(url) + '" readonly class="modal-text-input" id="qrModalUrlInput" style="font-family:monospace;font-size:12px;width:100%;box-sizing:border-box">'
       + '</div>'
-      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="modal-btn modal-btn-secondary" style="margin-top:12px">关闭</button>'
+      + '<div style="display:flex;gap:8px">'
+      + '<button onclick="window.__fm._copyQrUrl(this)" class="modal-btn modal-btn-primary" style="flex:1;white-space:nowrap">复制URL</button>'
+      + '<button onclick="window.__fm._shareQrText()" class="modal-btn modal-btn-secondary" style="white-space:nowrap">分享</button>'
+      + '<button onclick="this.closest(\'.modal-overlay\').remove()" class="modal-btn modal-btn-secondary" style="white-space:nowrap">关闭</button>'
+      + '</div>'
       + '</div>';
     document.body.appendChild(overlay);
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
 
-    // 本地生成二维码（用含提取码的 URL）
-    axios.get('/api/share/qr', { params: { url: qrUrl, size: 240 } }).then(function(res) {
+    var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+    axios.get('/api/share/qr', { params: { url: qrUrl, size: 240, theme: theme } }).then(function(res) {
       if (res.data.code === 0 && res.data.data) {
         var img = document.getElementById('qrImg');
         var loading = document.getElementById('qrLoadingWrap');
@@ -3169,11 +3259,19 @@
   }
 
   var _copyQrUrlFn = function(btn) {
+    var url = btn.closest('.modal-card').querySelector('input').value;
+    if (!url) return;
+    copyToClipboard(url);
+  }
+
+  var _shareQrTextFn = function() {
     var share = _lastShareData;
     if (!share) return;
     var code = share.extraction_code || '';
     var owner = share.owner ? '分享人: ' + share.owner + '\n' : '';
-    var url = btn.closest('.modal-card').querySelector('input').value;
+    var modal = document.querySelector('.modal-overlay');
+    var url = modal ? modal.querySelector('input').value : '';
+    if (!url) return;
     var copyText = code
       ? owner + '分享链接: ' + url + '\n提取码: ' + code + '\n有效期: ' + (share.expires_at ? formatDateTime(share.expires_at) : '永久') + '\n来自 FMS 文件管理系统'
       : owner + '分享链接: ' + url + '\n有效期: ' + (share.expires_at ? formatDateTime(share.expires_at) : '永久') + '\n来自 FMS 文件管理系统';
@@ -3426,6 +3524,7 @@
     // 去掉 URL 中的 extraction_code 参数，仅作展示用
     var cleanUrl = fullUrl.replace(/\?extraction_code=[^&]*/, '').replace(/\?extraction_code=$/, '');
     var ownerText = owner ? '分享人: ' + owner + '\n' : '';
+    var qrUrl = extractionCode ? cleanUrl + '?extraction_code=' + extractionCode : cleanUrl;
 
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -3436,33 +3535,78 @@
     var ownerBlock = owner
       ? '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:2px">分享人</div><div style="font-size:13px;color:var(--text-primary);margin-bottom:8px">' + escapeHtml(owner) + '</div>'
       : '';
+    // 4 按钮紧凑样式，匹配分享列表卡片操作栏
+    var btnStyle = 'flex:1;white-space:nowrap;padding:8px 12px;font-size:12px;font-weight:500';
     overlay.innerHTML = '\
-      <div class="modal-card" style="max-width:420px;text-align:center">\
+      <div class="modal-card" style="max-width:520px;text-align:center">\
         <div style="color:var(--success);margin-bottom:12px">\
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>\
         </div>\
         <h3 style="margin:0 0 4px;font-size:18px;color:var(--text-primary)">分享链接已创建</h3>\
         <p style="margin:0 0 20px;font-size:13px;color:var(--text-secondary)">' + escapeHtml(itemName) + '</p>\
-        <div style="background:var(--bg-card-hover);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;text-align:left">\
+        <div id="shareResultInfoBox" style="background:var(--bg-card-hover);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;text-align:left">\
           ' + ownerBlock + '\
           <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">分享链接</div>\
           <div style="font-size:13px;color:var(--accent);word-break:break-all;margin-bottom:8px;font-family:monospace">' + escapeHtml(cleanUrl) + '</div>\
           ' + codeBlock + '\
           <div style="font-size:11px;color:var(--text-secondary)">有效期: ' + (expiresAt ? formatDateTime(expiresAt) : '永久') + '</div>\
         </div>\
-        <div style="display:flex;gap:10px;justify-content:center">\
-          <button id="copyShareUrlBtn" class="modal-btn modal-btn-primary" style="flex:1">' + (extractionCode ? '复制全部信息' : '复制链接') + '</button>\
-          <button id="viewShareBtn" class="modal-btn modal-btn-secondary" style="flex:1">查看</button>\
+        <div id="shareResultQrBox" style="display:none;margin-bottom:16px">\
+          <div id="shareResultQrLoading" style="min-height:200px;display:flex;align-items:center;justify-content:center"><div class="share-spinner"></div></div>\
+          <img id="shareResultQrImg" style="display:none;max-width:200px;border-radius:12px;border:1px solid var(--border-accent);margin:0 auto 12px" alt="QR">\
+          <div style="font-size:13px;color:var(--accent);word-break:break-all;font-family:monospace;margin-bottom:4px">' + escapeHtml(cleanUrl) + '</div>\
+          ' + (extractionCode ? '<div style="font-size:18px;font-weight:700;color:var(--accent);letter-spacing:4px">' + escapeHtml(extractionCode) + '</div>' : '') + '\
+        </div>\
+        <div style="display:flex;gap:8px;justify-content:center">\
+          <button id="copyShareUrlBtn" class="modal-btn modal-btn-primary" style="' + btnStyle + '">📋 复制链接</button>\
+          <button id="shareFullInfoBtn" class="modal-btn modal-btn-primary" style="' + btnStyle + '">📤 分享</button>\
+          <button id="shareQrBtn" class="modal-btn modal-btn-secondary" style="' + btnStyle + '">📱 二维码</button>\
+          <button id="viewShareBtn" class="modal-btn modal-btn-secondary" style="' + btnStyle + '">查看</button>\
         </div>\
       </div>\
     ';
     document.body.appendChild(overlay);
 
     document.getElementById('copyShareUrlBtn').onclick = function() {
+      copyToClipboard(cleanUrl);
+      var btn = document.getElementById('copyShareUrlBtn');
+      btn.textContent = '✅ 已复制';
+      setTimeout(function() { btn.textContent = '📋 复制链接'; }, 1500);
+    };
+    document.getElementById('shareFullInfoBtn').onclick = function() {
       var copyText = extractionCode
         ? ownerText + '分享链接: ' + cleanUrl + '\n提取码: ' + extractionCode + '\n有效期: ' + (expiresAt ? formatDateTime(expiresAt) : '永久') + '\n来自 FMS 文件管理系统'
         : ownerText + '分享链接: ' + cleanUrl + '\n有效期: ' + (expiresAt ? formatDateTime(expiresAt) : '永久') + '\n来自 FMS 文件管理系统';
       copyToClipboard(copyText);
+      var btn = document.getElementById('shareFullInfoBtn');
+      btn.textContent = '✅ 已复制';
+      setTimeout(function() { btn.textContent = '📤 分享'; }, 1500);
+    };
+    document.getElementById('shareQrBtn').onclick = function() {
+      var infoBox = document.getElementById('shareResultInfoBox');
+      var qrBox = document.getElementById('shareResultQrBox');
+      var qrImg = document.getElementById('shareResultQrImg');
+      var qrLoading = document.getElementById('shareResultQrLoading');
+      // 切换显示
+      if (qrBox.style.display !== 'none') {
+        qrBox.style.display = 'none';
+        infoBox.style.display = '';
+        return;
+      }
+      infoBox.style.display = 'none';
+      qrBox.style.display = '';
+      if (!qrImg.src) {
+        var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+        axios.get('/api/share/qr', { params: { url: qrUrl, size: 240, theme: theme } }).then(function(res) {
+          if (res.data.code === 0 && res.data.data) {
+            qrImg.src = res.data.data;
+            qrImg.style.display = 'block';
+            if (qrLoading) qrLoading.style.display = 'none';
+          }
+        }).catch(function() {
+          if (qrLoading) qrLoading.innerHTML = '<span style="color:var(--text-muted);font-size:13px">二维码加载失败</span>';
+        });
+      }
     };
     document.getElementById('viewShareBtn').onclick = function() {
       overlay.remove();
@@ -5326,7 +5470,10 @@
             '<span class="as-stat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ' + (s.download_count || 0) + '</span>' +
           '</div>' +
         '</td>' +
-        '<td><button class="admin-btn" data-share-id="' + s.id + '" data-share-hash="' + escHtml(s.share_hash || '') + '" data-share-name="' + escHtml(s.target_name || '') + '">日志</button></td>';
+        '<td style="white-space:nowrap">' +
+          '<button class="admin-btn as-toggle-btn" data-share-id="' + s.id + '" data-action="' + (s.disabled ? 'enable' : 'disable') + '" style="margin-right:4px">' + (s.disabled ? '启用' : '禁用') + '</button>' +
+          '<button class="admin-btn" data-share-id="' + s.id + '" data-share-hash="' + escHtml(s.share_hash || '') + '" data-share-name="' + escHtml(s.target_name || '') + '">日志</button>' +
+        '</td>';
       tbody.appendChild(tr);
     });
     table.appendChild(thead);
@@ -5334,10 +5481,21 @@
     listEl.innerHTML = '';
     listEl.appendChild(table);
 
-    // 绑定桌面端表格中的日志按钮
-    listEl.querySelectorAll('[data-share-id]').forEach(function(btn) {
+    // 绑定桌面端表格中的日志按钮（仅匹配有 data-share-hash 的，排除禁用/启用按钮）
+    listEl.querySelectorAll('[data-share-hash]').forEach(function(btn) {
       btn.addEventListener('click', function() {
         showShareLogs(parseInt(btn.dataset.shareId), btn.dataset.shareHash, btn.dataset.shareName);
+      });
+    });
+    // 绑定禁用/启用按钮
+    listEl.querySelectorAll('.as-toggle-btn').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var shareId = parseInt(btn.dataset.shareId);
+        axios.patch('/api/share/' + shareId + '/toggle-disabled').then(function(res) {
+          if (res.data.code === 0) { showToast(res.data.message); fetchShares(); }
+          else showToast(res.data.message || '操作失败', '&#9888;');
+        }).catch(function() { showToast('操作失败', '&#9888;'); });
       });
     });
 
@@ -5363,12 +5521,24 @@
             '<div class="admin-user-card-row"><span>所有者:</span><span style="font-size:11px">' + escHtml(s.owner_email || '-') + '</span></div>' +
             '<div class="admin-user-card-row"><span>查看:</span><span>' + (s.view_count || 0) + '</span><span>下载:</span><span>' + (s.download_count || 0) + '</span></div>' +
             '<div class="admin-user-card-actions">' +
+              '<button class="admin-btn as-toggle-btn" data-share-id="' + s.id + '" data-action="' + (s.disabled ? 'enable' : 'disable') + '">' + (s.disabled ? '启用' : '禁用') + '</button>' +
               '<button class="admin-btn" data-share-id="' + s.id + '" data-share-hash="' + escHtml(s.share_hash || '') + '" data-share-name="' + escHtml(s.target_name || '') + '">日志</button>' +
             '</div>';
           cardList.appendChild(card);
         });
-        // 绑定日志按钮
-        cardList.querySelectorAll('[data-share-id]').forEach(function(btn) {
+        // 绑定禁用/启用按钮
+        cardList.querySelectorAll('.as-toggle-btn').forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var shareId = parseInt(btn.dataset.shareId);
+            axios.patch('/api/share/' + shareId + '/toggle-disabled').then(function(res) {
+              if (res.data.code === 0) { showToast(res.data.message); fetchShares(); }
+              else showToast(res.data.message || '操作失败', '&#9888;');
+            }).catch(function() { showToast('操作失败', '&#9888;'); });
+          });
+        });
+        // 绑定日志按钮（仅匹配有 data-share-hash 的）
+        cardList.querySelectorAll('[data-share-hash]').forEach(function(btn) {
           btn.addEventListener('click', function() {
             showShareLogs(parseInt(btn.dataset.shareId), btn.dataset.shareHash, btn.dataset.shareName);
           });
@@ -5687,7 +5857,7 @@
     logs: [],
     logTotal: 0,
     logPage: 1,
-    logLimit: 50,
+    logLimit: 20,
     users: [],
     guestIps: []
   };
@@ -5734,6 +5904,10 @@
     h += '<div class="rl-section-header"><span class="rl-section-icon">&#128274;</span> 已登录用户规则</div>';
     var authRules = (rlState.rules && rlState.rules.authenticated) ? rlState.rules.authenticated : [];
     h += renderRuleTable('authenticated', authRules);
+    // Mobile cards for auth rules
+    h += '<div class="admin-card-list af-card-list" style="margin-top:8px">';
+    h += renderRuleCards(authRules);
+    h += '</div>';
     h += '<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="window.__rlAddRule(\'authenticated\')">+ 添加规则</button></div>';
     h += '</div>';
 
@@ -5742,6 +5916,10 @@
     h += '<div class="rl-section-header"><span class="rl-section-icon">&#127760;</span> 未登录用户规则</div>';
     var anonRules = (rlState.rules && rlState.rules.anonymous) ? rlState.rules.anonymous : [];
     h += renderRuleTable('anonymous', anonRules);
+    // Mobile cards for anon rules
+    h += '<div class="admin-card-list af-card-list" style="margin-top:8px">';
+    h += renderRuleCards(anonRules);
+    h += '</div>';
     h += '<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="window.__rlAddRule(\'anonymous\')">+ 添加规则</button></div>';
     h += '</div>';
 
@@ -5760,6 +5938,25 @@
       });
     }
     h += '</tbody></table></div>';
+    // Mobile whitelist cards
+    h += '<div class="admin-card-list af-card-list" style="margin-top:8px">';
+    if (wl.length === 0) {
+      h += '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">暂无白名单</div>';
+    } else {
+      wl.forEach(function(w) {
+        h += '<div class="admin-user-card" style="margin-bottom:8px">' +
+          '<div class="admin-user-card-header">' +
+            '<span style="font-family:monospace;font-size:12px;color:var(--accent);word-break:break-all">' + escHtml(w.path) + '</span>' +
+            '<span>' + (w.is_enabled ? '<span style="color:#10b981;font-weight:600">✅ 启用</span>' : '<span style="color:var(--text-muted)">❌ 禁用</span>') + '</span>' +
+          '</div>' +
+          '<div class="admin-user-card-row"><span>描述</span><span>' + escHtml(w.description || '-') + '</span></div>' +
+          '<div class="admin-user-card-actions">' +
+            '<button class="btn btn-sm btn-outline" onclick="window.__rlDeleteWhitelist(' + w.id + ')" style="color:#e74c3c">删除</button>' +
+          '</div>' +
+        '</div>';
+      });
+    }
+    h += '</div>';
     h += '<div style="margin-top:8px;display:flex;gap:8px"><input type="text" id="rl-wl-path" placeholder="路径，如 /api/xxx" style="flex:1;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:12px"><input type="text" id="rl-wl-desc" placeholder="描述（可选）" style="flex:1;padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:12px"><button class="btn btn-sm btn-primary" onclick="window.__rlAddWhitelist()">添加白名单</button></div>';
     h += '</div>';
 
@@ -5796,6 +5993,32 @@
       });
     }
     h += '</tbody></table></div>';
+    return h;
+  }
+
+  function renderRuleCards(rules) {
+    var h = '';
+    if (rules.length === 0) {
+      h += '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">暂无规则</div>';
+    } else {
+      rules.forEach(function(r) {
+        var banLabel = formatBanDuration(r.ban_duration_seconds).replace(/<[^>]+>/g, '');
+        var enabledHtml = r.is_enabled ? '<span style="color:#10b981;font-weight:600">✅ 启用</span>' : '<span style="color:var(--text-muted)">❌ 禁用</span>';
+        h += '<div class="admin-user-card" style="margin-bottom:8px">' +
+          '<div class="admin-user-card-header">' +
+            '<span style="font-weight:600;font-size:13px">排序: ' + (r.sort_order || 0) + '</span>' +
+            enabledHtml +
+          '</div>' +
+          '<div class="admin-user-card-row"><span>时间窗口</span><span>' + r.window_seconds + ' 秒</span></div>' +
+          '<div class="admin-user-card-row"><span>最大请求数</span><span>' + r.max_requests + '</span></div>' +
+          '<div class="admin-user-card-row"><span>封禁时长</span><span>' + banLabel + '</span></div>' +
+          '<div class="admin-user-card-actions">' +
+            '<button class="btn btn-sm btn-outline" onclick="window.__rlEditRule(' + r.id + ')" style="margin-right:4px">编辑</button>' +
+            '<button class="btn btn-sm btn-outline" style="color:#e74c3c" onclick="window.__rlDeleteRule(' + r.id + ')">删除</button>' +
+          '</div>' +
+        '</div>';
+      });
+    }
     return h;
   }
 
@@ -6295,6 +6518,11 @@
     var content = el('div', 'traffic-content');
     body.appendChild(content);
 
+    // Mobile card list
+    var cardList = el('div', 'admin-card-list af-card-list');
+    cardList.id = 'traffic-cards';
+    body.appendChild(cardList);
+
     // 加载用户列表
     apiGet('/admin/traffic/users').then(function(res) {
       if (res.code === 0 && res.data) {
@@ -6316,6 +6544,9 @@
     var content = $('.traffic-content');
     if (!content) return;
     content.innerHTML = '';
+    // Clear mobile cards (chart tab has no cards)
+    var cardsEl = $('#traffic-cards');
+    if (cardsEl) cardsEl.innerHTML = '';
     if (trafficState.activeTab === 'summary') fetchTrafficSummary();
     else if (trafficState.activeTab === 'chart') fetchTrafficChart();
     else fetchTrafficLogs();
@@ -6398,7 +6629,7 @@
       var actTypes = Object.keys(d.actions || {});
       actTypes.forEach(function(t) {
         var badge = el('span', 'enc-badge');
-        var map = { upload: '上传', download: '下载', preview: '图片预览', video_stream: '视频预览' };
+        var map = { upload: '上传', download: '下载', preview: '图片预览', video_stream: '视频预览', request: 'API请求' };
         badge.textContent = (map[t] || t) + ': ' + formatFileSize(d.actions[t]);
         badge.style.marginRight = '4px';
         badge.style.fontSize = '11px';
@@ -6425,6 +6656,29 @@
     tableWrap.appendChild(table);
     tableScrollWrap.appendChild(tableWrap);
     content.appendChild(tableScrollWrap);
+
+    // ---- Mobile cards ----
+    var cardsEl = $('#traffic-cards');
+    if (cardsEl) {
+      var cardsHtml = '';
+      data.forEach(function(d) {
+        var actTypes = Object.keys(d.actions || {});
+        var actHtml = '';
+        var map = { upload: '上传', download: '下载', preview: '图片预览', video_stream: '视频预览', request: 'API请求' };
+        actTypes.forEach(function(t) { actHtml += '<span style="display:inline-block;background:var(--bg-card-hover);padding:1px 6px;border-radius:4px;font-size:10px;margin-right:3px">' + (map[t] || t) + ': ' + formatFileSize(d.actions[t]) + '</span>'; });
+        var pct = totalAll > 0 ? Math.round((d.total_bytes / totalAll) * 100) : 0;
+        cardsHtml += '<div class="admin-user-card">' +
+          '<div class="admin-user-card-header">' +
+            '<span style="font-weight:600;font-size:13px">' + (d.id > 0 ? '👤 ' + escHtml(d.email || d.id) : '🎯 ' + escHtml(d.ip || '未知IP')) + '</span>' +
+            '<span style="color:var(--accent);font-weight:700;font-size:14px">' + formatFileSize(d.total_bytes) + '</span>' +
+          '</div>' +
+          '<div class="admin-user-card-row"><span>类型</span><span>' + (d.id > 0 ? '用户' : '访客') + '</span></div>' +
+          '<div class="admin-user-card-row"><span>操作</span><span>' + (actHtml || '无') + '</span></div>' +
+          '<div class="admin-user-card-row"><span>占比</span><span style="color:var(--accent);font-weight:600">' + pct + '%</span></div>' +
+        '</div>';
+      });
+      cardsEl.innerHTML = cardsHtml;
+    }
   }
 
   function fetchTrafficChart() {
@@ -6592,8 +6846,8 @@
     } else {
       logs.forEach(function(log) {
         var tr = el('tr');
-        var actionMap = { upload: '上传', download: '下载', preview: '图片预览', video_stream: '视频预览' };
-        var actionColor = { upload: '#4caf50', download: '#ff9800', preview: '#2196f3', video_stream: '#9c27b0' };
+        var actionMap = { upload: '上传', download: '下载', preview: '图片预览', video_stream: '视频预览', request: 'API请求' };
+        var actionColor = { upload: '#4caf50', download: '#ff9800', preview: '#2196f3', video_stream: '#9c27b0', request: '#607d8b' };
         tr.innerHTML =
           '<td style="font-size:11px;color:var(--text-muted);white-space:nowrap">' + formatTrafficTime(log.created_at) + '</td>' +
           '<td style="font-size:12px">' + (log.user_id > 0 ? '<span class="role-badge user">&#x1F464; ' + escHtml(log.email || log.user_id) + '</span>' : '<span class="role-badge" style="color:#2196f3">&#x1F3af; ' + escHtml(log.guest_ip || '访客') + '</span>') + '</td>' +
@@ -6609,6 +6863,31 @@
     tableWrap.appendChild(table);
     tableScrollWrap.appendChild(tableWrap);
     content.appendChild(tableScrollWrap);
+
+    // ---- Mobile cards ----
+    var cardsEl = $('#traffic-cards');
+    if (cardsEl) {
+      if (logs.length === 0) {
+        cardsEl.innerHTML = '<div class="af-empty" style="padding:32px;text-align:center;color:var(--text-muted)">暂无记录</div>';
+      } else {
+        var cardsHtml = '';
+        logs.forEach(function(log) {
+          var actionMap = { upload: '上传', download: '下载', preview: '图片预览', video_stream: '视频预览', request: 'API请求' };
+          var actionColor = { upload: '#4caf50', download: '#ff9800', preview: '#2196f3', video_stream: '#9c27b0', request: '#607d8b' };
+          cardsHtml += '<div class="admin-user-card">' +
+            '<div class="admin-user-card-header">' +
+              '<span style="color:' + (actionColor[log.action_type] || '#999') + ';font-weight:600;font-size:13px">' + (actionMap[log.action_type] || log.action_type) + '</span>' +
+              '<span style="font-size:10px;color:var(--text-muted)">' + formatTrafficTime(log.created_at) + '</span>' +
+            '</div>' +
+            '<div class="admin-user-card-row"><span>用户</span><span>' + (log.user_id > 0 ? '👤 ' + escHtml(log.email || log.user_id) : '🎯 ' + escHtml(log.guest_ip || '访客')) + '</span></div>' +
+            '<div class="admin-user-card-row"><span>文件</span><span style="font-size:11px;word-break:break-all">' + escHtml(log.file_name || '-') + '</span></div>' +
+            '<div class="admin-user-card-row"><span>大小</span><span>' + formatFileSize(log.file_size || 0) + '</span></div>' +
+            '<div class="admin-user-card-row"><span>流量</span><span style="color:var(--accent);font-weight:600">' + formatFileSize(log.bytes_count || 0) + '</span></div>' +
+          '</div>';
+        });
+        cardsEl.innerHTML = cardsHtml;
+      }
+    }
 
     // 分页
     var totalPages = Math.ceil(trafficState.logTotal / trafficState.logLimit);
@@ -6642,35 +6921,29 @@
     var html =
       '<div class="af-body">' +
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">' +
-          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent,#2196F3)"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
           '<h3 style="color:var(--text-primary);margin:0;font-size:18px;">版本管理</h3>' +
           '<span style="color:var(--text-secondary);font-size:12px;margin-left:auto;">上传 APK 供用户下载和更新</span>' +
         '</div>' +
-
-        // Upload section
-        '<div style="background:var(--bg-card,#1c2128);border:2px dashed var(--border,#30363d);border-radius:14px;padding:28px 24px;margin-bottom:20px;text-align:center;transition:border-color .2s;" ' +
-             'onmouseover="this.style.borderColor=\'var(--accent,#2196F3)\'" onmouseout="this.style.borderColor=\'var(--border,#30363d)\'">' +
-          '<div style="font-size:40px;margin-bottom:8px;">&#128230;</div>' +
-          '<p style="color:var(--text-primary);font-size:15px;font-weight:500;margin:0 0 4px;">上传新版本 APK</p>' +
-          '<p style="color:var(--text-secondary);font-size:12px;margin:0 0 16px;">支持 .apk 文件，自动解析版本号</p>' +
-          '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;align-items:center;">' +
-            '<label style="padding:10px 20px;background:var(--bg,#0d1117);border:1px solid var(--border,#30363d);border-radius:8px;cursor:pointer;color:var(--text-primary);font-size:13px;display:flex;align-items:center;gap:6px;">' +
+        '<div class="vm-upload-zone">' +
+          '<div class="vm-upload-icon">&#128230;</div>' +
+          '<p class="vm-upload-title">上传新版本 APK</p>' +
+          '<p class="vm-upload-hint">支持 .apk 文件，自动解析版本号</p>' +
+          '<div class="vm-upload-form">' +
+            '<label class="vm-file-label">' +
               '<span id="version-file-name">选择文件...</span>' +
               '<input type="file" id="version-file-input" accept=".apk" style="display:none" onchange="var n=this.files[0]?this.files[0].name:\'选择文件...\';document.getElementById(\'version-file-name\').textContent=n">' +
             '</label>' +
-            '<input type="text" id="version-notes-input" placeholder="更新日志（可选）" style="color:var(--text-primary);padding:10px 14px;background:var(--bg,#0d1117);border:1px solid var(--border,#30363d);border-radius:8px;width:220px;font-size:13px;">' +
-            '<button onclick="window.__fm.uploadVersion()" style="padding:10px 28px;background:#238636;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;white-space:nowrap;">&#11014; 上传</button>' +
+            '<input type="text" id="version-notes-input" class="vm-notes-input" placeholder="更新日志（可选）">' +
+            '<button onclick="window.__fm.uploadVersion()" class="vm-upload-btn">&#11014; 上传</button>' +
           '</div>' +
-          '<p id="version-upload-status" style="margin:12px 0 0;font-size:12px;min-height:18px;"></p>' +
+          '<p id="version-upload-status" class="vm-upload-status"></p>' +
         '</div>' +
-
-        // Version list
-        '<div id="version-list" style="display:flex;flex-direction:column;gap:8px;">' +
+        '<div id="version-list">' +
           '<p style="color:var(--text-secondary);text-align:center;padding:20px;">加载中...</p>' +
         '</div>' +
       '</div>';
     container.innerHTML = html;
-
     loadVersionList();
   }
 
@@ -6716,20 +6989,20 @@
         var html = '';
         d.data.forEach(function(v) {
           var isLatest = d.data.indexOf(v) === 0;
-          html += '<div style="background:var(--bg-card,#1c2128);border:1px solid ' + (isLatest ? 'var(--accent,#2196F3)' : 'var(--border,#30363d)') + ';border-radius:10px;padding:16px 18px;display:flex;align-items:center;gap:14px;">' +
-            '<div style="width:40px;height:40px;border-radius:10px;background:' + (isLatest ? 'rgba(35,134,54,.15)' : 'var(--bg,#0d1117)') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px;">' + (isLatest ? '✅' : '📦') + '</div>' +
-            '<div style="flex:1;min-width:0;">' +
-              '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-                '<span style="color:var(--text-primary);font-weight:600;font-size:15px;">v' + v.version + '</span>' +
-                (isLatest ? '<span style="background:#238636;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;">最新</span>' : '') +
-                '<span style="color:var(--text-secondary);font-size:11px;">' + formatFileSize(v.size) + '</span>' +
+          html += '<div class="vm-card' + (isLatest ? ' latest' : '') + '">' +
+            '<div class="vm-card-icon' + (isLatest ? ' latest' : ' normal') + '">' + (isLatest ? '✅' : '📦') + '</div>' +
+            '<div class="vm-card-info">' +
+              '<div class="vm-card-header">' +
+                'v' + v.version +
+                (isLatest ? '<span class="vm-badge-latest">最新</span>' : '') +
+                '<span class="vm-card-size">' + formatFileSize(v.size) + '</span>' +
               '</div>' +
-              (v.notes ? '<div style="color:var(--text-secondary);font-size:12px;margin-top:3px;line-height:1.5;">' + v.notes + '</div>' : '') +
-              '<div style="color:#484f58;font-size:10px;margin-top:3px;">' + (v.createdAt ? v.createdAt.substring(0,16).replace('T',' ') : '') + '</div>' +
+              (v.notes ? '<div class="vm-card-notes">' + v.notes + '</div>' : '') +
+              '<div class="vm-card-time">' + (v.createdAt ? v.createdAt.substring(0,16).replace('T',' ') : '') + '</div>' +
             '</div>' +
-            '<div style="display:flex;gap:6px;flex-shrink:0;">' +
-              '<a href="' + v.url + '" download style="padding:7px 16px;background:#1f6feb;color:#fff;border-radius:6px;text-decoration:none;font-size:12px;white-space:nowrap;">📥 下载</a>' +
-              '<button onclick="if(confirm(\'确定删除 v' + v.version + '?\')){window.__fm.deleteVersion(' + v.versionCode + ')}" style="padding:7px 12px;background:transparent;border:1px solid #30363d;color:#f85149;border-radius:6px;cursor:pointer;font-size:12px;">🗑</button>' +
+            '<div class="vm-card-actions">' +
+              '<a href="' + v.url + '" download class="vm-btn-dl">📥 下载</a>' +
+              '<button onclick="if(confirm(\'确定删除 v' + v.version + '?\')){window.__fm.deleteVersion(' + v.versionCode + ')}" class="vm-btn-del">🗑</button>' +
             '</div>' +
           '</div>';
         });
@@ -7653,6 +7926,29 @@
     table.appendChild(tbody);
     tableWrap.appendChild(table);
 
+    // Mobile cards
+    var cardsWrap = el('div', 'log-card-list');
+    cardsWrap.id = 'log-action-cards';
+    if (logState.actionLogs.length === 0) {
+      cardsWrap.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">暂无日志记录</div>';
+    } else {
+      var cardsHtml = '';
+      logState.actionLogs.forEach(function(log) {
+        cardsHtml += '<div class="log-card">' +
+          '<div class="log-card-header">' +
+            '<span>' + escHtml(log.actionText || log.action) + '</span>' +
+            '<span>' + (log.status === 'success' ? '<span style="color:#10b981">✅ 成功</span>' : '<span style="color:#e74c3c">❌ 失败</span>') + '</span>' +
+          '</div>' +
+          '<div class="log-card-row"><span>时间</span><span>' + formatLogTime(log.createdAt) + '</span></div>' +
+          '<div class="log-card-row"><span>用户</span><span>' + escHtml(log.email || '-') + '</span></div>' +
+          '<div class="log-card-row"><span>对象</span><span style="word-break:break-all">' + escHtml(log.targetName || '-') + '</span></div>' +
+          '<div class="log-card-row"><span>IP</span><span>' + escHtml(log.ip || '-') + '</span></div>' +
+        '</div>';
+      });
+      cardsWrap.innerHTML = cardsHtml;
+    }
+    tableWrap.parentNode && tableWrap.parentNode.appendChild(cardsWrap);
+
     // 分页
     renderActionPagination();
   }
@@ -7866,6 +8162,29 @@
     table.appendChild(thead);
     table.appendChild(tbody);
     tableWrap.appendChild(table);
+
+    // Mobile cards
+    var cardsWrap = el('div', 'log-card-list');
+    cardsWrap.id = 'log-email-cards';
+    if (logState.emailLogs.length === 0) {
+      cardsWrap.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">暂无邮件日志记录</div>';
+    } else {
+      var cardsHtml = '';
+      logState.emailLogs.forEach(function(log) {
+        cardsHtml += '<div class="log-card">' +
+          '<div class="log-card-header">' +
+            '<span>' + escHtml(log.templateText || log.template) + '</span>' +
+            '<span>' + (log.status === 'success' ? '<span style="color:#10b981">✅ 成功</span>' : '<span style="color:#e74c3c">❌ 失败</span>') + '</span>' +
+          '</div>' +
+          '<div class="log-card-row"><span>时间</span><span>' + formatLogTime(log.createdAt) + '</span></div>' +
+          '<div class="log-card-row"><span>收件人</span><span>' + escHtml(log.toEmail || '-') + '</span></div>' +
+          '<div class="log-card-row"><span>IP</span><span>' + escHtml(log.ip || '-') + '</span></div>' +
+          '<div class="log-card-row"><span>备注</span><span style="word-break:break-all">' + escHtml(log.error || '-') + '</span></div>' +
+        '</div>';
+      });
+      cardsWrap.innerHTML = cardsHtml;
+    }
+    tableWrap.parentNode && tableWrap.parentNode.appendChild(cardsWrap);
 
     renderEmailPagination();
   }
@@ -8149,9 +8468,27 @@
     } else if (viewName === 'share') {
       var shareNav = $('#nav-share');
       if (shareNav) shareNav.classList.add('active');
+    } else if (viewName === 'webdav') {
+      var webdavNav = $('#nav-webdav');
+      if (webdavNav) webdavNav.classList.add('active');
     } else if (viewName === 'offline') {
       var offlineNav = $('#nav-offline');
       if (offlineNav) offlineNav.classList.add('active');
+    } else if (viewName === 'admin-shares') {
+      var sharesNav = $('#nav-shares');
+      if (sharesNav) sharesNav.classList.add('active');
+    } else if (viewName === 'admin-blacklist') {
+      var blNav = $('#nav-blacklist');
+      if (blNav) blNav.classList.add('active');
+    } else if (viewName === 'admin-traffic') {
+      var trafficNav = $('#nav-traffic');
+      if (trafficNav) trafficNav.classList.add('active');
+    } else if (viewName === 'admin-version') {
+      var versionNav = $('#nav-version');
+      if (versionNav) versionNav.classList.add('active');
+    } else if (viewName === 'admin-webdav') {
+      var wdNav = $('#nav-admin-webdav');
+      if (wdNav) wdNav.classList.add('active');
     }
   }
 
@@ -8711,6 +9048,233 @@
   window.__fm.validateFileName = function(name, maxLen) { return validateFileName(name, maxLen); };
   window.__fm.validateDirName = function(name) { return validateDirName(name); };
 
+  // ==================== Admin WebDAV 管理 ====================
+  var adminWebDAVState = { links: [], total: 0, page: 1, limit: 20, searchKeyword: '', loading: false };
+
+  function loadAdminWebDAV() {
+    var container = $('#page-panel-body');
+    if (!container) return;
+    container.innerHTML = '<div id="aw-body"></div>';
+    var body = $('#aw-body');
+    if (!body) return;
+
+    // Filter row
+    var filterRow = el('div', 'as-filter-row');
+    var searchWrap = el('div', 'as-user-search-wrap');
+    var searchInput = el('input', 'af-admin-search');
+    searchInput.type = 'search';
+    searchInput.placeholder = '搜索链接名、路径或用户邮箱...';
+    searchInput.id = 'aw-search-input';
+    searchInput.style.cssText = 'flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px';
+    var searchBtn = el('button', 'af-btn af-btn-primary');
+    searchBtn.textContent = '搜索';
+    searchBtn.style.cssText = 'padding:8px 16px;margin-left:8px';
+    searchBtn.addEventListener('click', function() {
+      adminWebDAVState.searchKeyword = searchInput.value.trim();
+      adminWebDAVState.page = 1;
+      fetchAdminWebDAV();
+    });
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        adminWebDAVState.searchKeyword = searchInput.value.trim();
+        adminWebDAVState.page = 1;
+        fetchAdminWebDAV();
+      }
+    });
+    searchWrap.appendChild(searchInput);
+    searchWrap.appendChild(searchBtn);
+    filterRow.appendChild(searchWrap);
+    body.appendChild(filterRow);
+
+    // Table container (desktop)
+    var tableWrap = el('div', 'admin-table-wrap');
+    var listDiv = el('div');
+    listDiv.id = 'aw-list';
+    tableWrap.appendChild(listDiv);
+    body.appendChild(tableWrap);
+
+    // Mobile card list
+    var cardList = el('div', 'admin-card-list af-card-list');
+    cardList.id = 'aw-card-list';
+    body.appendChild(cardList);
+
+    // Pager
+    var pager = el('div', 'as-pager');
+    pager.id = 'aw-pager';
+    pager.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;padding:16px 0 8px;font-size:12px;color:var(--text-muted)';
+    body.appendChild(pager);
+
+    fetchAdminWebDAV();
+  }
+
+  function fetchAdminWebDAV() {
+    var listEl = $('#aw-list');
+    var pagerEl = $('#aw-pager');
+    if (!listEl) return;
+    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">加载中...</div>';
+    var url = '/admin/webdav?page=' + adminWebDAVState.page + '&limit=' + adminWebDAVState.limit;
+    if (adminWebDAVState.searchKeyword) url += '&keyword=' + encodeURIComponent(adminWebDAVState.searchKeyword);
+    apiGet(url).then(function(res) {
+      var data = res.data || {};
+      adminWebDAVState.links = data.links || [];
+      adminWebDAVState.total = data.total || 0;
+      renderAdminWebDAV();
+      renderWebDAVAdminPager(pagerEl);
+    }).catch(function() { listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--error)">网络错误</div>'; });
+  }
+
+  function renderAdminWebDAV() {
+    var listEl = $('#aw-list');
+    if (!listEl) return;
+    var links = adminWebDAVState.links;
+    if (links.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">暂无 WebDAV 链接</div>';
+      return;
+    }
+    var html = '<table class="file-table sm-file-table" style="width:100%"><thead><tr>' +
+      '<th>名称 / Token</th><th>类型</th><th>所有者</th><th>路径</th><th>有效期</th><th>访问</th><th>状态</th><th class="th-menu">操作</th>' +
+      '</tr></thead><tbody>';
+    links.forEach(function(l) {
+      var isExpired = l.is_expired;
+      var isDisabled = l.disabled;
+      var statusText = isDisabled ? '已禁用' : (isExpired ? '已过期' : '有效');
+      var statusColor = isDisabled ? 'var(--warning)' : (isExpired ? 'var(--error)' : 'var(--success)');
+      var typeLabel = l.target_type === 'personal' ? '个人' : '公共';
+      // 有效期：日期 + 剩余天数
+      var expiryHtml = '';
+      if (l.expires_at) {
+        var expDate = new Date(l.expires_at);
+        var remainDays = Math.ceil((expDate - new Date()) / (24 * 3600 * 1000));
+        var dateStr = l.expires_at.substring(5, 10);
+        if (remainDays <= 0) {
+          expiryHtml = '<span style="font-size:11px;color:var(--text-muted)">' + dateStr + '</span><br><span style="font-size:10px;color:var(--error)">已过期</span>';
+        } else if (remainDays <= 3) {
+          expiryHtml = '<span style="font-size:11px;color:var(--text-muted)">' + dateStr + '</span><br><span style="font-size:10px;color:var(--error);font-weight:600">剩' + remainDays + '天</span>';
+        } else if (remainDays <= 30) {
+          expiryHtml = '<span style="font-size:11px;color:var(--text-muted)">' + dateStr + '</span><br><span style="font-size:10px;color:var(--warning)">剩' + remainDays + '天</span>';
+        } else {
+          expiryHtml = '<span style="font-size:11px;color:var(--text-muted)">' + dateStr + '</span><br><span style="font-size:10px;color:var(--text-muted)">剩' + remainDays + '天</span>';
+        }
+      } else {
+        expiryHtml = '<span style="font-size:11px;color:var(--success);font-weight:500">永久</span>';
+      }
+      var displayPath = l.display_path || l.target_path || '/';
+      if (displayPath[0] !== '/') displayPath = '/' + displayPath;
+      var ownerText = l.owner_email || l.owner_nickname || '-';
+      var maskedToken = l.masked_token || '••••';
+
+      html += '<tr class="fm-row' + (isDisabled ? '" style="opacity:0.55"' : '') + '">' +
+        '<td style="max-width:260px">' +
+          '<div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(l.target_name || l.link_name || '') + '">' + escHtml(l.target_name || l.link_name || '-') + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(maskedToken) + '">' + escHtml(maskedToken) + '</div>' +
+        '</td>' +
+        '<td><span class="badge" style="background:var(--bg-card-hover);color:var(--text-secondary);padding:2px 8px;border-radius:4px;font-size:11px">' + typeLabel + '</span></td>' +
+        '<td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(ownerText) + '">' + escHtml(ownerText) + '</td>' +
+        '<td style="font-size:11px;color:var(--text-muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(displayPath) + '">' + escHtml(displayPath) + '</td>' +
+        '<td>' + expiryHtml + '</td>' +
+        '<td style="font-size:12px;color:var(--text-muted);white-space:nowrap">' + (l.access_count || 0) + '次</td>' +
+        '<td><span style="color:' + statusColor + ';font-size:12px;font-weight:600;white-space:nowrap">' + statusText + '</span></td>' +
+        '<td class="td-menu" style="white-space:nowrap">' +
+          '<button class="modal-btn modal-btn-secondary sm-btn" style="font-size:10px;padding:2px 8px" data-aw-toggle="' + l.id + '" data-aw-action="' + (isDisabled ? 'enable' : 'disable') + '">' + (isDisabled ? '启用' : '禁用') + '</button>' +
+        '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    listEl.innerHTML = html;
+
+    // Bind toggle buttons
+    listEl.querySelectorAll('[data-aw-toggle]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = parseInt(btn.dataset.awToggle);
+        adminToggleWebDAV(id, btn);
+      });
+    });
+
+    // ---- 移动端卡片 ----
+    var cardList = $('#aw-card-list');
+    if (cardList) {
+      if (links.length === 0) {
+        cardList.innerHTML = '<div class="af-empty">暂无 WebDAV 链接</div>';
+      } else {
+        cardList.innerHTML = '';
+        links.forEach(function(l) {
+          var isExpired = l.is_expired;
+          var isDisabled = l.disabled;
+          var statusText = isDisabled ? '已禁用' : (isExpired ? '已过期' : '有效');
+          var statusColor = isDisabled ? 'var(--warning)' : (isExpired ? 'var(--error)' : 'var(--success)');
+          var typeLabel = l.target_type === 'personal' ? '个人' : '公共';
+          var expiryText = l.expires_at ? l.expires_at.substring(0, 10) : '永久';
+          var displayPath = l.display_path || l.target_path || '/';
+          if (displayPath[0] !== '/') displayPath = '/' + displayPath;
+          var ownerText = l.owner_email || l.owner_nickname || '-';
+          var card = el('div', 'admin-user-card');
+          card.innerHTML =
+            '<div class="admin-user-card-header">' +
+              '<span class="share-type-badge share-type-badge-sm" style="background:rgba(0,212,255,0.12);color:var(--accent);padding:2px 8px;border-radius:12px;font-size:10px">' + typeLabel + '</span>' +
+              '<span class="as-expiry ' + (isExpired ? 'expired' : '') + '" style="font-size:11px">' + expiryText + '</span>' +
+            '</div>' +
+            '<div class="admin-user-card-row"><span>名称:</span><span style="font-size:12px;font-weight:600">' + escHtml(l.target_name || l.link_name || '-') + '</span></div>' +
+            '<div class="admin-user-card-row"><span>Token:</span><span style="font-family:monospace;font-size:10px">' + escHtml(l.masked_token || '••••') + '</span></div>' +
+            '<div class="admin-user-card-row"><span>所有者:</span><span style="font-size:11px">' + escHtml(ownerText) + '</span></div>' +
+            '<div class="admin-user-card-row"><span>路径:</span><span style="font-size:11px;word-break:break-all">' + escHtml(displayPath) + '</span></div>' +
+            '<div class="admin-user-card-row"><span>访问:</span><span>' + (l.access_count || 0) + '次</span><span>状态:</span><span style="color:' + statusColor + ';font-weight:600">' + statusText + '</span></div>' +
+            '<div class="admin-user-card-actions">' +
+              '<button class="admin-btn" data-aw-toggle="' + l.id + '">' + (isDisabled ? '启用' : '禁用') + '</button>' +
+            '</div>';
+          cardList.appendChild(card);
+        });
+        // Bind card toggle buttons
+        cardList.querySelectorAll('[data-aw-toggle]').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var id = parseInt(btn.dataset.awToggle);
+            adminToggleWebDAV(id, btn);
+          });
+        });
+      }
+    }
+  }
+
+  function adminToggleWebDAV(id, btn) {
+    // Find the link from state to get its token
+    var link = null;
+    for (var i = 0; i < adminWebDAVState.links.length; i++) {
+      if (adminWebDAVState.links[i].id === id) { link = adminWebDAVState.links[i]; break; }
+    }
+    if (!link || !link._tid) return showToast('无法获取链接信息', '&#9888;');
+    // Use the preserved token for the API call (admin has permission to toggle any link)
+    axios.patch('/api/webdav/links/' + link._tid + '/toggle-disabled').then(function(res) {
+      if (res.data.code === 0) {
+        showToast(res.data.message);
+        fetchAdminWebDAV();
+      } else {
+        showToast(res.data.message || '操作失败', '&#9888;');
+      }
+    }).catch(function() { showToast('操作失败', '&#9888;'); });
+  }
+
+  function renderWebDAVAdminPager(pagerEl) {
+    if (!pagerEl) return;
+    pagerEl.innerHTML = '';
+    var total = adminWebDAVState.total;
+    var page = adminWebDAVState.page;
+    var limit = adminWebDAVState.limit;
+    var totalPages = Math.ceil(total / limit);
+    if (totalPages <= 1) return;
+    var prevBtn = el('button', 'af-btn af-btn-default');
+    prevBtn.textContent = '← 上一页';
+    prevBtn.disabled = page <= 1;
+    prevBtn.addEventListener('click', function() { if (adminWebDAVState.page > 1) { adminWebDAVState.page--; fetchAdminWebDAV(); } });
+    var nextBtn = el('button', 'af-btn af-btn-default');
+    nextBtn.textContent = '下一页 →';
+    nextBtn.disabled = page >= totalPages;
+    nextBtn.addEventListener('click', function() { if (adminWebDAVState.page < totalPages) { adminWebDAVState.page++; fetchAdminWebDAV(); } });
+    var pageInfo = el('span');
+    pageInfo.textContent = '第 ' + page + ' / ' + totalPages + ' 页，共 ' + total + ' 条';
+    pagerEl.appendChild(prevBtn);
+    pagerEl.appendChild(pageInfo);
+    pagerEl.appendChild(nextBtn);
+  }
+
   // ==================== WebDAV 链接管理 ====================
   function createWebDAVLink(item, targetType) {
     targetType = targetType || 'public';
@@ -8844,14 +9408,16 @@
     var viewMode = localStorage.getItem('webdavViewMode') || 'grid';
     var modeClass = 'wd-' + viewMode;
 
-    // Add toggle button
     var actionsEl = $('#page-panel-actions');
     if (actionsEl) {
-      actionsEl.innerHTML = '<div class="view-toggle" role="group" aria-label="视图切换" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
+      actionsEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px">' +
+        '<div class="view-toggle" role="group" aria-label="视图切换" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">' +
         '<button class="view-btn' + (viewMode === 'grid' ? ' active' : '') + '" data-view="grid" onclick="window.__fm._toggleWebDAVView(\'grid\')" title="网格视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'grid' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'grid' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>' +
         '<button class="view-btn' + (viewMode === 'list' ? ' active' : '') + '" data-view="list" onclick="window.__fm._toggleWebDAVView(\'list\')" title="列表视图" style="width:34px;height:34px;border:none;background:' + (viewMode === 'list' ? 'linear-gradient(135deg,var(--accent),var(--accent2))' : 'transparent') + ';color:' + (viewMode === 'list' ? '#fff' : 'var(--text-muted)') + ';cursor:pointer;font-size:14px">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>' +
+        '</div>' +
+        '<button class="modal-btn modal-btn-danger" style="font-size:11px;padding:4px 12px" onclick="window.__fm._deleteExpiredWebDAV()" title="删除所有已过期的 WebDAV 链接">🗑 删除已过期</button>' +
         '</div>';
     }
 
@@ -8860,7 +9426,6 @@
       return;
     }
 
-    // Build pagination
     var totalPages = Math.ceil(total / _webdavPageSize);
     var paginationHtml = '';
     if (totalPages > 1) {
@@ -8871,55 +9436,117 @@
       paginationHtml += '</div>';
     }
 
-    // List header
-    var listHeader = '';
+    var html = '';
     if (viewMode === 'list') {
-      listHeader = '<div class="wd-list-header" style="display:flex;align-items:center;gap:10px;padding:5px 12px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);margin-bottom:2px"><span style="flex:1;min-width:0">名称 / 状态</span><span style="flex-shrink:0">操作</span></div>';
+      html += '<div class="file-table-wrap"><table class="file-table sm-file-table table-wd"><colgroup>' +
+        '<col class="col-icon-sm"><col class="col-name"><col class="col-wd-path"><col class="col-wd-url"><col class="col-wd-expiry"><col class="col-status-sm"><col class="col-menu">' +
+        '</colgroup><thead><tr>' +
+        '<th class="th-icon">类型</th><th>名称</th><th>路径</th><th>WebDAV 地址</th><th>有效期</th><th>状态</th><th class="th-menu">操作</th>' +
+        '</tr></thead><tbody>';
+      links.forEach(function(l) { html += _buildWebDAVRow(l); });
+      html += '</tbody></table></div>';
+    } else {
+      html += '<div class="wd-cards wd-grid">';
+      links.forEach(function(l) { html += _buildWebDAVCard(l); });
+      html += '</div>';
     }
 
-    var html = listHeader + '<div class="wd-cards ' + modeClass + '">';
-    links.forEach(function(l) {
-      var expired = l.is_expired;
-      var revealed = l.is_revealed;
-      var requireAuth = l.require_auth;
-      var statusColor = expired ? 'var(--error)' : 'var(--success)';
-      var statusLabel = expired ? '已过期' : '有效';
-      var showToken = requireAuth ? l.token : (revealed ? l.display_token : l.token);
-      var showCopyBtn = !expired && (requireAuth || !revealed);
-      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px' + (expired ? ';opacity:0.5' : '') + '">';
-      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
-      html += '<span style="font-weight:700">' + escHtml(l.target_name) + '</span>';
-      html += '<span style="font-size:12px;color:' + statusColor + '">' + statusLabel + '</span></div>';
-      var typeLabel = l.target_type === 'personal' ? '👤 个人目录' : '🌐 公共目录';
-      var typeColor = l.target_type === 'personal' ? 'var(--accent2)' : 'var(--accent)';
-      html += '<div class="wd-card-detail" style="font-size:11px;margin-bottom:4px">';
-      html += '<span style="color:' + typeColor + ';font-size:10px;font-weight:600;margin-right:8px">' + typeLabel + '</span>';
-      html += '<span style="font-family:monospace;color:var(--text-muted);word-break:break-all">📂 ' + escHtml(l.display_path || l.target_path || '/') + '</span>';
-      html += '</div>';
-      html += '<div class="wd-card-detail" style="font-family:monospace;font-size:12px;color:var(--accent);margin-bottom:6px">' + escHtml(showToken) + '</div>';
-      html += '<div class="wd-card-detail" style="font-size:11px;color:var(--text-muted);margin-bottom:8px">';
-      html += '创建: ' + (l.created_at ? l.created_at.substring(0,10) : '-');
-      html += ' · 过期: ' + (l.expires_at ? l.expires_at.substring(0,10) : '永久');
-      html += ' · 访问: ' + l.access_count + '次';
-      html += ' · <span style="color:' + (requireAuth ? 'var(--warning)' : 'var(--text-muted)') + ';font-size:10px">' + (requireAuth ? '🔒 需认证' : '🔓 无认证') + '</span></div>';
-      html += '<div class="wd-card-detail" style="display:flex;gap:8px;align-items:center">';
-      if (showCopyBtn) {
-        html += '<button class="modal-btn modal-btn-primary" style="font-size:11px;padding:4px 12px" onclick="window.__fm._copyWebDAVUrl(\'' + l.token + '\',\'' + window.location.origin + '\',' + (requireAuth ? 'true' : 'false') + ')">📋 复制链接</button>';
-      }
-      html += '<button class="modal-btn modal-btn-secondary" style="font-size:11px;padding:4px 12px" onclick="if(confirm(\'确定删除此 WebDAV 链接？\'))window.__fm.deleteWebDAVLink(\'' + l.token + '\')">删除</button>';
-      html += '</div>';
-      // List mode compact actions
-      html += '<div class="wd-card-actions-list" style="display:none;margin-top:4px">';
-      if (showCopyBtn) {
-        html += '<button class="modal-btn modal-btn-primary" style="font-size:10px;padding:2px 8px" onclick="window.__fm._copyWebDAVUrl(\'' + l.token + '\',\'' + window.location.origin + '\',' + (requireAuth ? 'true' : 'false') + ')">复制</button>';
-      }
-      html += '<button class="modal-btn modal-btn-secondary" style="font-size:10px;padding:2px 8px" onclick="if(confirm(\'确定删除？\'))window.__fm.deleteWebDAVLink(\'' + l.token + '\')">删除</button>';
-      html += '</div>';
-      html += '</div>';
-    });
-    html += '</div>';
     html += paginationHtml;
     container.innerHTML = html;
+  }
+
+  function _buildWebDAVRow(l) {
+    var expired = l.is_expired;
+    var disabled = l.disabled;
+    var requireAuth = l.require_auth;
+    var isDir = l.is_directory;
+    var statusColor = disabled ? 'var(--warning)' : (expired ? 'var(--error)' : 'var(--success)');
+    var statusLabel = disabled ? '已禁用' : (expired ? '已过期' : '有效');
+    var showToken = requireAuth ? l.token : (l.is_revealed ? l.display_token : l.token);
+    var showCopyBtn = !expired && !disabled && (requireAuth || !l.is_revealed);
+    var displayPath = l.display_path || l.target_path || '/';
+    var typeIcon = isDir
+      ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="#ffc107" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
+      : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#90a4ae" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    var typeLabel = l.target_type === 'personal' ? '👤 个人' : '🌐 公共';
+    // Near expiry: within 30 days of expires_at
+    var nearExpiry = !expired && !disabled && l.expires_at && (new Date(l.expires_at) - new Date()) < 30 * 24 * 3600 * 1000 && (new Date(l.expires_at) - new Date()) > 0;
+    // ---- 有效期列 ----
+    var expiryHtml = '';
+    if (l.expires_at) {
+      var expDate = new Date(l.expires_at);
+      var nowDate = new Date();
+      var remainDays = Math.ceil((expDate - nowDate) / (24 * 3600 * 1000));
+      var createdStr = l.created_at ? l.created_at.substring(5, 10) : '-';
+      if (remainDays <= 0) {
+        expiryHtml = '<span style="font-size:12px;color:var(--text-muted)">' + createdStr + '</span><br><span style="font-size:11px;color:var(--error)">已过期</span>';
+      } else if (remainDays <= 3) {
+        expiryHtml = '<span style="font-size:12px;color:var(--text-muted)">' + createdStr + '</span><br><span style="font-size:11px;color:var(--error);font-weight:600">剩' + remainDays + '天</span>';
+      } else if (remainDays <= 30) {
+        expiryHtml = '<span style="font-size:12px;color:var(--text-muted)">' + createdStr + '</span><br><span style="font-size:11px;color:var(--warning);font-weight:500">剩' + remainDays + '天</span>';
+      } else {
+        expiryHtml = '<span style="font-size:12px;color:var(--text-muted)">' + createdStr + '</span><br><span style="font-size:11px;color:var(--text-muted)">剩' + remainDays + '天</span>';
+      }
+    } else {
+      var createdStr2 = l.created_at ? l.created_at.substring(5, 10) : '-';
+      expiryHtml = '<span style="font-size:12px;color:var(--text-muted)">' + createdStr2 + '</span><br><span style="font-size:11px;color:var(--success)">永久</span>';
+    }
+    // ---- 操作按钮 ----
+    var btnHtml = '';
+    if (showCopyBtn) {
+      btnHtml += '<button class="modal-btn modal-btn-primary" style="font-size:10px;padding:2px 7px;margin-right:3px" onclick="window.__fm._copyWebDAVUrl(\'' + l.token + '\',\'' + window.location.origin + '\',' + (requireAuth ? 'true' : 'false') + ')" title="复制链接">📋</button>';
+    }
+    if (!expired) {
+      btnHtml += '<button class="modal-btn modal-btn-secondary" style="font-size:10px;padding:2px 7px;margin-right:3px;color:' + (disabled ? 'var(--success)' : 'var(--warning)') + '" onclick="window.__fm._toggleWebDAVDisabled(\'' + l.token + '\')" title="' + (disabled ? '启用' : '禁用') + '">' + (disabled ? '▶' : '⏸') + '</button>';
+    }
+    if (nearExpiry) {
+      btnHtml += '<button class="modal-btn modal-btn-primary" style="font-size:10px;padding:2px 7px;margin-right:3px" onclick="window.__fm._extendWebDAV(\'' + l.token + '\')" title="续期至1年后">🔄</button>';
+    }
+    btnHtml += '<button class="modal-btn modal-btn-secondary wd-btn-del" style="font-size:10px;padding:2px 7px" onclick="if(confirm(\'确定删除？\'))window.__fm.deleteWebDAVLink(\'' + l.token + '\')" title="删除">🗑</button>';
+    return '<tr class="fm-row' + ((expired || disabled) ? '" style="opacity:' + (expired ? '0.5' : '0.55') : '') + '">' +
+      '<td class="td-icon">' + typeIcon + '</td>' +
+      '<td class="td-name"><div style="font-weight:600">' + escHtml(l.target_name) + '</div><div style="font-size:10px;color:var(--text-muted);margin-top:1px">' + typeLabel + '</div></td>' +
+      '<td class="td-wd-path" style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escHtml(displayPath) + '">' + escHtml(displayPath) + '</td>' +
+      '<td class="td-wd-url" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escHtml(showToken) + '"><code style="font-size:10px;color:var(--accent)">' + escHtml(showToken) + '</code></td>' +
+      '<td class="td-wd-expiry">' + expiryHtml + '</td>' +
+      '<td class="td-status-sm" style="font-size:12px;color:' + statusColor + ';font-weight:600;white-space:nowrap">' + statusLabel + '</td>' +
+      '<td class="td-menu" style="white-space:nowrap">' + btnHtml + '</td>' +
+    '</tr>';
+  }
+
+  function _buildWebDAVCard(l) {
+    var expired = l.is_expired;
+    var disabled = l.disabled;
+    var revealed = l.is_revealed;
+    var requireAuth = l.require_auth;
+    var isDir = l.is_directory;
+    var statusColor = disabled ? 'var(--warning)' : (expired ? 'var(--error)' : 'var(--success)');
+    var statusLabel = disabled ? '已禁用' : (expired ? '已过期' : '有效');
+    var showToken = requireAuth ? l.token : (revealed ? l.display_token : l.token);
+    var showCopyBtn = !expired && !disabled && (requireAuth || !revealed);
+    var displayPath = l.display_path || l.target_path || '/';
+    var typeLabel = l.target_type === 'personal' ? '👤 个人目录' : '🌐 公共目录';
+    var typeColor = l.target_type === 'personal' ? 'var(--accent2)' : 'var(--accent)';
+    var nearExpiry = !expired && !disabled && l.expires_at && (new Date(l.expires_at) - new Date()) < 30 * 24 * 3600 * 1000 && (new Date(l.expires_at) - new Date()) > 0;
+    var typeIcon = isDir
+      ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="#ffc107" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
+      : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#90a4ae" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    var html = '<div class="wd-card' + ((expired || disabled) ? (expired ? ' wd-expired' : '" style="opacity:0.55') : '') + '">';
+    html += '<div class="wd-card-header"><span class="wd-card-icon">' + typeIcon + '</span><span class="wd-card-name" title="' + escHtml(l.target_name) + '">' + escHtml(l.target_name) + '</span><span class="wd-card-status" style="color:' + statusColor + '">' + statusLabel + '</span></div>';
+    html += '<div class="wd-card-detail wd-detail-type"><span style="color:' + typeColor + ';font-size:10px;font-weight:600;margin-right:8px">' + typeLabel + '</span><span style="font-family:monospace;color:var(--text-muted);word-break:break-all">📂 ' + escHtml(displayPath) + '</span></div>';
+    html += '<div class="wd-card-detail wd-detail-url" style="font-family:monospace;font-size:12px;color:var(--accent);word-break:break-all">' + escHtml(showToken) + '</div>';
+    html += '<div class="wd-card-detail wd-detail-meta" style="font-size:11px;color:var(--text-muted)">创建: ' + (l.created_at ? l.created_at.substring(0,10) : '-') + ' · 过期: ' + (l.expires_at ? l.expires_at.substring(0,10) : '永久') + ' · 访问: ' + l.access_count + '次 · <span style="color:' + (requireAuth ? 'var(--warning)' : 'var(--text-muted)') + ';font-size:10px">' + (requireAuth ? '🔒 需认证' : '🔓 无认证') + '</span></div>';
+    html += '<div class="wd-card-actions">';
+    if (showCopyBtn) { html += '<button class="modal-btn modal-btn-primary" style="font-size:11px;padding:4px 12px" onclick="window.__fm._copyWebDAVUrl(\'' + l.token + '\',\'' + window.location.origin + '\',' + (requireAuth ? 'true' : 'false') + ')">📋 复制链接</button>'; }
+    if (!expired) {
+      html += '<button class="modal-btn modal-btn-secondary" style="font-size:11px;padding:4px 12px;color:' + (disabled ? 'var(--success)' : 'var(--warning)') + '" onclick="window.__fm._toggleWebDAVDisabled(\'' + l.token + '\')">' + (disabled ? '▶ 启用' : '⏸ 禁用') + '</button>';
+    }
+    if (nearExpiry) {
+      html += '<button class="modal-btn modal-btn-primary" style="font-size:11px;padding:4px 12px" onclick="window.__fm._extendWebDAV(\'' + l.token + '\')">🔄 续期</button>';
+    }
+    html += '<button class="modal-btn modal-btn-secondary wd-btn-del" style="font-size:11px;padding:4px 12px" onclick="if(confirm(\'确定删除此 WebDAV 链接？\'))window.__fm.deleteWebDAVLink(\'' + l.token + '\')">🗑 删除</button>';
+    html += '</div></div>';
+    return html;
   }
 
   function deleteWebDAVLink(token) {
@@ -8941,10 +9568,13 @@
   };
 
   // 分享相关函数赋值
-  window.__fm.copyShare = copyShareFn;
+  window.__fm.copyShare = copyShareUrlFn;
+  window.__fm.copyShareUrl = copyShareUrlFn;
+  window.__fm.shareText = shareTextFn;
   window.__fm.viewShare = viewShareFn;
   window.__fm.showShareQr = showShareQrFn;
   window.__fm._copyQrUrl = _copyQrUrlFn;
+  window.__fm._shareQrText = _shareQrTextFn;
   window.__fm.deleteShareRecord = deleteShareRecordFn;
   window.__fm.showShareManage = function() { showShareManage(); };
   window.__fm._toggleShareView = function(mode) {
@@ -8959,6 +9589,21 @@
     loadShareManage();
   };
   window.__fm.createShareForSelected = function() { createShareForSelected(); };
+  // 分享：切换禁用/启用
+  window.__fm._toggleShareDisabled = function(shareId) {
+    axios.patch('/api/share/' + shareId + '/toggle-disabled').then(function(res) {
+      if (res.data.code === 0) { showToast(res.data.message); loadShareManage(); }
+      else showToast(res.data.message || '操作失败', '&#9888;');
+    }).catch(function() { showToast('操作失败', '&#9888;'); });
+  };
+  // 分享：批量删除过期
+  window.__fm._deleteExpiredShares = function() {
+    if (!confirm('确定删除所有已过期的分享？此操作不可撤销。')) return;
+    axios.delete('/api/share/expired').then(function(res) {
+      if (res.data.code === 0) { showToast(res.data.message); loadShareManage(); }
+      else showToast(res.data.message || '删除失败', '&#9888;');
+    }).catch(function() { showToast('删除失败', '&#9888;'); });
+  };
   window.__fm.goOffline = function() { showView('offline'); };
   // WebDAV 相关函数
   window.__fm.createWebDAVLink = function(item) { createWebDAVLink(item); };
@@ -8972,6 +9617,29 @@
     if (page < 1) return;
     _webdavPage = page;
     loadWebDAVManage();
+  };
+  // WebDAV：切换禁用/启用
+  window.__fm._toggleWebDAVDisabled = function(token) {
+    axios.patch('/api/webdav/links/' + token + '/toggle-disabled').then(function(res) {
+      if (res.data.code === 0) { showToast(res.data.message); loadWebDAVManage(); }
+      else showToast(res.data.message || '操作失败', '&#9888;');
+    }).catch(function() { showToast('操作失败', '&#9888;'); });
+  };
+  // WebDAV：续期
+  window.__fm._extendWebDAV = function(token) {
+    if (!confirm('将 WebDAV 链接有效期延长至一年（从今天起算），确定？')) return;
+    axios.post('/api/webdav/links/' + token + '/extend').then(function(res) {
+      if (res.data.code === 0) { showToast(res.data.message); loadWebDAVManage(); }
+      else showToast(res.data.message || '续期失败', '&#9888;');
+    }).catch(function() { showToast('续期失败', '&#9888;'); });
+  };
+  // WebDAV：批量删除过期
+  window.__fm._deleteExpiredWebDAV = function() {
+    if (!confirm('确定删除所有已过期的 WebDAV 链接？此操作不可撤销。')) return;
+    axios.delete('/api/webdav/links/expired').then(function(res) {
+      if (res.data.code === 0) { showToast(res.data.message); loadWebDAVManage(); }
+      else showToast(res.data.message || '删除失败', '&#9888;');
+    }).catch(function() { showToast('删除失败', '&#9888;'); });
   };
   window.__fm.showStorageManage = function() { showView('admin-storage'); };
 

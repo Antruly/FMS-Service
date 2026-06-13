@@ -30,13 +30,13 @@ try { TrafficBuffer = require('../lib/redis').TrafficBuffer; } catch (e) {}
 function logTraffic(userId, guestIp, actionType, fileId, fileName, fileSize, bytesCount) {
   if (bytesCount <= 0) return;
 
-  var record = { user_id: userId || 0, guest_ip: guestIp || '', action_type: actionType, file_id: fileId || 0, file_name: fileName || '', file_size: fileSize || 0, bytes_count: bytesCount || 0 };
+  var record = { user_id: userId || 0, guest_ip: guestIp || '', action_type: actionType, file_id: fileId || 0, file_name: fileName || '', file_size: fileSize || 0, bytes_count: bytesCount || 0, traffic_category: 'file_transfer' };
 
   if (TrafficBuffer) {
     TrafficBuffer.add(record);
   } else {
     try {
-      TrafficLog.log(record.user_id, record.guest_ip, record.action_type, record.file_id, record.file_name, record.file_size, record.bytes_count);
+      TrafficLog.log(record.user_id, record.guest_ip, record.action_type, record.file_id, record.file_name, record.file_size, record.bytes_count, record.traffic_category);
       // 更新配额
       if (userId > 0) {
         TrafficQuota.addUsed(userId, '', false, bytesCount);
@@ -48,6 +48,7 @@ function logTraffic(userId, guestIp, actionType, fileId, fileName, fileSize, byt
 }
 const logger = require('../lib/logger');
 const QRCode = require('qrcode');
+const sharp = require('sharp');
 
 // ==================== 辅助函数 ====================
 function getRemainingMs(expiresAt) {
@@ -235,6 +236,7 @@ router.get('/share', requireAuth, function(req, res) {
       target_ids: targetIds,
       is_mixed: targetIds.length > 1,
       is_expired: info.is_expired,
+      disabled: !!s.disabled,
       invalid_reason: info.invalid_reason,
       item_count: info.item_count,
       created_at: s.created_at,
@@ -242,6 +244,7 @@ router.get('/share', requireAuth, function(req, res) {
       remaining_text: formatRemainingTime(s.expires_at),
       remaining_ms: getRemainingMs(s.expires_at),
       download_count: s.download_count || 0,
+      view_count: s.view_count || 0,
       max_downloads: s.max_downloads || 0,
       is_directory: s.target_type === 'public' ? info.is_directory : (s.target_type === 'dir'),
       url: '/share/' + s.share_hash + (s.extraction_code ? '?extraction_code=' + s.extraction_code : '')
@@ -262,6 +265,26 @@ router.delete('/share/:id', requireAuth, function(req, res) {
 
   logger.logShare(req, 'share_delete', 'share', '', shareId);
   res.json({ code: 0, message: '分享已删除', data: null });
+});
+
+// PATCH /api/share/:id/toggle-disabled — 切换禁用/启用
+router.patch('/share/:id/toggle-disabled', requireAuth, function(req, res) {
+  var user = req.user;
+  var shareId = parseInt(req.params.id, 10);
+  var result = Share.toggleDisabled(shareId, user.id, !!user.is_admin);
+  if (!result.success) {
+    if (result.reason === 'not_found') return res.json({ code: 1, message: '分享不存在或无权限', data: null });
+    if (result.reason === 'expired') return res.json({ code: 1, message: '分享已过期，无法重新启用，请删除后重新创建', data: null });
+  }
+  logger.logShare(req, 'share_toggle_disabled', 'share', '', shareId);
+  res.json({ code: 0, message: '分享已' + (result.disabled ? '禁用' : '启用'), data: { disabled: result.disabled } });
+});
+
+// DELETE /api/share/expired — 批量删除过期分享
+router.delete('/share/expired', requireAuth, function(req, res) {
+  var count = Share.batchDeleteExpired(req.user.id);
+  logger.logShare(req, 'share_batch_delete_expired', 'share', '', 0);
+  res.json({ code: 0, message: '已删除 ' + count + ' 个过期分享', data: { deleted: count } });
 });
 
 // ==================== API: 获取分享访问日志 ====================
@@ -299,6 +322,7 @@ router.get('/share/public/:hash', function(req, res) {
 
   // 记录查看统计
   try { ShareStats.incrementView(share.id); } catch(e) {}
+  try { Share.touchAccess(share.id); } catch(e) {}
   try {
     var clientIp = (req.ip || '').replace(/^::ffff:/, '') || '';
     ShareAccessLog.log(share.id, 'view', clientIp, 0, '访客', 0, '');
@@ -338,6 +362,7 @@ router.post('/share/verify/:hash', function(req, res) {
   }
 
   var info = Share.getPublicInfo(result.share);
+  try { Share.touchAccess(result.share.id); } catch(e) {}
   res.json({
     code: 0,
     message: '验证成功',
@@ -1030,13 +1055,8 @@ router.get('/share/download/:hash/:fileId', function(req, res) {
       }
     }
 
-    // 记录流量（用户或访客）
-    res.on('finish', function() {
-      var sentBytes = parseInt(res.getHeader('content-length') || '0', 10);
-      if (sentBytes > 0) {
-        logTraffic(dlUserId, dlGuestIp, 'download', file.id, file.name, decryptedSize, sentBytes);
-      }
-    });
+    // 设置流量元数据，由全局中间件在响应完成时按实际传输字节记录
+    res._trafficMeta = { category: 'file_transfer', action_type: 'download', file_id: file.id, file_name: file.name, file_size: decryptedSize, user_id: dlUserId, guest_ip: dlGuestIp };
 
     readStream.pipe(res);
     log.info('[ShareDownload] 分享下载: ' + file.name + ' (加密:' + encVersion + ', ' + Math.round(decryptedSize / 1024 / 1024 * 10) / 10 + 'MB)');
@@ -1044,21 +1064,47 @@ router.get('/share/download/:hash/:fileId', function(req, res) {
 
 // ==================== API: 生成本地二维码 ====================
 // GET /api/share/qr?url=xxx
-router.get('/share/qr', function(req, res) {
-  var url = req.query.url;
-  if (!url) return res.status(400).json({ code: 1, message: '缺少url参数', data: null });
+router.get('/share/qr', async function(req, res) {
+  try {
+    var url = req.query.url;
+    if (!url) return res.status(400).json({ code: 1, message: '缺少url参数', data: null });
 
-  var size = parseInt(req.query.size, 10) || 240;
-  size = Math.min(Math.max(size, 100), 400);
+    var size = parseInt(req.query.size, 10) || 240;
+    size = Math.min(Math.max(size, 100), 400);
 
-  QRCode.toDataURL(url, {
-    width: size,
-    margin: 2,
-    color: { dark: '#e8eaf0', light: '#07090f' }
-  }, function(err, dataUrl) {
-    if (err) return res.status(500).json({ code: 1, message: '生成二维码失败', data: null });
+    var isLight = req.query.theme === 'light';
+    var darkColor = isLight ? '#1a1a2e' : '#e8eaf0';
+    var lightColor = isLight ? '#ffffff' : '#07090f';
+
+    // 1. 生成二维码为 PNG buffer
+    var qrBuf = await QRCode.toBuffer(url, {
+      width: size,
+      margin: 2,
+      color: { dark: darkColor, light: lightColor }
+    });
+
+    // 2. 将 logo 缩放到二维码的 22%，叠加到正中央
+    var logoPath = path.join(__dirname, '..', 'public', 'favicon.png');
+    var logoSize = Math.round(size * 0.22);
+    if (logoSize % 2 !== 0) logoSize++;
+
+    var logoBuf = await sharp(logoPath)
+      .resize(logoSize, logoSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+
+    // 3. 合成：logo 居中叠加到二维码上
+    var resultBuf = await sharp(qrBuf)
+      .composite([{ input: logoBuf, gravity: 'center' }])
+      .png()
+      .toBuffer();
+
+    var dataUrl = 'data:image/png;base64,' + resultBuf.toString('base64');
     res.json({ code: 0, data: dataUrl });
-  });
+  } catch (err) {
+    log.error('QR生成失败:', err.message);
+    res.status(500).json({ code: 1, message: '生成二维码失败', data: null });
+  }
 });
 
 // ==================== 辅助：构建个人目录/文件的完整路径 ====================

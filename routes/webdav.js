@@ -158,12 +158,29 @@ function logWebDAV(req, link, action, targetName, size, status) {
     ActionLog.log(link.user_id, '', action, 'webdav_file', targetName, link.id, ip, req.headers['user-agent'] || 'WebDAV', status ? 'success' : 'error', '');
   } catch(e) {}
 }
-function trackTraffic(req, link, bytes) {
+function trackTraffic(req, res, link, bytes, actionType) {
+  var ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().replace(/^::ffff:/, '');
+  res._trafficMeta = {
+    category: 'file_transfer',
+    action_type: actionType || 'download',
+    file_id: link.id,
+    file_name: '',
+    file_size: bytes,
+    user_id: link.user_id,
+    guest_ip: ip
+  };
+}
+
+// 直接记录上传流量（入站字节，中间件无法计数）
+function recordUploadTraffic(link, fileName, totalBytes, req) {
   try {
-    var TrafficLog = require('../lib/db').TrafficLog;
     var ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().replace(/^::ffff:/, '');
-    TrafficLog.log(link.user_id, ip, 'download', link.id, '', bytes);
-  } catch(e) {}
+    var db = require('../lib/db');
+    db.TrafficLog.log(link.user_id, ip, 'upload', link.id, fileName || '', totalBytes, totalBytes, 'file_transfer');
+    db.TrafficQuota.addUsed(link.user_id, '', false, totalBytes);
+  } catch(e) {
+    log.error('[WebDAV] recordUploadTraffic error:', e.message);
+  }
 }
 
 // ==================== WebDAV 协议处理 ====================
@@ -240,6 +257,7 @@ function resolveWebDAV(token, subPath, req, res) {
   var link = WebDAVLink.findByToken(token);
   if (!link) { res.status(404).end('Token not found'); return null; }
   if (WebDAVLink.checkExpired(link)) { res.status(410).end('Token expired'); return null; }
+  if (link.disabled) { res.status(423).end('Token disabled'); return null; }
 
   if ((link.target_type || 'public') === 'personal') {
     log.debug('[WebDAV] PROPFIND personal link, userId=' + link.user_id + ', method=' + req.method);
@@ -597,7 +615,7 @@ function personalGetFile(resolved, subPath, req, res) {
     v2Stream.on('error', function() { if (!res.headersSent) res.status(500).end('Decrypt error'); });
     v2Stream.pipe(res);
     logWebDAV(req, resolved.link, 'download', file.name, v2Size, true);
-    trackTraffic(req, resolved.link, v2Size);
+    trackTraffic(req, res, resolved.link, v2Size);
     return;
   }
   // V1 加密文件 Range 支持：解密后切片（0字节也可正常解密）
@@ -623,7 +641,7 @@ function personalGetFile(resolved, subPath, req, res) {
     ds.on('error', function() { if (!res.headersSent) res.status(500).end('Decrypt error'); });
     ds.pipe(res);
     logWebDAV(req, resolved.link, 'download', file.name, fileSize, true);
-    trackTraffic(req, resolved.link, fileSize);
+    trackTraffic(req, res, resolved.link, fileSize);
     return;
   }
 
@@ -633,7 +651,7 @@ function personalGetFile(resolved, subPath, req, res) {
   if (range) { serveRange(res, result.plaintext, result.plaintext.length, range, mime, inline, file.name); return; }
   res.setHeader('Content-Length', result.plaintext.length);
   logWebDAV(req, resolved.link, 'download', file.name, result.plaintext.length, true);
-  trackTraffic(req, resolved.link, result.plaintext.length);
+  trackTraffic(req, res, resolved.link, result.plaintext.length);
   res.send(result.plaintext);
 }
 
@@ -719,6 +737,7 @@ function personalPutFile(resolved, subPath, res, req) {
         require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
         cacheInvalidate(resolved.userId, dirId);
         logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
+        recordUploadTraffic(resolved.link, fileName, totalBytes, req);
         log.info('[WebDAV-PUT] 秒传命中: ' + fileName + ' dirId=' + dirId + ' hash=' + fileHash.substring(0,12));
         res.status(201).end('Created');
         return;
@@ -745,6 +764,7 @@ function personalPutFile(resolved, subPath, res, req) {
       require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
       cacheInvalidate(resolved.userId, dirId);
       logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
+      recordUploadTraffic(resolved.link, fileName, totalBytes, req);
       log.debug('[WebDAV-PUT] success: ' + fileName + ' dirId=' + dirId + ' size=' + Math.round(totalBytes/1024) + 'KB storageId=' + storageId + ' vfId=' + vfId);
       res.status(201).end('Created');
     } catch(e) {
@@ -1202,7 +1222,7 @@ function getHandler(req, res) {
     readStream.pipe(res);
     // 记录下载日志和流量
     logWebDAV(req, resolved.link, 'download', path.basename(fullPath), stat.size, true);
-    trackTraffic(req, resolved.link, stat.size);
+    trackTraffic(req, res, resolved.link, stat.size);
   }
 }
 
@@ -1244,7 +1264,8 @@ router.put('/webdav/:token/*', function(req, res) {
     var fileStat = fs.statSync(fullPath);
     var etag = '"' + fileStat.size.toString(16) + '-' + fileStat.mtime.getTime().toString(16) + '"';
     res.setHeader('ETag', etag);
-    logWebDAV(req, resolved.link, 'upload', path.basename(fullPath), fileStat.size, true);
+    logWebDAV(req, resolved.link, 'upload', path.basename(fullPath), totalBytes, true);
+    recordUploadTraffic(resolved.link, path.basename(fullPath), totalBytes, req);
     res.status(201).end('Created');
   });
   ws.on('error', function(e) { if (!res.headersSent) res.status(500).end(e.message); });
@@ -1512,7 +1533,8 @@ router.get('/api/webdav/links', requireAuth, function(req, res) {
       created_at: l.created_at,
       last_accessed: l.last_accessed,
       access_count: l.access_count,
-      is_expired: WebDAVLink.checkExpired(l)
+      is_expired: WebDAVLink.checkExpired(l),
+      disabled: !!l.disabled
     };
   });
   res.json({ code: 0, data: { total: total, links: result } });
@@ -1572,6 +1594,13 @@ router.post('/api/webdav/links/:token/reveal', requireAuth, function(req, res) {
   res.json({ code: 0, message: '已标记为已查看' });
 });
 
+// DELETE /api/webdav/links/expired — 批量删除过期链接（必须在 :token 前，避免 expired 被 :token 捕获）
+router.delete('/api/webdav/links/expired', requireAuth, function(req, res) {
+  var WebDAVLink = require('../lib/db').WebDAVLink;
+  var count = WebDAVLink.batchDeleteExpired(req.user.id);
+  res.json({ code: 0, message: '已删除 ' + count + ' 个过期 WebDAV 链接', data: { deleted: count } });
+});
+
 // DELETE /api/webdav/links/:token - 删除 WebDAV 链接
 router.delete('/api/webdav/links/:token', requireAuth, function(req, res) {
   var WebDAVLink = require('../lib/db').WebDAVLink;
@@ -1579,6 +1608,45 @@ router.delete('/api/webdav/links/:token', requireAuth, function(req, res) {
   if (!link) return res.json({ code: 1, message: '链接不存在' });
   WebDAVLink.delete(link.id, req.user.id);
   res.json({ code: 0, message: '已删除' });
+});
+
+// PATCH /api/webdav/links/:token/toggle-disabled — 切换禁用/启用
+router.patch('/api/webdav/links/:token/toggle-disabled', requireAuth, function(req, res) {
+  var WebDAVLink = require('../lib/db').WebDAVLink;
+  var link = WebDAVLink.findByUserAndToken(req.user.id, req.params.token);
+  if (!link && !req.user.is_admin) return res.json({ code: 1, message: '链接不存在或无权限' });
+  var linkId = link ? link.id : (WebDAVLink.findByToken(req.params.token) || {}).id;
+  if (!linkId) return res.json({ code: 1, message: '链接不存在' });
+  var result = WebDAVLink.toggleDisabled(linkId, req.user.id, !!req.user.is_admin);
+  if (!result.success) {
+    if (result.reason === 'not_found') return res.json({ code: 1, message: '链接不存在或无权限' });
+    if (result.reason === 'expired') return res.json({ code: 1, message: '链接已过期，无法重新启用，请删除后重新创建' });
+  }
+  res.json({ code: 0, message: '已' + (result.disabled ? '禁用' : '启用'), data: { disabled: result.disabled } });
+});
+
+// POST /api/webdav/links/:token/extend — 延长有效期（到期前30天内可续期1年）
+router.post('/api/webdav/links/:token/extend', requireAuth, function(req, res) {
+  var WebDAVLink = require('../lib/db').WebDAVLink;
+  var result = WebDAVLink.extend(req.params.token, req.user.id);
+  if (!result.success) {
+    if (result.reason === 'not_found') return res.json({ code: 1, message: '链接不存在' });
+    if (result.reason === 'permanent_link') return res.json({ code: 1, message: '永久链接无需续期' });
+    if (result.reason === 'not_near_expiry') return res.json({ code: 1, message: '仅可在到期前 30 天内续期，当前剩余 ' + result.remaining_days + ' 天' });
+  }
+  res.json({ code: 0, message: '已延长至 ' + result.new_expires_at.substring(0, 10), data: { expires_at: result.new_expires_at } });
+});
+
+// GET /api/admin/webdav — 管理员：列出所有用户 WebDAV 链接（token 加密）
+router.get('/api/admin/webdav', requireAuth, function(req, res) {
+  if (!req.user.is_admin) return res.json({ code: 403, message: '需要管理员权限', data: null });
+  var page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  var limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  var userId = parseInt(req.query.user_id, 10) || 0;
+  var keyword = req.query.keyword || '';
+  var WebDAVLink = require('../lib/db').WebDAVLink;
+  var result = WebDAVLink.listAllAdmin(page, limit, userId, keyword);
+  res.json({ code: 0, data: { total: result.total, page: page, limit: limit, links: result.links } });
 });
 
 // 导出 requireAuth 供 server.js 使用

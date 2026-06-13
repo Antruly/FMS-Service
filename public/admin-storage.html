@@ -276,6 +276,9 @@ tr:hover td{background:rgba(0,212,255,0.03)}
 .repair-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:900px){.repair-grid{grid-template-columns:1fr}}
 
+/* Desktop: hide file cards (overridden by @media on mobile) */
+.file-card-list{display:none}
+
 /* ====== Responsive ====== */
 @media(max-width:768px){
   main{padding:12px}
@@ -285,7 +288,21 @@ tr:hover td{background:rgba(0,212,255,0.03)}
   .mirror-row{flex-direction:column;align-items:flex-start}
   .mirror-actions{width:100%;justify-content:flex-end}
   .stats{grid-template-columns:repeat(2,1fr)}
-  .tabs{overflow-x:auto}
+  .tabs{overflow-x:auto}  /* Hide tables on mobile, show file cards (keep modal tables visible) */
+  .table-wrap{display:none}
+  .modal .table-wrap{display:block}
+  .file-card-list{display:flex;flex-direction:column;gap:8px}
+  .file-card{
+    background:var(--bg-card);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:12px;display:flex;flex-direction:column;gap:4px;
+  }
+  .file-card-selected{background:rgba(0,212,255,.08);border-color:var(--accent);box-shadow:0 0 12px var(--accent-glow)}
+  .file-card-header{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600}
+  .file-card-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary)}
+  .file-card-row span:last-child{font-weight:500;color:var(--text-primary)}
+  .file-card-actions{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
+  .search-bar{flex-direction:column}
+
 }
 </style>
 <style>
@@ -381,6 +398,8 @@ body.embed-mode .tabs { margin-bottom: 12px; }
         <tbody id="file-table-body"><tr><td colspan="10" class="empty">点击搜索查看文件</td></tr></tbody>
       </table>
     </div>
+        <!-- Mobile file cards -->
+    <div id="file-cards" class="file-card-list"></div>
     <div class="pagination" id="file-pagination"></div>
   </div>
 </div>
@@ -1037,6 +1056,7 @@ function loadFiles(page){
       });
     }
     $('file-table-body').innerHTML=html;
+    if(typeof syncMobileFileCards==='function')syncMobileFileCards();
     $('check-all-files').checked=false;
     var totalPages=Math.ceil((d.total||0)/20);
     var ph='';
@@ -1057,6 +1077,23 @@ function onCheckboxChange(){
   });
   updateCleanupUI();
 }
+// Mobile card checkbox handler
+function onCardCheckboxChange(cb){
+  var id=parseInt(cb.getAttribute('data-id'));
+  var card=cb.closest('.file-card');
+  if(cb.checked){
+    cleanupSet.add(id);
+    if(card)card.classList.add('file-card-selected');
+  }else{
+    cleanupSet.delete(id);
+    if(card)card.classList.remove('file-card-selected');
+  }
+  // Sync table checkbox
+  var tbCb=document.querySelector('.file-checkbox[data-id="'+id+'"]');
+  if(tbCb)tbCb.checked=cb.checked;
+  updateCleanupUI();
+}
+
 
 function toggleAllCheckboxes(checked){
   var cbs=document.querySelectorAll('.file-checkbox');
@@ -1066,6 +1103,18 @@ function toggleAllCheckboxes(checked){
     if(checked)cleanupSet.add(id);else cleanupSet.delete(id);
   });
   updateCleanupUI();
+
+  // Sync card checkboxes
+  document.querySelectorAll('.file-card-checkbox').forEach(function(cb){
+    cb.checked=checked;
+    var id=parseInt(cb.getAttribute('data-id'));
+    if(checked)cleanupSet.add(id);else cleanupSet.delete(id);
+    var card=cb.closest('.file-card');
+    if(card){
+      if(checked)card.classList.add('file-card-selected');
+      else card.classList.remove('file-card-selected');
+    }
+  });
 }
 
 function clearAllCheckboxes(){
@@ -1077,6 +1126,14 @@ function clearAllCheckboxes(){
   });
   $('check-all-files').checked=false;
   updateCleanupUI();
+
+  // Clear card checkboxes
+  document.querySelectorAll('.file-card-checkbox').forEach(function(cb){
+    cb.checked=false;
+    cleanupSet.delete(parseInt(cb.getAttribute('data-id')));
+    var card=cb.closest('.file-card');
+    if(card)card.classList.remove('file-card-selected');
+  });
 }
 
 function selectByStatus(status){
@@ -1096,6 +1153,16 @@ function selectByStatus(status){
     });
   }
   updateCleanupUI();
+
+  // Sync card checkboxes
+  document.querySelectorAll('.file-card-checkbox').forEach(function(cb){
+    var id=cb.getAttribute('data-id');
+    if(ids.indexOf(id)!==-1){
+      cb.checked=true;
+      var card=cb.closest('.file-card');
+      if(card)card.classList.add('file-card-selected');
+    }
+  });
 }
 
 function clearCleanupList(){
@@ -1112,6 +1179,18 @@ function updateCleanupUI(){
   var cbs=document.querySelectorAll('.file-checkbox');
   cbs.forEach(function(cb){
     cb.checked=cleanupSet.has(parseInt(cb.getAttribute('data-id')));
+  });
+
+  // Sync card checkboxes
+  document.querySelectorAll('.file-card-checkbox').forEach(function(cb){
+    var id=parseInt(cb.getAttribute('data-id'));
+    var checked=cleanupSet.has(id);
+    cb.checked=checked;
+    var card=cb.closest('.file-card');
+    if(card){
+      if(checked)card.classList.add('file-card-selected');
+      else card.classList.remove('file-card-selected');
+    }
   });
 }
 
@@ -1218,6 +1297,7 @@ function loadDuplicates(){
       });
     });
     tbody.innerHTML=html;
+    if(typeof syncMobileFileCards==='function')syncMobileFileCards();
     $('file-pagination').innerHTML='<span style="font-size:11px;color:var(--warn)">📋 重复文件: '+groups.length+'组 ('+totalCount+'个文件) | 哈希相同但存储了多份</span>';
   });
 }
@@ -1250,6 +1330,7 @@ function loadLostFilesSimple(){
       html+='</tr>';
     });
     tbody.innerHTML=html;
+    if(typeof syncMobileFileCards==='function')syncMobileFileCards();
     $('file-pagination').innerHTML='<span style="font-size:11px;color:var(--danger)">⚠️ 丢失文件: '+all.length+'个 (物理:'+(d.physical?d.physical.count:0)+' | 逻辑:'+(d.logical?d.logical.count:0)+')</span>';
   });
 }
@@ -1555,6 +1636,50 @@ function startAutoUpgradeAll(){
 }
 
 // ==================== INIT ====================
+// ---- Mobile: sync file cards from table rows (global) ----
+function syncMobileFileCards(){
+  var cardsEl=$('file-cards');
+  var tbody=$('file-table-body');
+  if(!cardsEl||!tbody)return;
+  var rows=tbody.querySelectorAll('tr');
+  var html='';
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    var cells=r.querySelectorAll('td');
+    if(!cells.length||cells[0].colSpan>1){
+      html+='<div style="padding:20px;text-align:center;color:var(--text-muted)">'+r.textContent+'</div>';
+      continue;
+    }
+    var vals=[];
+    for(var j=0;j<cells.length;j++){
+      var c=cells[j];
+      vals.push({text:c.textContent.trim(),html:c.innerHTML});
+    }
+    // cells: [checkbox, ID, UUID, path, group, size, ref, status, users, actions]
+    // Extract checkbox info from cells[0]
+    var cbHtml=vals[0].html;
+    var fileId='',fileStatus='',checked='';
+    var m=cbHtml.match(/data-id="(\d+)"/); if(m)fileId=m[1];
+    m=cbHtml.match(/data-status="([^"]*)"/); if(m)fileStatus=m[1];
+    if(cbHtml.indexOf('checked')!==-1)checked=' checked';
+    html+='<div class="file-card'+(checked?' file-card-selected':'')+'" data-file-id="'+fileId+'" data-file-status="'+fileStatus+'">'+
+      '<div class="file-card-header">'+
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:0">'+
+          '<input type="checkbox" class="file-card-checkbox" data-id="'+fileId+'" data-status="'+fileStatus+'" '+checked+' onchange="onCardCheckboxChange(this)" onclick="event.stopPropagation()">'+
+          '<span>#'+vals[1].text+' <span style="font-size:10px;color:var(--text-muted)">'+vals[2].text.substring(0,14)+'...</span></span>'+
+        '</label>'+
+        vals[7].html+
+      '</div>'+
+      '<div class="file-card-row"><span>路径</span><span style="word-break:break-all;font-size:10px">'+vals[3].text+'</span></div>'+
+      '<div class="file-card-row"><span>组</span>'+vals[4].html+'</div>'+
+      '<div class="file-card-row"><span>大小</span><span>'+vals[5].text+'</span></div>'+
+      '<div class="file-card-row"><span>引用</span><span>'+vals[6].text+' · '+vals[8].text+'</span></div>'+
+      '<div class="file-card-actions">'+vals[9].html+'</div>'+
+    '</div>';
+  }
+  cardsEl.innerHTML=html;
+}
+
 document.addEventListener('DOMContentLoaded',function(){
   axios.get('/api/auth/me',{withCredentials:true}).then(function(r){
     if(r.data.code!==0||!r.data.data||!r.data.data.user){
@@ -1585,6 +1710,10 @@ document.addEventListener('DOMContentLoaded',function(){
     },15000); // 每15秒仅更新当前标签
   }).catch(function(){
     window.location.href='/login.html?return='+encodeURIComponent('/admin-storage.html');
+  // ---- Mobile: auto-sync file cards via MutationObserver ----
+  var ftb=$('file-table-body');
+  if(ftb)new MutationObserver(function(){syncMobileFileCards();}).observe(ftb,{childList:true,subtree:true,characterData:true});
+
   });
 });
 </script>

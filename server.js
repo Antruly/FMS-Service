@@ -26,6 +26,8 @@ const wsService = require('./lib/ws');
 const webdavRoutes = require('./routes/webdav');
 const storageRoutes = require('./routes/storage');
 const backupRoutes = require('./routes/backup');
+const QRCode = require('qrcode');
+const sharp = require('sharp');
 
 // 让 Express 支持 WebDAV 非常规 HTTP 方法（安全方式）
 var methods = require('methods');
@@ -163,6 +165,17 @@ var sessionConfig = {
 };
 if (redisStore) sessionConfig.store = redisStore;
 app.use(session(sessionConfig));
+
+// ==================== 全局流量统计中间件 ====================
+// 必须在 Session 之后（获取 userId），在路由和频率限制之前
+// 包装 res.write/res.end 计数所有出站字节，实现实时计流量
+try {
+  var trafficMiddleware = require('./lib/traffic-middleware');
+  app.use(trafficMiddleware);
+  log.info('[Traffic] 全局流量统计中间件已加载');
+} catch(e) {
+  log.warn('[Traffic] 流量统计中间件加载失败:', e.message);
+}
 
 // ==================== 请求频率监控 & 自动封禁 ====================
 // 注意：必须在 Session 之后运行，才能正确识别已登录用户提高限制
@@ -411,6 +424,31 @@ app.get('/setup', function(req, res) {
   res.send(getSetupPageHtml());
 });
 
+
+  // 通用二维码生成（带Logo）
+  app.get("/api/qr", async function(req, res) {
+    try {
+      var text = req.query.text;
+      if (!text) return res.status(400).json({ code: 1, message: "缺少text参数", data: null });
+      var size = parseInt(req.query.size, 10) || 200;
+      size = Math.min(Math.max(size, 100), 400);
+      var theme = req.query.theme || "dark";
+      var isLight = theme === "light";
+      var darkColor = isLight ? "#1a1a2e" : "#e8eaf0";
+      var lightColor = isLight ? "#ffffff" : "#07090f";
+      var qrBuf = await QRCode.toBuffer(text, { width: size, margin: 2, color: { dark: darkColor, light: lightColor } });
+      var logoPath = path.join(__dirname, "public", "favicon.png");
+      var logoSize = Math.round(size * 0.22);
+      if (logoSize % 2 !== 0) logoSize++;
+      var logoBuf = await sharp(logoPath).resize(logoSize, logoSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+      var resultBuf = await sharp(qrBuf).composite([{ input: logoBuf, gravity: "center" }]).png().toBuffer();
+      var dataUrl = "data:image/png;base64," + resultBuf.toString("base64");
+      res.json({ code: 0, data: dataUrl });
+    } catch (err) {
+      log.error("QR生成失败:", err.message);
+      res.status(500).json({ code: 1, message: "生成二维码失败", data: null });
+    }
+  });
 app.use(express.static(path.join(__dirname, 'public')));
 
 // 认证路由
@@ -889,6 +927,13 @@ async function startServer() {
       require('./lib/backup-scheduler').startBackupScheduler();
     } catch(e) {
       log.warn('[Server] 备份调度器启动失败:', e.message);
+    }
+
+    // 不活跃自动禁用调度器（分享/WebDAV 27天警告 + 30天禁用）
+    try {
+      require('./lib/inactivity-scheduler').startInactivityScheduler();
+    } catch(e) {
+      log.warn('[Server] 不活跃调度器启动失败:', e.message);
     }
 
     // 存储池健康检查（每分钟）

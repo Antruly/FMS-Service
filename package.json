@@ -1,6 +1,6 @@
 {
   "name": "fileservice",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "文件管理服务",
   "main": "server.js",
   "scripts": {

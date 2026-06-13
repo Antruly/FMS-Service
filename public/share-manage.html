@@ -832,9 +832,13 @@ function showQr(id) {
   document.getElementById('qrTitle').textContent = share.target_name + ' - 二维码';
   document.getElementById('shareUrlInput').value = url;
 
-  // 生成二维码（使用一个免费的二维码API）
-  var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
-  document.getElementById('qrImg').src = qrUrl;
+  // 生成二维码（后台生成带Logo）
+  var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  fetch('/api/qr?text=' + encodeURIComponent(url) + '&size=200&theme=' + theme)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.code === 0 && d.data) document.getElementById('qrImg').src = d.data;
+    }).catch(function() {});
 
   // 如果有提取码，也显示出来
   var codeTextEl = document.getElementById('qrCodeText');
