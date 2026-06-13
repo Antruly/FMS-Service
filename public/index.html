@@ -42,7 +42,7 @@
     .user-tag{font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px}
 
     /* Stats Grid */
-    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:32px}
     .stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;position:relative;overflow:hidden;transition:all .3s}
     .stat-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.3)}
     .stat-card .stat-icon{font-size:26px;margin-bottom:10px}
@@ -119,7 +119,7 @@
     .hero-visual .hv-orb-1{width:160px;height:160px;top:30px;right:20px;background:var(--accent)}
     .hero-visual .hv-orb-2{width:120px;height:120px;bottom:40px;left:30px;background:var(--accent2)}
     /* Features */
-    .features-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:40px;padding-top:10px}
+    .features-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:40px;padding-top:10px}
     .feature-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:28px 22px;text-align:center;transition:all .35s;position:relative;overflow:hidden}
     .feature-card::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:0;height:2px;background:var(--accent);transition:width .35s}
     .feature-card:hover::after{width:60%}
@@ -233,12 +233,20 @@
       <div class="feature-card">
         <span class="fc-icon">&#128209;</span><h4>WebDAV 协议</h4><p>挂载为网络驱动器，标准协议支持</p>
       </div>
+      <div class="feature-card">
+        <span class="fc-icon">&#128200;</span><h4>流量监控</h4><p>HTTP层实时计费，下载取消不扣流量</p>
+      </div>
+      <div class="feature-card">
+        <span class="fc-icon">&#128190;</span><h4>数据备份</h4><p>定时备份数据库与文件，异步任务调度</p>
+      </div>
     </div>
 
     <!-- Updates + Download + GitHub -->
     <div class="main-grid">
       <div class="card">
-        <div class="card-header"><span class="card-title">&#128640; 最新更新</span><span class="card-badge new" id="badgeVersion">v1.0.1</span></div>
+        <div class="card-header"><span class="card-title">&#128640; 最新更新</span><span class="card-badge new" id="badgeVersion">v1.0.2</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>实时流量统计 + 数据备份</h4><p>HTTP层实时计费、活跃会话聚合、定时备份</p></div><span class="update-time">06-13</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>非活跃自动管理 + 异步任务</h4><p>分享/WebDAV闲置自动禁用，可视化后台任务</p></div><span class="update-time">06-12</span></div>
         <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>WebDAV 协议完整支持</h4><p>公共+个人加密目录挂载为网络驱动器</p></div><span class="update-time">06-10</span></div>
         <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>安全秒传 + 引用计数</h4><p>SHA-256哈希+随机字节质询，防伪造秒传</p></div><span class="update-time">06-08</span></div>
         <div class="update-item"><div class="update-dot security"></div><div class="update-content"><h4>可配置频率限制系统</h4><p>按登录/匿名分级封禁，路径白名单</p></div><span class="update-time">06-07</span></div>
@@ -309,10 +317,11 @@
       </div>
       <!-- Updates (condensed) -->
       <div class="card">
-        <div class="card-header"><span class="card-title">&#128640; 更新日志</span><span class="card-badge new" id="badgeUserVer">v1.0.1</span></div>
+        <div class="card-header"><span class="card-title">&#128640; 更新日志</span><span class="card-badge new" id="badgeUserVer">v1.0.2</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>实时流量统计 + 数据备份</h4><p>HTTP层实时计费、下载取消不扣、定时备份</p></div><span class="update-time">06-13</span></div>
+        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>非活跃自动管理 + 异步任务</h4><p>分享/WebDAV闲置自动禁用，可视化后台任务</p></div><span class="update-time">06-12</span></div>
         <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>WebDAV 协议完整支持</h4><p>公共+个人加密目录均可映射为网络驱动器</p></div><span class="update-time">06-10</span></div>
-        <div class="update-item"><div class="update-dot feature"></div><div class="update-content"><h4>安全秒传 + 物理文件清理</h4><p>随机字节质询防伪造，异步清理零引用文件</p></div><span class="update-time">06-10</span></div>
-        <div class="update-item"><div class="update-dot security"></div><div class="update-content"><h4>存储组+镜像+频率限制</h4><p>多存储组负载均衡，分级封禁管理</p></div><span class="update-time">06-07</span></div>
+        <div class="update-item"><div class="update-dot security"></div><div class="update-content"><h4>安全秒传 + 存储组镜像</h4><p>随机字节质询防伪造，多存储组负载均衡</p></div><span class="update-time">06-10</span></div>
       </div>
     </div>
   </div>

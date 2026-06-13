@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>End-to-End Encrypted Private File Management Service</strong>
+  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.0.2 — Real-time Traffic · Secure Dedup · WebDAV · Backup</sub>
 </p>
 
 <p align="center">
@@ -97,19 +97,24 @@ FMS-Service/
 │   ├── webdav.js          # WebDAV protocol / link management
 │   ├── storage.js         # Storage groups / mirrors / async tasks
 │   ├── version.js         # APK version management / upload / download
+│   ├── backup.js         # Backup task management
 │   └── logs.js            # Admin audit logs
 │
 ├── lib/                   # Core Libraries
 │   ├── db.js              # SQLite database models (sql.js/WASM)
-│   ├── redis.js           # Redis operations (sessions, traffic, verification)
-│   ├── crypto.js          # AES-256-GCM encrypt/decrypt (V1 chunked format)
-│   ├── storage-stream.js  # Storage pool streaming I/O
-│   ├── email.js           # Email sending (QQ SMTP)
-│   ├── ws.js              # WebSocket push notifications
-│   ├── log.js             # Leveled logging (info/debug/warn/error)
-│   ├── logger.js          # Audit logging
-│   ├── utils.js           # Shared utilities
-│   └── validator.js       # Input validation
+│   ├── redis.js              # Redis operations (sessions, traffic, verification)
+│   ├── crypto.js             # AES-256-GCM encrypt/decrypt (V1 chunked format)
+│   ├── storage-stream.js     # Storage pool streaming I/O
+│   ├── traffic-middleware.js # Global traffic stats middleware (HTTP-layer counting)
+│   ├── backup.js             # Data backup logic
+│   ├── backup-scheduler.js   # Backup scheduling
+│   ├── inactivity-scheduler.js # Share/WebDAV inactivity auto-disable
+│   ├── email.js              # Email sending (QQ SMTP)
+│   ├── ws.js                 # WebSocket push notifications
+│   ├── log.js                # Leveled logging (info/debug/warn/error)
+│   ├── logger.js             # Audit logging
+│   ├── utils.js              # Shared utilities
+│   └── validator.js          # Input validation
 │
 ├── public/                # Frontend Static Files
 │   ├── index.html         # Homepage / Dashboard
@@ -117,6 +122,8 @@ FMS-Service/
 │   ├── login.html         # Login page (password/code/QR)
 │   ├── share.html         # Share file browser/downloader
 │   ├── admin-storage.html # Storage management (embedded iframe)
+│   ├── admin-backup.html  # Backup management
+│   ├── admin-tasks.html   # Async task management
 │   ├── app.js             # Frontend application logic
 │   ├── style.css          # Global styles / theme system
 │   └── favicon.png        # Logo
@@ -164,6 +171,23 @@ FMS-Service/
 - 🔗 Link management (create/expire/delete)
 - 🔒 Password-protected and public links
 - 📂 Personal directory and public directory support
+
+### Traffic Statistics
+- 📊 HTTP-layer real-time response byte counting
+- 👤 Request traffic aggregated by user activity sessions (3min idle / 60min max)
+- 📁 File transfer traffic recorded by actual transmitted bytes, cancellations not counted
+- 📈 Admin dashboard with traffic charts (daily/monthly/yearly summaries)
+
+### Data Backup
+- 💾 Scheduled backup of SQLite database + storage files
+- ☁️ Local/remote backup path support
+- 📋 Async task scheduling with admin visualization
+- 🔔 Email notifications on completion/failure
+
+### Inactivity Management
+- ⏱️ Auto-disable share links after inactivity period
+- 🔗 Auto-disable WebDAV links after inactivity
+- 📧 Email notifications before expiry
 
 ### Storage Pool
 - 🗄️ Multi-group / multi-mirror paths

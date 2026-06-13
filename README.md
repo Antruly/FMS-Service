@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>端到端加密的私有文件管理服务</strong>
+  <strong>端到端加密的私有文件管理服务</strong><br><sub>v1.0.2 — 实时流量统计 · 安全秒传 · WebDAV · 数据备份</sub>
 </p>
 
 <p align="center">
@@ -97,19 +97,24 @@ FMS-Service/
 │   ├── webdav.js          # WebDAV 协议 / 链接管理
 │   ├── storage.js         # 存储组 / 镜像 / 异步任务
 │   ├── version.js         # APK 版本管理 / 上传 / 下载
+│   ├── backup.js         # 备份任务管理
 │   └── logs.js            # 管理员操作日志
 │
 ├── lib/                   # 核心库
 │   ├── db.js              # SQLite 数据库模型（sql.js/WASM）
-│   ├── redis.js           # Redis 操作（Session 跟踪、流量、验证码）
-│   ├── crypto.js          # AES-256-GCM 加密/解密（V1 分块格式）
-│   ├── storage-stream.js  # 存储池流式读写
-│   ├── email.js           # 邮件发送（QQ SMTP）
-│   ├── ws.js              # WebSocket 推送
-│   ├── log.js             # 分级日志（info/debug/warn/error）
-│   ├── logger.js          # 审计日志（操作记录）
-│   ├── utils.js           # 公共工具函数
-│   └── validator.js       # 输入验证
+│   ├── redis.js              # Redis 操作（Session 跟踪、流量、验证码）
+│   ├── crypto.js             # AES-256-GCM 加密/解密（V1 分块格式）
+│   ├── storage-stream.js     # 存储池流式读写
+│   ├── traffic-middleware.js # 全局流量统计中间件（HTTP层实时计数）
+│   ├── backup.js             # 数据备份逻辑
+│   ├── backup-scheduler.js   # 备份定时调度
+│   ├── inactivity-scheduler.js # 分享/WebDAV 非活跃自动禁用
+│   ├── email.js              # 邮件发送（QQ SMTP）
+│   ├── ws.js                 # WebSocket 推送
+│   ├── log.js                # 分级日志（info/debug/warn/error）
+│   ├── logger.js             # 审计日志（操作记录）
+│   ├── utils.js              # 公共工具函数
+│   └── validator.js          # 输入验证
 │
 ├── public/                # 前端静态文件
 │   ├── index.html         # 首页 / 仪表盘
@@ -117,6 +122,8 @@ FMS-Service/
 │   ├── login.html         # 登录页（密码/验证码/扫码）
 │   ├── share.html         # 分享文件浏览/下载
 │   ├── admin-storage.html # 存储管理（内嵌 iframe）
+│   ├── admin-backup.html  # 备份管理
+│   ├── admin-tasks.html   # 异步任务管理
 │   ├── app.js             # 前端主逻辑
 │   ├── style.css          # 全局样式 / 主题系统
 │   └── favicon.png        # Logo
@@ -164,6 +171,23 @@ FMS-Service/
 - 🔗 链接管理（创建/过期/删除）
 - 🔒 支持无密码公开链接和密码保护链接
 - 📂 区分个人目录和公共目录
+
+### 流量统计
+- 📊 HTTP 层实时拦截响应字节计数
+- 👤 请求流量按用户活跃会话聚合（3分钟无活动 / 60分钟上限刷入）
+- 📁 文件传输流量按实际传输字节记录，下载取消不扣
+- 📈 管理后台流量图表（按天/月/年汇总）
+
+### 数据备份
+- 💾 定时备份 SQLite 数据库 + 存储文件
+- ☁️ 支持本地/远程备份路径
+- 📋 异步任务调度，管理后台可视化
+- 🔔 备份完成/失败邮件通知
+
+### 非活跃管理
+- ⏱️ 分享链接超期未访问自动禁用
+- 🔗 WebDAV 链接超期自动禁用
+- 📧 即将到期邮件通知创建者
 
 ### 存储池管理
 - 🗄️ 多存储组 / 多镜像路径

@@ -9709,6 +9709,27 @@
       html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">离线下载</h4>';
       html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">服务器代理下载远程文件到个人存储，支持进度追踪、断点续传、多任务并行，完成后自动通知</p>';
       html += '</div>';
+
+      // 流量统计卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '📊' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">实时流量统计</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">HTTP层拦截响应字节实时计数，请求流量按用户活跃会话聚合(3分钟无活动刷入DB)，文件传输流量按实际传输字节记录，下载取消不扣</p>';
+      html += '</div>';
+
+      // 数据备份卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '💾' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">数据备份</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">定时备份 SQLite 数据库和存储文件到本地/远程路径，异步任务调度执行，管理后台可视化查看备份记录</p>';
+      html += '</div>';
+
+      // 非活跃调度卡片
+      html += '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px">';
+      html += '<div style="font-size:22px;margin-bottom:6px">' + '⏱️' + '</div>';
+      html += '<h4 style="font-size:13px;font-weight:700;color:var(--text-primary);margin:0 0 4px">非活跃自动管理</h4>';
+      html += '<p style="font-size:11px;color:var(--text-muted);line-height:1.5;margin:0">分享链接和 WebDAV 链接超过设定天数未访问则自动禁用，即将到期时邮件通知创建者，减少安全风险</p>';
+      html += '</div>';
       html += '</div>';
 
       // ======== 版本信息 ========
@@ -9740,9 +9761,13 @@
       html += '<div>';
       html += '<span style="font-size:11px;color:var(--accent2);font-weight:600;background:var(--accent2);color:#fff;padding:2px 8px;border-radius:4px">服务端 v' + escHtml(d.serverVersion) + '</span>';
       html += '<ul style="font-size:12px;color:var(--text-secondary);line-height:1.8;margin:8px 0 0;padding-left:18px">';
-      html += '<li>WebDAV 协议完整支持（公共目录 + 个人加密目录）</li>';
-      html += '<li>AES-256-GCM 分块加密存储（V1 格式）</li>';
-      html += '<li>多存储组权重负载均衡 + 镜像自动同步</li>';
+      html += '<li>实时流量统计：HTTP层拦截计数、活跃会话聚合、下载取消不扣流量</li>';
+      html += '<li>WebDAV 流量记录修复：上传/下载正确归属到 Link 创建者</li>';
+      html += '<li>修复秒传文件下载 410 错误：storage_path 为空时自动解析</li>';
+      html += '<li>数据备份系统：定时备份数据库与文件，异步任务调度执行</li>';
+      html += '<li>非活跃自动管理：分享/WebDAV 闲置超期自动禁用并邮件通知</li>';
+      html += '<li>AES-256-GCM 分块加密存储（V1 格式，支持 Range）</li>';
+      html += '<li>多存储组权重负载均衡 + 镜像自动同步 + 健康检查</li>';
       html += '<li>安全秒传：SHA-256 哈希 + 随机字节质询验证</li>';
       html += '<li>可配置频率限制与 IP 封禁管理</li>';
       html += '<li>离线下载 + WebSocket 实时进度推送</li>';
