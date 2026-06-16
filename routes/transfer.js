@@ -228,12 +228,13 @@ router.post('/transfer/upload/complete', requireAuth, function(req, res) {
 // 组装分块文件、加密、写入存储
 function assembleFile(task, transferId, user, callback) {
   var chunkDir = getChunkDir(transferId);
-  var tmpAssemblyPath = path.join(path.dirname(chunkDir), '..', 'tmp', transferId + '.assembly');
-  try { fs.mkdirSync(path.dirname(tmpAssemblyPath), { recursive: true }); } catch(e) {}
+  var Storage = require('../lib/db').Storage;
+  var tmpPath = Storage.getFilePath(user.id, transferId);
+  try { fs.mkdirSync(path.dirname(tmpPath), { recursive: true }); } catch(e) {}
 
   try {
-    // 1) 按顺序拼接所有 chunk
-    var writeStream = fs.createWriteStream(tmpAssemblyPath);
+    // 1) 按顺序拼接所有 chunk 到临时文件
+    var writeStream = fs.createWriteStream(tmpPath);
     var chunkIndex = 0;
 
     function writeNext() {
@@ -249,76 +250,93 @@ function assembleFile(task, transferId, user, callback) {
       var data = fs.readFileSync(chunkPath);
       var ok = writeStream.write(data);
       chunkIndex++;
-      if (ok) {
-        writeNext();
-      } else {
-        writeStream.once('drain', writeNext);
-      }
+      if (ok) { writeNext(); } else { writeStream.once('drain', writeNext); }
     }
     writeNext();
 
     writeStream.on('finish', function() {
-      // 2) 计算 SHA-256
-      var fileBuffer = fs.readFileSync(tmpAssemblyPath);
-      var fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      // 2) 计算明文 SHA-256
+      var plainBuf = fs.readFileSync(tmpPath);
+      var fileHash = crypto.createHash('sha256').update(plainBuf).digest('hex');
 
-      // 3) V1 加密
+      // 3) V1 加密到临时文件 — 复用正常上传的 encrypt-to-tmp 模式
       var cryptoLib = require('../lib/crypto');
-      var Storage = require('../lib/db').Storage;
-      var FileStorage = require('../lib/db').FileStorage;
-      var UserFileRef = require('../lib/db').UserFileRef;
-      var VirtualFile = require('../lib/db').VirtualFile;
-
-      var fileUuid = crypto.randomUUID();
-      var storagePath = Storage.getFilePath(user.id, fileUuid);
-      var encResult = cryptoLib.createV1EncryptStreamSync(tmpAssemblyPath, storagePath);
-
-      try { fs.unlinkSync(tmpAssemblyPath); } catch(e) {}
+      var encTmpPath = tmpPath + '.enc';
+      var encResult = cryptoLib.createV1EncryptStreamSync(encTmpPath, plainBuf);
+      try { fs.unlinkSync(tmpPath); } catch(e) {}  // 明文不再需要
 
       if (!encResult.ok) {
+        try { fs.unlinkSync(encTmpPath); } catch(e) {}
         return callback(new Error('加密失败: ' + (encResult.error || '')));
       }
 
-      // 4) 创建存储记录
-      var storageId = FileStorage.create(fileUuid, fileHash, task.file_size, task.file_size, 1, true, encResult.nonce);
-      db.run('UPDATE file_storage SET group_id=(SELECT group_id FROM storage_pools WHERE status=? ORDER BY group_id,mirror_index LIMIT 1) WHERE id=?', ['active', storageId]);
+      // 4) 写入锁检查
+      var lockErr = require('../lib/db').StoragePool.checkWriteLock();
+      if (lockErr) {
+        try { fs.unlinkSync(encTmpPath); } catch(e) {}
+        return callback(new Error(lockErr));
+      }
 
-      var wPool = db.get('SELECT id,local_path FROM storage_pools WHERE status=? ORDER BY group_id,mirror_index LIMIT 1', ['active']);
-      var relP = (wPool && wPool.local_path) ? path.relative(wPool.local_path, storagePath).replace(/\\/g, '/') : storagePath.replace(/\\/g, '/');
-      FileStorage.addPath(storageId, wPool ? wPool.id : 1, relP, relP);
+      // 5) 通过 StorageStream 写入均衡组（多镜像并行写入）
+      var FileStorage = require('../lib/db').FileStorage;
+      var UserFileRef = require('../lib/db').UserFileRef;
+      var VirtualFile = require('../lib/db').VirtualFile;
+      var StorageStream = require('../lib/storage-stream');
+      var StorageDB = require('../lib/db').Storage;
+
+      var fileUuid = crypto.randomUUID();
+      var relPath = StorageDB.getDateBasedPath(fileUuid);
+      var writeResult = StorageStream.createWriteStream(relPath);
+      var groupId = writeResult.groupId;
+
+      if (groupId === null || groupId === undefined) {
+        try { fs.unlinkSync(encTmpPath); } catch(e) {}
+        return callback(new Error('没有可写入的存储组'));
+      }
+
+      var encBuf = fs.readFileSync(encTmpPath);
+      var ws = writeResult.stream;
+      ws.end(encBuf);
+      try { fs.unlinkSync(encTmpPath); } catch(e) {}
+
+      // 6) 创建存储记录（匹配正常上传的结构）
+      var storageId = FileStorage.create(fileUuid, fileHash, task.file_size, task.file_size, 1, true, encResult.nonce);
+      db.run('UPDATE file_storage SET group_id = ? WHERE id = ?', [groupId, storageId]);
+      (writeResult.poolIds || []).forEach(function(pid) {
+        FileStorage.addPath(storageId, pid, relPath, relPath);
+      });
       UserFileRef.create(user.id, storageId, task.dir_id, task.file_name, task.mime_type);
 
-      var vfId = VirtualFile.createWithEncVersion(user.id, task.dir_id, task.file_name, task.file_size, task.mime_type, storagePath, fileUuid, 1);
-      if (vfId) db.run('UPDATE virtual_files SET storage_id=? WHERE id=?', [storageId, vfId]);
+      var vfId = VirtualFile.createWithEncVersion(user.id, task.dir_id, task.file_name, task.file_size, task.mime_type, relPath, fileUuid, 1);
+      if (vfId) db.run('UPDATE virtual_files SET storage_id = ? WHERE id = ?', [storageId, vfId]);
 
       db.User.updateUsedBytes(user.id, task.file_size);
 
-      // 5) 清理分块目录
+      // 7) 清理
       try { fs.rmSync(chunkDir, { recursive: true, force: true }); } catch(e) {}
-
-      // 6) 清理 Redis
       try {
         var TransferSession = require('../lib/redis').TransferSession;
         TransferSession.deleteUpload(transferId);
       } catch(e) {}
 
-      // 7) 记录流量
+      // 8) 记录流量
       try {
         var ip = getClientIp({ headers: {}, ip: task.ip });
         db.TrafficLog.log(user.id, ip, 'upload', vfId || 0, task.file_name, task.file_size, task.file_size, 'file_transfer');
         db.TrafficQuota.addUsed(user.id, '', false, task.file_size);
       } catch(e) {}
 
-      callback(null, { storagePath: storagePath, fileHash: fileHash, virtualFileId: vfId });
+      log.info('[Transfer] 上传完成: ' + task.file_name + ' vfId=' + vfId + ' storageId=' + storageId + ' groupId=' + groupId);
+      callback(null, { storagePath: relPath, fileHash: fileHash, virtualFileId: vfId });
     });
 
     writeStream.on('error', function(e) {
-      try { fs.unlinkSync(tmpAssemblyPath); } catch(e2) {}
+      try { fs.unlinkSync(tmpPath); } catch(e2) {}
       callback(e);
     });
 
   } catch(e) {
-    try { fs.unlinkSync(tmpAssemblyPath); } catch(e2) {}
+    try { fs.unlinkSync(tmpPath); } catch(e2) {}
     callback(e);
   }
 }
