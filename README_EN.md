@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.0.2 — Real-time Traffic · Secure Dedup · WebDAV · Backup</sub>
+  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.0.3 — Global Search · Resumable Transfer · Floating Ball · WebDAV Fix</sub>
 </p>
 
 <p align="center">
