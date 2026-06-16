@@ -745,25 +745,43 @@
 <style>
 #mobile-floating-ball { position:fixed; z-index:9999; user-select:none; -webkit-user-select:none; }
 #mobile-floating-ball .ball-btn {
-  width:50px;height:50px;border-radius:50%;cursor:grab;
-  box-shadow:0 4px 20px rgba(0,0,0,.55);position:relative;
-  transition:box-shadow .3s,transform .3s;
+  width:52px;height:52px;border-radius:50%;cursor:grab;position:relative;
+  background:radial-gradient(circle at 35% 35%, rgba(0,212,255,0.25), rgba(13,17,23,0.95) 70%);
+  border:2px solid rgba(0,212,255,0.35);
+  box-shadow:0 0 18px rgba(0,212,255,0.2), 0 0 40px rgba(0,212,255,0.08), inset 0 0 20px rgba(0,212,255,0.05);
+  transition:box-shadow .4s,transform .4s,border-color .4s;
+  overflow:hidden;
 }
+#mobile-floating-ball .ball-btn::before {
+  content:'';position:absolute;inset:-2px;border-radius:50%;
+  background:conic-gradient(from 0deg, transparent, rgba(0,212,255,0.5), rgba(0,212,255,0.2), transparent);
+  animation:ballOrbitSpin 3s linear infinite; opacity:0.6; z-index:0;
+}
+#mobile-floating-ball .ball-btn::after {
+  content:'';position:absolute;top:3px;left:12px;width:8px;height:8px;border-radius:50%;
+  background:rgba(255,255,255,0.25);z-index:2;
+}
+@keyframes ballOrbitSpin { 100%{transform:rotate(360deg)} }
+@keyframes ballFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+#mobile-floating-ball .ball-btn { animation:ballFloat 3s ease-in-out infinite; }
+#mobile-floating-ball .ball-btn.dragging { animation:none; }
 #mobile-floating-ball .ball-btn:active { cursor:grabbing; }
-#mobile-floating-ball .ball-btn:hover { box-shadow:0 0 24px rgba(0,212,255,0.4);transform:scale(1.08); }
-#mobile-floating-ball .ball-btn svg { width:100%;height:100%;display:block; }
-/* Water-fill progress circle */
-.ball-progress-circle { fill:none;stroke:var(--border,#30363d);stroke-width:3; }
+#mobile-floating-ball .ball-btn:hover { box-shadow:0 0 30px rgba(0,212,255,0.45),0 0 60px rgba(0,212,255,0.12);border-color:rgba(0,212,255,0.6); }
+#mobile-floating-ball .ball-btn svg { width:100%;height:100%;display:block;position:relative;z-index:1; }
+/* Progress circle */
+.ball-progress-circle { fill:none;stroke:rgba(255,255,255,0.1);stroke-width:2.5; }
 .ball-progress-fill {
-  fill:none;stroke:var(--accent,#00d4ff);stroke-width:3;
-  stroke-dasharray:138.23; /* 2*PI*22 ≈ 138.23 */
-  stroke-dashoffset:138.23;
+  fill:none;stroke:#00d4ff;stroke-width:2.5;stroke-linecap:round;
+  stroke-dasharray:135.09; /* 2*PI*21.5 */
+  stroke-dashoffset:135.09;
   transform:rotate(-90deg);transform-origin:center;
-  transition:stroke-dashoffset .5s ease;
+  transition:stroke-dashoffset .6s ease,stroke .3s;
+  filter:drop-shadow(0 0 4px rgba(0,212,255,0.6));
 }
 .ball-progress-text {
-  font-size:11px;font-weight:700;fill:var(--text-primary,#e6edf3);
+  font-size:10px;font-weight:700;fill:#e6edf3;
   text-anchor:middle;dominant-baseline:central;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
 /* Panel */
 #mobile-floating-ball .ball-panel {
@@ -803,9 +821,18 @@
 <div id="mobile-floating-ball">
   <div class="ball-btn" title="传输进度 / App下载（可拖拽移动）">
     <svg viewBox="0 0 50 50">
-      <circle class="ball-progress-circle" cx="25" cy="25" r="22"/>
-      <circle class="ball-progress-fill" id="ball-progress-fill" cx="25" cy="25" r="22"/>
-      <text class="ball-progress-text" id="ball-progress-text" x="25" y="25">📱</text>
+      <defs>
+        <radialGradient id="ballGlow"><stop offset="0%" stop-color="#00d4ff" stop-opacity="0.3"/><stop offset="100%" stop-color="transparent"/></radialGradient>
+      </defs>
+      <circle cx="25" cy="25" r="22" fill="url(#ballGlow)"/>
+      <circle class="ball-progress-circle" cx="25" cy="25" r="21.5"/>
+      <circle class="ball-progress-fill" id="ball-progress-fill" cx="25" cy="25" r="21.5"/>
+      <!-- Idle: show pulsing center dot; during upload: show percentage -->
+      <circle cx="25" cy="25" r="4" fill="rgba(0,212,255,0.5)" id="ball-idle-dot">
+        <animate attributeName="r" values="4;5;4" dur="2s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.5;0.8;0.5" dur="2s" repeatCount="indefinite"/>
+      </circle>
+      <text class="ball-progress-text" id="ball-progress-text" x="25" y="25" style="display:none">0%</text>
     </svg>
   </div>
   <div class="ball-panel" id="ball-panel">
@@ -842,15 +869,21 @@
   var uploadList = document.getElementById('ball-upload-list');
   var uploadEmpty = document.getElementById('ball-upload-empty');
   var appSection = document.getElementById('ball-app-section');
-  var CIRCUMFERENCE = 2 * Math.PI * 22; // ~138.23
+  var CIRCUMFERENCE = 2 * Math.PI * 21.5; // ~135.09
+  var idleDot = document.getElementById('ball-idle-dot');
   var lastProgress = -1;
   var panelMode = 'app'; // 'app' | 'upload'
 
   // --- State ---
   var saved = {};
   try { saved = JSON.parse(localStorage.getItem('_fs_ball_pos')||'{}'); } catch(e) {}
+  // Force visible on first load after redesign (clear old hidden state)
+  if (saved.hidden && !localStorage.getItem('_fs_ball_v2')) {
+    saved.hidden = false; saved.x = null; saved.y = null;
+    localStorage.setItem('_fs_ball_v2', '1');
+  }
   var x = (saved.x != null && !isNaN(saved.x)) ? saved.x : (window.innerWidth - 70);
-  var y = (saved.y != null && !isNaN(saved.y)) ? saved.y : (window.innerHeight - 180);
+  var y = (saved.y != null && !isNaN(saved.y)) ? saved.y : (window.innerHeight * 0.4);
   var hidden = !!saved.hidden;
   var cornerSide = saved.cornerSide || 'right';
   var isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent) || window.innerWidth < 768;
@@ -894,20 +927,25 @@
   function updateProgressCircle(pct) {
     if (pct === lastProgress) return;
     lastProgress = pct;
-    var dashoffset = CIRCUMFERENCE * (1 - pct / 100);
-    progressFill.style.strokeDasharray = CIRCUMFERENCE;
-    progressFill.style.strokeDashoffset = dashoffset;
-    progressFill.style.stroke = pct >= 100 ? '#2ea043' : 'var(--accent,#00d4ff)';
-    progressText.textContent = pct > 0 ? Math.round(pct) + '%' : '📱';
-    progressText.style.fontSize = pct > 0 ? '11px' : '16px';
+    if (pct > 0) {
+      // Show percentage, hide idle dot
+      if (idleDot) idleDot.style.display = 'none';
+      progressText.style.display = '';
+      var dashoffset = CIRCUMFERENCE * (1 - pct / 100);
+      progressFill.style.strokeDasharray = CIRCUMFERENCE;
+      progressFill.style.strokeDashoffset = dashoffset;
+      progressFill.style.stroke = pct >= 100 ? '#2ea043' : '#00d4ff';
+      progressText.textContent = Math.round(pct) + '%';
+    } else {
+      resetProgressCircle();
+    }
   }
   function resetProgressCircle() {
     lastProgress = -1;
+    if (idleDot) idleDot.style.display = '';
+    progressText.style.display = 'none';
     progressFill.style.strokeDasharray = '0';
-    progressFill.style.strokeDashoffset = '0';
-    progressFill.style.stroke = 'var(--border,#30363d)';
-    progressText.textContent = '📱';
-    progressText.style.fontSize = '16px';
+    progressFill.style.strokeDashoffset = CIRCUMFERENCE;
   }
 
   // --- Panel content switching ---
@@ -1002,7 +1040,7 @@
   // --- Timing ---
   initPanel();
   var updateTimer = setInterval(function() {
-    if (panel.classList.contains('show') || document.hidden) return;
+    if (panel.classList.contains('show')) return;
     // Only update if there might be uploads
     if (panelMode === 'upload' || (window.__fm && window.__fm._getActiveTransfers && window.__fm._getActiveTransfers().length > 0)) {
       renderUploadList();
@@ -1030,9 +1068,10 @@
     startX = ex; startY = ey; startOX = x; startOY = y;
     dragging = true; moved = false;
   }
-  ballBtn.addEventListener('mousedown', function(e){ onDown(e.clientX, e.clientY); });
+  ballBtn.addEventListener('mousedown', function(e){ ballBtn.classList.add('dragging'); onDown(e.clientX, e.clientY); });
   ballBtn.addEventListener('touchstart', function(e){
     if (e.target && (panel.contains(e.target) || e.target === hideBtn)) return;
+    ballBtn.classList.add('dragging');
     onDown(e.touches[0].clientX, e.touches[0].clientY);
   }, {passive:false});
   function onMove(ex, ey) {
@@ -1048,6 +1087,7 @@
   document.addEventListener('mousemove', function(e){ onMove(e.clientX, e.clientY); });
   document.addEventListener('touchmove', function(e){ onMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
   function onUp() {
+    ballBtn.classList.remove('dragging');
     if (!dragging) return;
     dragging = false;
     if (!moved) return;
