@@ -833,10 +833,90 @@
 .ball-upload-status.error { color:#f85149; }
 .ball-panel-title { font-size:13px;font-weight:700;color:var(--text-primary,#e6edf3);margin:0 0 8px;text-align:center; }
 .ball-empty-upload { text-align:center;font-size:11px;color:var(--text-muted,#666);padding:20px 0; }
-/* Corner tab */
-#mobile-floating-ball-corner { display:none;position:fixed;z-index:9998;width:18px;height:40px;background:var(--bg-card,#1c2128);border:2px solid var(--border,#30363d);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);transition:all .2s; }
-#mobile-floating-ball-corner:hover { border-color:var(--accent,#00d4ff);box-shadow:0 0 12px rgba(0,212,255,0.25); }
-#mobile-floating-ball-corner svg { width:100%;height:100%; }
+/* Corner tab — polished edge pull-tab */
+#mobile-floating-ball-corner {
+  display:none;position:fixed;z-index:9998;
+  width:26px;height:52px;
+  background:linear-gradient(135deg, var(--ball-bg,rgba(13,17,23,0.95)), var(--bg-card,rgba(22,27,34,0.98)));
+  border:2px solid var(--ball-border,rgba(0,212,255,0.35));
+  cursor:pointer;
+  box-shadow:0 0 10px var(--ball-glow,rgba(0,212,255,0.15)), 0 4px 20px rgba(0,0,0,.35);
+  transition:all .35s cubic-bezier(.4,0,.2,1);
+  overflow:hidden;
+}
+/* Light theme */
+[data-theme="light"] #mobile-floating-ball-corner {
+  background:linear-gradient(135deg, rgba(255,255,255,0.97), rgba(245,248,255,0.95));
+  border-color:rgba(33,150,243,0.35);
+  box-shadow:0 0 10px rgba(33,150,243,0.12), 0 4px 20px rgba(0,0,0,.08);
+}
+/* Inner glow dot */
+#mobile-floating-ball-corner::before {
+  content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:6px;height:6px;border-radius:50%;
+  background:var(--ball-accent2,rgba(0,212,255,0.7));
+  box-shadow:0 0 10px var(--ball-accent2,rgba(0,212,255,0.5)), 0 0 20px var(--ball-accent2,rgba(0,212,255,0.25));
+  transition:all .35s cubic-bezier(.4,0,.2,1);
+}
+[data-theme="light"] #mobile-floating-ball-corner::before {
+  background:rgba(33,150,243,0.8);
+  box-shadow:0 0 10px rgba(33,150,243,0.5), 0 0 20px rgba(33,150,243,0.2);
+}
+/* Breathing glow animation */
+#mobile-floating-ball-corner {
+  animation:cornerBreathe 2.5s ease-in-out infinite;
+}
+@keyframes cornerBreathe {
+  0%,100% { box-shadow:0 0 8px var(--ball-glow,rgba(0,212,255,0.12)), 0 4px 20px rgba(0,0,0,.35); }
+  50% { box-shadow:0 0 18px var(--ball-glow,rgba(0,212,255,0.25)), 0 6px 28px rgba(0,0,0,.4); }
+}
+[data-theme="light"] #mobile-floating-ball-corner {
+  animation-name:cornerBreatheLight;
+}
+@keyframes cornerBreatheLight {
+  0%,100% { box-shadow:0 0 8px rgba(33,150,243,0.1), 0 4px 20px rgba(0,0,0,.06); }
+  50% { box-shadow:0 0 18px rgba(33,150,243,0.22), 0 6px 28px rgba(0,0,0,.12); }
+}
+/* Hover: expand + glow intensify */
+#mobile-floating-ball-corner:hover {
+  width:34px;
+  border-color:var(--accent,#00d4ff);
+  box-shadow:0 0 24px var(--ball-glow,rgba(0,212,255,0.4)), 0 0 50px rgba(0,212,255,0.12), 0 6px 24px rgba(0,0,0,.45) !important;
+  animation:none;
+}
+[data-theme="light"] #mobile-floating-ball-corner:hover {
+  border-color:rgba(33,150,243,0.7);
+  box-shadow:0 0 24px rgba(33,150,243,0.3), 0 0 50px rgba(33,150,243,0.08), 0 6px 24px rgba(0,0,0,.1) !important;
+}
+#mobile-floating-ball-corner:hover::before {
+  width:10px;height:10px;
+  box-shadow:0 0 16px var(--ball-accent2,rgba(0,212,255,0.7)), 0 0 32px var(--ball-accent2,rgba(0,212,255,0.35));
+}
+/* SVG icon */
+#mobile-floating-ball-corner svg { width:100%;height:100%;position:relative;z-index:1; }
+/* Chevron arrow — points inward, rotates by side */
+#mobile-floating-ball-corner .corner-chevron {
+  opacity:0;transform-origin:13px 26px;
+  transition:opacity .35s cubic-bezier(.4,0,.2,1), transform .35s cubic-bezier(.4,0,.2,1);
+}
+#mobile-floating-ball-corner[data-side="right"] .corner-chevron { transform:rotate(0deg); }
+#mobile-floating-ball-corner[data-side="left"] .corner-chevron { transform:rotate(180deg); }
+#mobile-floating-ball-corner[data-side="top"] .corner-chevron { transform:rotate(90deg); }
+#mobile-floating-ball-corner[data-side="bottom"] .corner-chevron { transform:rotate(-90deg); }
+#mobile-floating-ball-corner:hover .corner-chevron { opacity:1; }
+/* Side-specific base shape */
+#mobile-floating-ball-corner[data-side="right"] { border-radius:12px 0 0 12px; border-right:none; }
+#mobile-floating-ball-corner[data-side="left"]  { border-radius:0 12px 12px 0; border-left:none; }
+#mobile-floating-ball-corner[data-side="top"]    { width:52px;height:26px;border-radius:0 0 12px 12px; border-top:none; }
+#mobile-floating-ball-corner[data-side="bottom"] { width:52px;height:26px;border-radius:12px 12px 0 0; border-bottom:none; }
+/* Hover: chevron slides inward toward screen center */
+#mobile-floating-ball-corner[data-side="right"]:hover .corner-chevron  { transform:translateX(-3px) rotate(0deg); }
+#mobile-floating-ball-corner[data-side="left"]:hover .corner-chevron   { transform:translateX(3px) rotate(180deg); }
+#mobile-floating-ball-corner[data-side="top"]:hover .corner-chevron    { transform:translateY(3px) rotate(90deg); }
+#mobile-floating-ball-corner[data-side="bottom"]:hover .corner-chevron { transform:translateY(-3px) rotate(-90deg); }
+/* Hover: expand size for top/bottom (width stays, height grows) */
+#mobile-floating-ball-corner[data-side="top"]:hover    { width:52px;height:34px; }
+#mobile-floating-ball-corner[data-side="bottom"]:hover { width:52px;height:34px; }
 /* Fly-to-ball animation */
 @keyframes floatBallPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
 .float-ball-pulse { animation:floatBallPulse .4s ease 2; }
@@ -876,8 +956,15 @@
     </div>
   </div>
 </div>
-<div id="mobile-floating-ball-corner">
-  <svg viewBox="0 0 18 40"><circle cx="9" cy="20" r="7" fill="none" stroke="var(--accent,#00d4ff)" stroke-width="2"/><text x="9" y="21" text-anchor="middle" font-size="8" fill="var(--text-primary)">📱</text></svg>
+<div id="mobile-floating-ball-corner" data-side="right">
+  <svg viewBox="0 0 26 52">
+    <!-- Chevron arrow pointing inward (visible on hover) -->
+    <g class="corner-chevron" opacity="0" stroke="var(--accent,#00d4ff)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <polyline points="9,20 5,26 9,32"/>
+    </g>
+    <!-- Center dot -->
+    <circle cx="13" cy="26" r="3.5" fill="var(--accent,#00d4ff)" opacity="0.85"/>
+  </svg>
 </div>
 <script>
 (function(){
@@ -925,10 +1012,19 @@
     container.style.display = 'none';
     corner.style.display = '';
     corner.style.right = ''; corner.style.left = ''; corner.style.top = ''; corner.style.bottom = '';
-    if (cornerSide === 'right') { corner.style.right = '0'; corner.style.top = '40%'; corner.style.borderRight = 'none'; corner.style.borderRadius = '8px 0 0 8px'; }
-    else if (cornerSide === 'left') { corner.style.left = '0'; corner.style.top = '40%'; corner.style.borderLeft = 'none'; corner.style.borderRadius = '0 8px 8px 0'; }
-    else if (cornerSide === 'bottom') { corner.style.bottom = '0'; corner.style.left = '50%'; corner.style.borderBottom = 'none'; corner.style.borderRadius = '8px 8px 0 0'; }
-    else { corner.style.top = '0'; corner.style.left = '50%'; corner.style.borderTop = 'none'; corner.style.borderRadius = '0 0 8px 8px'; cornerSide = 'top'; }
+    if (cornerSide === 'right') {
+      corner.style.right = '0'; corner.style.top = '40%';
+      corner.setAttribute('data-side', 'right');
+    } else if (cornerSide === 'left') {
+      corner.style.left = '0'; corner.style.top = '40%';
+      corner.setAttribute('data-side', 'left');
+    } else if (cornerSide === 'bottom') {
+      corner.style.bottom = '0'; corner.style.left = '50%'; corner.style.transform = 'translateX(-50%)';
+      corner.setAttribute('data-side', 'bottom');
+    } else {
+      corner.style.top = '0'; corner.style.left = '50%'; corner.style.transform = 'translateX(-50%)';
+      corner.setAttribute('data-side', 'top'); cornerSide = 'top';
+    }
   }
   function showBall() {
     var maxX = window.innerWidth - 30, maxY = window.innerHeight - 30;
