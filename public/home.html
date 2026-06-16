@@ -832,6 +832,21 @@
 .ball-upload-status.completed { color:#2ea043; }
 .ball-upload-status.error { color:#f85149; }
 .ball-panel-title { font-size:13px;font-weight:700;color:var(--text-primary,#e6edf3);margin:0 0 8px;text-align:center; }
+/* Tab bar */
+.ball-panel-tabs { display:flex;gap:4px;margin-bottom:10px;padding:3px;background:var(--bg-tertiary,rgba(255,255,255,0.04));border-radius:10px; }
+.ball-tab {
+  flex:1;padding:6px 8px;border:none;border-radius:8px;cursor:pointer;
+  background:transparent;color:var(--text-muted,#888);font-size:11px;font-weight:600;
+  transition:all .25s;position:relative;white-space:nowrap;
+}
+.ball-tab:hover { color:var(--text-secondary,#bbb);background:rgba(255,255,255,0.04); }
+.ball-tab.active { color:var(--text-primary,#e6edf3);background:var(--bg-card,rgba(255,255,255,0.08));box-shadow:0 1px 4px rgba(0,0,0,.25); }
+.ball-tab-badge {
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:16px;height:15px;padding:0 4px;border-radius:8px;
+  background:#2196F3;color:#fff;font-size:9px;font-weight:700;
+  margin-left:4px;vertical-align:middle;
+}
 .ball-empty-upload { text-align:center;font-size:11px;color:var(--text-muted,#666);padding:20px 0; }
 /* Corner tab — polished edge pull-tab */
 #mobile-floating-ball-corner {
@@ -941,19 +956,27 @@
     </svg>
   </div>
   <div class="ball-panel" id="ball-panel">
-    <!-- Upload list section (shown when active transfers exist) -->
-    <div id="ball-upload-section" style="display:none">
-      <div class="ball-panel-title">📤 上传进度</div>
-      <div id="ball-upload-list"></div>
-      <div id="ball-upload-empty" class="ball-empty-upload" style="display:none">暂无上传任务</div>
+    <!-- Tab bar -->
+    <div class="ball-panel-tabs">
+      <button class="ball-tab active" data-ball-tab="transfer" id="ball-tab-transfer">
+        📤 传输<span class="ball-tab-badge" id="ball-tab-badge" style="display:none">0</span>
+      </button>
+      <button class="ball-tab" data-ball-tab="app" id="ball-tab-app">
+        📱 App
+      </button>
     </div>
-    <!-- App download section (shown when no active transfers) -->
-    <div id="ball-app-section">
+    <!-- Transfer list section -->
+    <div id="ball-upload-section">
+      <div id="ball-upload-list"></div>
+      <div id="ball-upload-empty" class="ball-empty-upload">暂无上传任务</div>
+    </div>
+    <!-- App download section -->
+    <div id="ball-app-section" style="display:none">
       <p style="color:var(--text-primary,#e6edf3);font-size:13px;margin:0 0 8px;text-align:center">📱 扫码下载 FMS App</p>
       <div class="qr-wrap" id="mobile-dl-qr">加载中...</div>
       <a class="dl-link" id="mobile-dl-link" href="#">📩 直接下载 APK</a>
-      <button class="hide-btn" id="mobile-dl-hide">◀ 隐藏悬浮球</button>
     </div>
+    <button class="hide-btn" id="mobile-dl-hide">◀ 隐藏悬浮球</button>
   </div>
 </div>
 <div id="mobile-floating-ball-corner" data-side="right">
@@ -1070,17 +1093,37 @@
     progressFill.style.strokeDashoffset = CIRCUMFERENCE;
   }
 
-  // --- Panel content switching ---
-  function showUploadPanel() {
-    panelMode = 'upload';
-    uploadSection.style.display = '';
-    appSection.style.display = 'none';
+  // --- Tab switching ---
+  var tabTransfer = document.getElementById('ball-tab-transfer');
+  var tabApp = document.getElementById('ball-tab-app');
+  var tabBadge = document.getElementById('ball-tab-badge');
+
+  function switchBallTab(tabName) {
+    panelMode = tabName;
+    if (tabName === 'transfer') {
+      tabTransfer.classList.add('active'); tabApp.classList.remove('active');
+      uploadSection.style.display = ''; appSection.style.display = 'none';
+      renderUploadList();
+    } else {
+      tabApp.classList.add('active'); tabTransfer.classList.remove('active');
+      uploadSection.style.display = 'none'; appSection.style.display = '';
+      tryRenderQr();
+    }
   }
-  function showAppPanel() {
-    panelMode = 'app';
-    uploadSection.style.display = 'none';
-    appSection.style.display = '';
+  tabTransfer.addEventListener('click', function(e){ e.stopPropagation(); switchBallTab('transfer'); });
+  tabApp.addEventListener('click', function(e){ e.stopPropagation(); switchBallTab('app'); });
+
+  function updateBallTabBadge(count) {
+    if (count > 0) {
+      tabBadge.textContent = count > 99 ? '99+' : count;
+      tabBadge.style.display = 'inline-flex';
+    } else {
+      tabBadge.style.display = 'none';
+    }
   }
+
+  function showUploadPanel() { switchBallTab('transfer'); }
+  function showAppPanel() { switchBallTab('app'); }
 
   // --- Render upload list ---
   function renderUploadList() {
@@ -1105,11 +1148,11 @@
     if (transfers.length === 0) {
       uploadList.innerHTML = ''; uploadEmpty.style.display = '';
       resetProgressCircle();
-      showAppPanel();
+      updateBallTabBadge(0);
       return;
     }
     uploadEmpty.style.display = 'none';
-    showUploadPanel();
+    updateBallTabBadge(transfers.length);
 
     // Calculate overall progress
     var totalChunks = 0, doneChunks = 0;
@@ -1173,7 +1216,7 @@
   window._floatBallPulse = function() {
     ballBtn.classList.add('float-ball-bounce');
     setTimeout(function(){ ballBtn.classList.remove('float-ball-bounce'); }, 500);
-    renderUploadList();
+    switchBallTab('transfer');
     // Open panel briefly
     if (!panel.classList.contains('show')) {
       panel.classList.add('show');
