@@ -8361,12 +8361,14 @@
   function openLocalSearch() {
     var overlay = document.getElementById('global-search-overlay');
     var input = document.getElementById('global-search-input');
+    var modeEl = document.getElementById('global-search-mode');
     var bodyEl = document.getElementById('global-search-body');
     if (!overlay || !input) return;
     overlay.style.display = 'flex';
     input.value = '';
     input.focus();
     input.placeholder = '搜索当前目录及子目录...';
+    if (modeEl) { modeEl.textContent = '当前目录'; modeEl.className = 'global-search-mode local'; }
     bodyEl.innerHTML = '<div class="global-search-hint">输入关键词搜索当前目录及其所有子目录中的文件</div>';
     var footer = document.getElementById('global-search-footer');
     if (footer) footer.style.display = 'none';
@@ -8460,12 +8462,14 @@
   function openGlobalSearch() {
     var overlay = document.getElementById('global-search-overlay');
     var input = document.getElementById('global-search-input');
+    var modeEl = document.getElementById('global-search-mode');
     var body = document.getElementById('global-search-body');
     if (!overlay || !input) return;
     overlay.style.display = 'flex';
     input.value = '';
     input.focus();
     input.placeholder = '搜索全部个人文件 + 公共目录...';
+    if (modeEl) { modeEl.textContent = '全局'; modeEl.className = 'global-search-mode global'; }
     body.innerHTML = '<div class="global-search-hint">输入关键词搜索您所有的个人文件和公共目录</div>';
     var footer = document.getElementById('global-search-footer');
     if (footer) footer.style.display = 'none';
@@ -9230,7 +9234,7 @@
     try {
       document.addEventListener('keydown', function (e) {
         var inInput = document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA';
-        if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); toggleSearch(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openGlobalSearch(); return; }
         if (e.key === 'Escape') {
           var box = $('#toolbar-search-box');
           if (box && box.classList.contains('active')) { box.classList.remove('active'); }

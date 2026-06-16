@@ -7469,6 +7469,12 @@ noscript {
   padding: 14px 18px; border-bottom: 1px solid var(--border,#30363d);
 }
 .global-search-header svg { flex-shrink: 0; }
+.global-search-mode {
+  font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+  letter-spacing: .5px; flex-shrink: 0;
+}
+.global-search-mode.local  { background: rgba(33,150,243,.15); color: #2196F3; }
+.global-search-mode.global { background: rgba(0,212,255,.12); color: #00d4ff; }
 .global-search-header input {
   flex: 1; border: none; background: transparent;
   color: var(--text-primary,#e6edf3); font-size: 15px; outline: none;
