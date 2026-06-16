@@ -26,6 +26,7 @@ const wsService = require('./lib/ws');
 const webdavRoutes = require('./routes/webdav');
 const storageRoutes = require('./routes/storage');
 const backupRoutes = require('./routes/backup');
+const transferRoutes = require('./routes/transfer');
 const QRCode = require('qrcode');
 const sharp = require('sharp');
 
@@ -468,6 +469,28 @@ app.use('/api', fileRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api', storageRoutes);
 app.use('/api', backupRoutes);
+app.use('/api', transferRoutes);
+
+// 清理孤儿分块目录（超过24小时的残留数据）
+(function cleanupOrphanChunks() {
+  try {
+    var chunksDir = path.join(__dirname, 'data', 'chunks');
+    if (fs.existsSync(chunksDir)) {
+      var dirs = fs.readdirSync(chunksDir);
+      var cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      dirs.forEach(function(d) {
+        var dp = path.join(chunksDir, d);
+        try {
+          var stat = fs.statSync(dp);
+          if (stat.mtimeMs < cutoff) {
+            fs.rmSync(dp, { recursive: true, force: true });
+            log.info('[Transfer] 清理孤儿分块: ' + d);
+          }
+        } catch(e) {}
+      });
+    }
+  } catch(e) {}
+})();
 
 // WebDAV 路由（协议端点 + API 管理）
 // 先设置 DAV 头（在 CORS 之前，避免 CORS 短路 OPTIONS）

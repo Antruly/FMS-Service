@@ -132,6 +132,11 @@
           <span class="nav-text">回收站</span>
           <span class="nav-badge" id="recycle-badge" style="display:none">0</span>
         </button>
+        <button class="nav-item" id="nav-transfers" onclick="window.__fm && window.__fm.showView('transfers')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span class="nav-text">传输列表</span>
+          <span class="nav-badge" id="transfer-badge" style="display:none">0</span>
+        </button>
         <button class="nav-item admin-only" id="nav-public-recycle" onclick="window.__fm && window.__fm.setDirType('public-recycle')" style="display:none">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
           <span class="nav-text">公共回收站</span>

@@ -7355,3 +7355,95 @@ noscript {
   transform: translateY(-1px); box-shadow: 0 6px 20px rgba(25,118,210,0.5);
 }
 
+
+/* ==================== Transfer List — 传输列表 ==================== */
+.transfer-filters {
+  display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.transfer-filter-btn {
+  padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border);
+  background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px;
+  cursor: pointer; transition: all 0.2s;
+}
+.transfer-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.transfer-filter-btn.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.transfer-list { display: flex; flex-direction: column; gap: 8px; }
+.transfer-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  transition: all 0.2s;
+}
+.transfer-item:hover { border-color: rgba(0,212,255,0.2); }
+.transfer-icon {
+  width: 36px; height: 36px; border-radius: 8px; display: flex;
+  align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;
+}
+.transfer-icon.upload { background: rgba(33,150,243,0.12); color: #2196F3; }
+.transfer-icon.download { background: rgba(46,160,67,0.12); color: #2ea043; }
+.transfer-info { flex: 1; min-width: 0; }
+.transfer-name {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.transfer-meta {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
+  display: flex; gap: 12px; flex-wrap: wrap;
+}
+.transfer-progress-wrap { width: 80px; flex-shrink: 0; }
+.transfer-progress-bar {
+  height: 4px; border-radius: 2px; background: var(--bg-tertiary); overflow: hidden;
+}
+.transfer-progress-fill {
+  height: 100%; border-radius: 2px; transition: width 0.3s ease;
+  background: linear-gradient(90deg, #2196F3, #00d4ff);
+}
+.transfer-progress-fill.completed { background: linear-gradient(90deg, #2ea043, #3fb950); }
+.transfer-progress-fill.error { background: linear-gradient(90deg, #f85149, #da3633); }
+.transfer-status {
+  flex-shrink: 0; min-width: 56px; text-align: right;
+}
+.transfer-status-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.transfer-status-badge.pending { background: rgba(210,153,34,0.15); color: #d29922; }
+.transfer-status-badge.uploading { background: rgba(33,150,243,0.15); color: #2196F3; }
+.transfer-status-badge.completed { background: rgba(46,160,67,0.15); color: #2ea043; }
+.transfer-status-badge.error { background: rgba(248,81,73,0.15); color: #f85149; }
+.transfer-status-badge.cancelled { background: rgba(139,148,158,0.15); color: #8b949e; }
+.transfer-status-badge.assembling { background: rgba(188,140,255,0.15); color: #bc8cff; }
+.transfer-actions { flex-shrink: 0; display: flex; gap: 6px; }
+.transfer-action-btn {
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-secondary); font-size: 11px;
+  cursor: pointer; transition: all 0.15s;
+}
+.transfer-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.transfer-action-btn.danger:hover { border-color: #f85149; color: #f85149; }
+.transfer-empty {
+  text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 13px;
+}
+.transfer-empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+/* Resume banner */
+.transfer-resume-banner {
+  background: linear-gradient(135deg, rgba(210,153,34,0.12), rgba(210,153,34,0.04));
+  border: 1px solid rgba(210,153,34,0.3); border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 16px; display: flex;
+  align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.transfer-resume-banner .banner-text {
+  font-size: 13px; color: var(--text-primary); flex: 1;
+}
+.transfer-resume-banner .banner-btn {
+  padding: 6px 16px; border-radius: 8px; border: none;
+  background: #d29922; color: #0d1117; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+}
+.transfer-resume-banner .banner-btn:hover { background: #e2a834; }
+.transfer-resume-banner .banner-dismiss {
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer;
+}
