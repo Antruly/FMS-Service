@@ -617,30 +617,30 @@ router.get('/files/search', requireAuth, function(req, res) {
 	var userId = req.user.id;
 	var results = { files: [], dirs: [], publicFiles: [] };
 
-	// 1. 搜索个人文件（DB LIKE）
+	// 1. 搜索个人文件（DB INSTR，跨全部目录，无深度限制）
 	try {
-		results.files = VirtualFile.searchByName(userId, q, 30);
+		results.files = VirtualFile.searchByName(userId, q, 500);
 	} catch(e) {
 		log.error('搜索个人文件失败:', e.message);
 	}
 
-	// 2. 搜索个人目录（DB LIKE）
+	// 2. 搜索个人目录（DB INSTR，跨全部目录，无深度限制）
 	try {
-		results.dirs = VirtualDir.searchByName(userId, q, 15);
+		results.dirs = VirtualDir.searchByName(userId, q, 500);
 	} catch(e) {
 		log.error('搜索个人目录失败:', e.message);
 	}
 
-	// 3. 搜索公共目录（Redis缓存 + 文件系统回退）
+	// 3. 搜索公共目录（Redis缓存优先 + 文件系统回退）
 	try {
 		var PublicDirCache = require('../lib/redis').PublicDirCache;
 		PublicDirCache.getTree().then(function(tree) {
 			if (tree && tree.length > 0) {
-				// Redis缓存命中
+				// Redis缓存命中 → 直接过滤
 				var qLower = q.toLowerCase();
 				results.publicFiles = tree.filter(function(entry) {
 					return entry.name.toLowerCase().indexOf(qLower) !== -1;
-				}).slice(0, 30);
+				}).slice(0, 200);
 				return res.json({ code: 0, data: results });
 			}
 
@@ -654,9 +654,12 @@ router.get('/files/search', requireAuth, function(req, res) {
 				var fs = require('fs');
 				var path = require('path');
 
-				// 递归扫描公共目录（最大深度5层，防止过深）
+				// 递归扫描公共目录（最大深度8层）
 				var allEntries = [];
-				var MAX_DEPTH = 5;
+				var MAX_DEPTH = 8;
+				// 匹配已删除文件: name.ext.{number}.delbak
+				var delBakRe = /\.\d+\.delbak$/;
+
 				function scanDir(dirPath, relPath, depth) {
 					if (depth > MAX_DEPTH) return;
 					var entries;
@@ -667,9 +670,13 @@ router.get('/files/search', requireAuth, function(req, res) {
 						var e = entries[i];
 						var fullPath = path.join(dirPath, e.name);
 						var entryRel = relPath ? relPath + '/' + e.name : e.name;
-						// 跳过隐藏文件和系统文件
-						if (e.name.charAt(0) === '.' || e.name === 'Thumbs.db' || e.name === '__MACOSX') continue;
+						// 跳过隐藏文件、系统文件、已删除备份文件
+						if (e.name.charAt(0) === '.') continue;
+						if (e.name === 'Thumbs.db' || e.name === '__MACOSX' || e.name === 'desktop.ini') continue;
+						if (delBakRe.test(e.name)) continue; // 排除 .delbak 删除标记文件
 						if (e.isDirectory()) {
+							// 跳过已删除的目录（目录名匹配 .delbak 模式）
+							if (delBakRe.test(e.name)) continue;
 							allEntries.push({ name: e.name, path: entryRel, type: 'dir', size: 0, mime_type: '' });
 							scanDir(fullPath, entryRel, depth + 1);
 						} else if (e.isFile()) {
@@ -692,14 +699,15 @@ router.get('/files/search', requireAuth, function(req, res) {
 				var qLower2 = q.toLowerCase();
 				results.publicFiles = allEntries.filter(function(entry) {
 					return entry.name.toLowerCase().indexOf(qLower2) !== -1;
-				}).slice(0, 30);
+				}).slice(0, 200);
 
 				return res.json({ code: 0, data: results });
 			} catch(fsErr) {
 				log.error('扫描公共目录失败:', fsErr.message);
 				return res.json({ code: 0, data: results });
 			}
-		}).catch(function() {
+		}).catch(function(err) {
+			log.error('PublicDirCache.getTree失败:', err ? err.message : '');
 			return res.json({ code: 0, data: results });
 		});
 	} catch(e) {
