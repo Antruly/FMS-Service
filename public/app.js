@@ -9971,6 +9971,7 @@
             task.uploadedChunks.add(chunkIndex);
             saveMeta();
             fetchTransfers();
+            if (window._floatBallRefresh) window._floatBallRefresh();
           });
         });
       })(ci);
@@ -10006,9 +10007,13 @@
       if (file.size === 0) continue;
       _doChunkedUpload(file, state.currentDirId || 0, null, null);
     }
-    showView('transfers');
+    // Pulse the floating ball instead of navigating
+    if (window._floatBallPulse) window._floatBallPulse();
     showToast('已添加 ' + files.length + ' 个文件到上传队列', '📤');
   };
+
+  // Expose active transfers for floating ball
+  window.__fm._getActiveTransfers = function() { return _activeTransfers; };
 
   // Check pending on load
   window.__fm._checkPendingTransfers = function() {
@@ -10358,6 +10363,7 @@
             task.uploadedChunks.add(chunkIndex);
             saveMeta();
             fetchTransfers();
+            if (window._floatBallRefresh) window._floatBallRefresh();
           });
         });
       })(ci);
@@ -10393,9 +10399,13 @@
       if (file.size === 0) continue;
       _doChunkedUpload(file, state.currentDirId || 0, null, null);
     }
-    showView('transfers');
+    // Pulse the floating ball instead of navigating
+    if (window._floatBallPulse) window._floatBallPulse();
     showToast('已添加 ' + files.length + ' 个文件到上传队列', '📤');
   };
+
+  // Expose active transfers for floating ball
+  window.__fm._getActiveTransfers = function() { return _activeTransfers; };
 
   // Check pending on load
   window.__fm._checkPendingTransfers = function() {
