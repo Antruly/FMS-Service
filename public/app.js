@@ -9908,8 +9908,14 @@
       fetchTransfers();
       return _uploadChunks(task, file, saveMeta);
     }).catch(function(err) {
+      var errMsg = '上传失败';
+      if (err && err.response && err.response.data && err.response.data.message) {
+        errMsg = err.response.data.message;
+      } else if (err && err.message) {
+        errMsg = err.message;
+      }
       task.status = 'error';
-      showToast('上传失败: ' + file.name + ' - ' + (err.message || '初始化失败'), '❌');
+      showToast('上传失败: ' + file.name + ' - ' + errMsg, '❌');
     });
   }
 
@@ -10254,8 +10260,14 @@
       fetchTransfers();
       return _uploadChunks(task, file, saveMeta);
     }).catch(function(err) {
+      var errMsg = '上传失败';
+      if (err && err.response && err.response.data && err.response.data.message) {
+        errMsg = err.response.data.message;
+      } else if (err && err.message) {
+        errMsg = err.message;
+      }
       task.status = 'error';
-      showToast('上传失败: ' + file.name + ' - ' + (err.message || '初始化失败'), '❌');
+      showToast('上传失败: ' + file.name + ' - ' + errMsg, '❌');
     });
   }
 

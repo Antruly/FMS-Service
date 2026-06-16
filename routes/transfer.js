@@ -48,10 +48,17 @@ function getClientIp(req) {
   return ip.replace(/^::ffff:/, '');
 }
 
-// 简单认证中间件
+// 认证中间件（加载用户对象到 req.user）
 function requireAuth(req, res, next) {
-  if (req.session && req.session.userId) return next();
-  return res.status(401).json({ code: 401, message: '请先登录', data: null });
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ code: 401, message: '请先登录', data: null });
+  }
+  var user = db.User.findById(req.session.userId);
+  if (!user) {
+    return res.status(401).json({ code: 401, message: '用户不存在', data: null });
+  }
+  req.user = user;
+  next();
 }
 
 // ==================== 分块目录管理 ====================
