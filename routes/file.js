@@ -605,9 +605,145 @@ router.get('/storage/quota', requireAuth, function(req, res) {
   });
 });
 
-// ==================== 全局搜索 ====================
+// ==================== 搜索 API ====================
 
-// GET /api/files/search?q=keyword
+// GET /api/files/search-local?q=keyword&dir_id=X&type=personal|public
+// 局部搜索：当前目录 + 递归子目录
+router.get('/files/search-local', requireAuth, function(req, res) {
+	var q = (req.query.q || '').trim();
+	var dirId = parseInt(req.query.dir_id || '0', 10);
+	var dirType = req.query.type || 'personal';
+	if (!q || q.length < 1) {
+		return res.json({ code: 1, message: '请输入搜索关键词', data: { files: [], dirs: [] } });
+	}
+
+	var userId = req.user.id;
+	var results = { files: [], dirs: [], currentDir: dirId, dirType: dirType };
+
+	if (dirType === 'personal') {
+		// 个人目录：DB递归，无深度限制
+		try {
+			var likeQ = '%' + q.replace(/[%_\\]/g, '\\$&') + '%';
+
+			// 1. 搜索当前目录下的文件
+			results.files = query(
+				'SELECT f.id, f.name, f.size, f.mime_type, f.dir_id, f.created_at ' +
+				'FROM virtual_files f WHERE f.user_id = ? AND f.dir_id = ? AND f.name LIKE ? ESCAPE \'\\\' ' +
+				'ORDER BY f.name LIMIT 200',
+				[userId, dirId, likeQ]
+			);
+
+			// 2. 搜索当前目录下的子目录
+			results.dirs = query(
+				'SELECT id, name, parent_id, created_at FROM virtual_dirs ' +
+				'WHERE user_id = ? AND parent_id = ? AND name LIKE ? ESCAPE \'\\\' ' +
+				'ORDER BY name LIMIT 100',
+				[userId, dirId, likeQ]
+			);
+
+			// 3. 递归搜索子目录（获取所有后代目录ID，然后查询）
+			var allChildIds = [];
+			var VirtualDir = require('../lib/db').VirtualDir;
+			try {
+				// 获取当前目录的直接子目录
+				var directChildren = query(
+					'SELECT id FROM virtual_dirs WHERE user_id = ? AND parent_id = ?',
+					[userId, dirId]
+				);
+				for (var ci = 0; ci < directChildren.length; ci++) {
+					var childId = directChildren[ci].id;
+					allChildIds.push(childId);
+					var grandChildren = VirtualDir.getAllChildIds(childId);
+					for (var gi = 0; gi < grandChildren.length; gi++) {
+						allChildIds.push(grandChildren[gi]);
+					}
+				}
+			} catch(e) {}
+
+			// 在子目录中搜索匹配的文件和目录
+			if (allChildIds.length > 0) {
+				var placeholders = allChildIds.map(function() { return '?'; }).join(',');
+				var childFiles = query(
+					'SELECT f.id, f.name, f.size, f.mime_type, f.dir_id, f.created_at ' +
+					'FROM virtual_files f WHERE f.user_id = ? AND f.dir_id IN (' + placeholders + ') AND f.name LIKE ? ESCAPE \'\\\' ' +
+					'ORDER BY f.name LIMIT 200',
+					[userId].concat(allChildIds).concat([likeQ])
+				);
+				for (var fi = 0; fi < childFiles.length; fi++) {
+					results.files.push(childFiles[fi]);
+				}
+				var childDirs = query(
+					'SELECT id, name, parent_id, created_at FROM virtual_dirs ' +
+					'WHERE user_id = ? AND id IN (' + placeholders + ') AND name LIKE ? ESCAPE \'\\\' ' +
+					'ORDER BY name LIMIT 100',
+					[userId].concat(allChildIds).concat([likeQ])
+				);
+				for (var di = 0; di < childDirs.length; di++) {
+					results.dirs.push(childDirs[di]);
+				}
+			}
+		} catch(e) {
+			log.error('局部搜索个人目录失败:', e.message);
+		}
+	} else if (dirType === 'public') {
+		// 公共目录：文件系统递归，最大深度8层
+		try {
+			var storageMod = require('../lib/db').Storage;
+			var publicDir = storageMod.PUBLIC_DIR;
+			if (publicDir) {
+				var fs = require('fs');
+				var path = require('path');
+				var delBakRe = /\.\d+\.delbak$/;
+				var MAX_DEPTH = 8;
+
+				// 构建当前目录的物理路径
+				var currentRelPath = req.query.path || '';
+				var startDir = currentRelPath ? path.resolve(publicDir, currentRelPath) : publicDir;
+				if (!startDir.startsWith(publicDir)) startDir = publicDir;
+
+				function scanDir(dirPath, relPath, depth) {
+					if (depth > MAX_DEPTH || results.files.length + results.dirs.length >= 300) return;
+					var entries;
+					try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch(e) { return; }
+					for (var i = 0; i < entries.length; i++) {
+						var e = entries[i];
+						var fullPath = path.join(dirPath, e.name);
+						var entryRel = relPath ? relPath + '/' + e.name : e.name;
+						if (e.name.charAt(0) === '.') continue;
+						if (e.name === 'Thumbs.db' || e.name === '__MACOSX' || e.name === 'desktop.ini') continue;
+						if (delBakRe.test(e.name)) continue;
+						if (e.name.toLowerCase().indexOf(q.toLowerCase()) === -1) {
+							// 名称不匹配但仍需深入子目录搜索
+							if (e.isDirectory() && !delBakRe.test(e.name)) {
+								scanDir(fullPath, entryRel, depth + 1);
+							}
+							continue;
+						}
+						if (e.isDirectory()) {
+							results.dirs.push({ name: e.name, path: entryRel, type: 'dir', size: 0 });
+							scanDir(fullPath, entryRel, depth + 1);
+						} else {
+							var stat;
+							try { stat = fs.statSync(fullPath); } catch(ex) { stat = { size: 0 }; }
+							results.files.push({
+								name: e.name, path: entryRel, type: 'file',
+								size: stat.size || 0,
+								mime_type: (require('mime-types') || require('../lib/db').mime || {}).lookup ? require('mime-types').lookup(e.name) : ''
+							});
+						}
+					}
+				}
+				scanDir(startDir, currentRelPath, 0);
+			}
+		} catch(e) {
+			log.error('局部搜索公共目录失败:', e.message);
+		}
+	}
+
+	return res.json({ code: 0, data: results });
+});
+
+// GET /api/files/search?q=keyword  全局搜索个人全部+公共目录
 router.get('/files/search', requireAuth, function(req, res) {
 	var q = (req.query.q || '').trim();
 	if (!q || q.length < 1) {

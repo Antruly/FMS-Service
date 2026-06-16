@@ -8353,14 +8353,104 @@
 
   // ---------- Search ----------
   function toggleSearch() {
-    var box = $('#toolbar-search-box');
-    if (!box) return;
-    box.classList.toggle('active');
-    if (box.classList.contains('active')) {
-      var inp = $('#toolbar-search-input');
-      if (inp) { inp.focus(); inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { state.searchQuery = inp.value; renderFiles(); } if (e.key === 'Escape') { box.classList.remove('active'); inp.value = ''; state.searchQuery = ''; renderFiles(); } }); }
-      inp.addEventListener('input', function () { state.searchQuery = inp.value; renderFiles(); });
+    // 打开局部搜索弹窗（递归搜索当前目录及子目录）
+    openLocalSearch();
+  }
+
+  // ---------- 局部搜索（当前目录+递归子目录） ----------
+  function openLocalSearch() {
+    var overlay = document.getElementById('global-search-overlay');
+    var input = document.getElementById('global-search-input');
+    var bodyEl = document.getElementById('global-search-body');
+    if (!overlay || !input) return;
+    overlay.style.display = 'flex';
+    input.value = '';
+    input.focus();
+    input.placeholder = '搜索当前目录及子目录...';
+    bodyEl.innerHTML = '<div class="global-search-hint">输入关键词搜索当前目录及其所有子目录中的文件</div>';
+    var footer = document.getElementById('global-search-footer');
+    if (footer) footer.style.display = 'none';
+    // Update modal title indicator
+    var headerEl = overlay.querySelector('.global-search-header svg');
+    var localMode = true;
+    // Bind close on overlay click
+    overlay.onclick = function(e) { if (e.target === overlay) closeGlobalSearch(); };
+    // Bind input
+    if (_gsTimer) clearTimeout(_gsTimer);
+    input.oninput = function() {
+      var q = input.value.trim();
+      if (_gsTimer) clearTimeout(_gsTimer);
+      if (q.length < 1) {
+        bodyEl.innerHTML = '<div class="global-search-hint">输入关键词搜索当前目录及其所有子目录中的文件</div>';
+        if (footer) footer.style.display = 'none';
+        return;
+      }
+      bodyEl.innerHTML = '<div class="global-search-loading">🔍 搜索中...</div>';
+      _gsTimer = setTimeout(function() { _doLocalSearch(q); }, 300);
+    };
+    input.onkeydown = function(e) {
+      if (e.key === 'Escape') closeGlobalSearch();
+      if (e.key === 'Enter') {
+        if (_gsTimer) clearTimeout(_gsTimer);
+        _doLocalSearch(input.value.trim());
+      }
+    };
+  }
+
+  function _doLocalSearch(q) {
+    if (!q || q.length < 1) return;
+    var bodyEl = document.getElementById('global-search-body');
+    var footer = document.getElementById('global-search-footer');
+    var dirId = (state && state.currentDirId != null) ? state.currentDirId : 0;
+    var dirType = (state && state.dirType) ? state.dirType : 'personal';
+    var params = { q: q, dir_id: dirId, type: dirType };
+    if (dirType === 'public' && state.currentPublicPath) {
+      params.path = state.currentPublicPath;
     }
+    axios.get('/api/files/search-local', { params: params }).then(function(res) {
+      if (res.data.code !== 0) {
+        bodyEl.innerHTML = '<div class="global-search-empty">搜索失败: ' + escHtml(res.data.message || '') + '</div>';
+        return;
+      }
+      var d = res.data.data;
+      var files = d.files || [];
+      var dirs = d.dirs || [];
+      var total = files.length + dirs.length;
+      if (total === 0) {
+        bodyEl.innerHTML = '<div class="global-search-empty">📭 当前目录及子目录中未找到匹配 "<b>' + escHtml(q) + '</b>" 的文件</div>';
+        if (footer) footer.style.display = 'none';
+        return;
+      }
+      var html = '<div class="global-search-section"><div class="global-search-section-title">📂 当前目录及子目录 (' + total + ' 个结果)</div>';
+      // Render files
+      files.forEach(function(f) {
+        var isPublic = dirType === 'public';
+        html += _renderSearchResultItem({
+          icon: '📄', iconClass: isPublic ? 'public' : 'file', name: f.name,
+          meta: (isPublic ? (f.path || '') : ('📁 ' + (d.currentDir != null ? '当前目录' : ''))) + (f.size ? ' · ' + formatFileSize(f.size) : ''),
+          type: isPublic ? 'public' : 'file', id: isPublic ? null : f.id, dirId: isPublic ? null : (f.dir_id || dirId),
+          path: isPublic ? f.path : null
+        });
+      });
+      // Render dirs
+      dirs.forEach(function(dr) {
+        var isPublic = dirType === 'public';
+        html += _renderSearchResultItem({
+          icon: '📁', iconClass: isPublic ? 'public' : 'dir', name: dr.name,
+          meta: isPublic ? (dr.path || '') : '子目录',
+          type: isPublic ? 'publicDir' : 'dir', id: isPublic ? null : dr.id, dirId: isPublic ? null : dr.id,
+          path: isPublic ? dr.path : null
+        });
+      });
+      html += '</div>';
+      bodyEl.innerHTML = html;
+      if (footer) {
+        footer.style.display = '';
+        document.getElementById('global-search-stats').textContent = '共找到 ' + total + ' 个结果（当前目录及子目录）';
+      }
+    }).catch(function(err) {
+      bodyEl.innerHTML = '<div class="global-search-empty">搜索请求失败: ' + escHtml(err.message || '') + '</div>';
+    });
   }
 
   // ---------- 全局搜索 ----------
@@ -8375,10 +8465,12 @@
     overlay.style.display = 'flex';
     input.value = '';
     input.focus();
-    body.innerHTML = '<div class="global-search-hint">输入关键词搜索您有权限访问的所有文件和目录</div>';
+    input.placeholder = '搜索全部个人文件 + 公共目录...';
+    body.innerHTML = '<div class="global-search-hint">输入关键词搜索您所有的个人文件和公共目录</div>';
     var footer = document.getElementById('global-search-footer');
     if (footer) footer.style.display = 'none';
     _gsResults = null;
+    _gsMode = 'global';
     // Bind close on overlay click
     overlay.onclick = function(e) { if (e.target === overlay) closeGlobalSearch(); };
     // Bind input
@@ -8386,7 +8478,7 @@
       var q = input.value.trim();
       if (_gsTimer) clearTimeout(_gsTimer);
       if (q.length < 1) {
-        body.innerHTML = '<div class="global-search-hint">输入关键词搜索您有权限访问的所有文件和目录</div>';
+        body.innerHTML = '<div class="global-search-hint">输入关键词搜索您所有的个人文件和公共目录</div>';
         if (footer) footer.style.display = 'none';
         return;
       }
@@ -8491,8 +8583,15 @@
         actions += '<button onclick="event.stopPropagation();window.__fm._gsDownloadPublic(\'' + escAttr(item.path) + '\')">下载</button>';
       }
       actions += '<button onclick="event.stopPropagation();window.__fm._gsNavigatePublic(\'' + escAttr(item.path) + '\', ' + (item.isDir ? 'true' : 'false') + ')">定位</button>';
+    } else if (item.type === 'publicDir') {
+      actions += '<button onclick="event.stopPropagation();window.__fm._gsNavigatePublic(\'' + escAttr(item.path) + '\', true)">打开</button>';
     }
-    return '<div class="global-search-result" onclick="' + (item.type === 'file' ? 'window.__fm._gsNavigate(' + item.dirId + ')' : (item.type === 'dir' ? 'window.__fm._gsNavigate(' + item.id + ')' : 'window.__fm._gsNavigatePublic(\'' + escAttr(item.path) + '\', ' + (item.isDir ? 'true' : 'false') + ')')) + '">' +
+    var rowOnClick;
+    if (item.type === 'file') rowOnClick = 'window.__fm._gsNavigate(' + (item.dirId || 0) + ')';
+    else if (item.type === 'dir') rowOnClick = 'window.__fm._gsNavigate(' + (item.id || 0) + ')';
+    else if (item.type === 'public' || item.type === 'publicDir') rowOnClick = 'window.__fm._gsNavigatePublic(\'' + escAttr(item.path || '') + '\', ' + ((item.isDir || item.type === 'publicDir') ? 'true' : 'false') + ')';
+    else rowOnClick = '';
+    return '<div class="global-search-result" onclick="' + rowOnClick + '">' +
       '<div class="global-search-result-icon ' + item.iconClass + '">' + item.icon + '</div>' +
       '<div class="global-search-result-info">' +
         '<div class="global-search-result-name">' + escHtml(item.name) + '</div>' +
@@ -8563,6 +8662,7 @@
   });
   // Attach to window for HTML onclick
   window.__fm.openGlobalSearch = openGlobalSearch;
+  window.__fm.openLocalSearch = openLocalSearch;
   window.__fm.closeGlobalSearch = closeGlobalSearch;
 
   // ---------- Sidebar ----------
