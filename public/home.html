@@ -746,20 +746,45 @@
 #mobile-floating-ball { position:fixed; z-index:9999; user-select:none; -webkit-user-select:none; }
 #mobile-floating-ball .ball-btn {
   width:52px;height:52px;border-radius:50%;cursor:grab;position:relative;
-  background:radial-gradient(circle at 35% 35%, rgba(0,212,255,0.25), rgba(13,17,23,0.95) 70%);
-  border:2px solid rgba(0,212,255,0.35);
-  box-shadow:0 0 18px rgba(0,212,255,0.2), 0 0 40px rgba(0,212,255,0.08), inset 0 0 20px rgba(0,212,255,0.05);
-  transition:box-shadow .4s,transform .4s,border-color .4s;
+  background:radial-gradient(circle at 35% 35%, var(--ball-accent,rgba(0,212,255,0.25)), var(--ball-bg,rgba(13,17,23,0.95)) 70%);
+  border:2px solid var(--ball-border,rgba(0,212,255,0.35));
+  box-shadow:0 0 18px var(--ball-glow,rgba(0,212,255,0.2)), 0 0 40px var(--ball-glow2,rgba(0,212,255,0.08)), inset 0 0 20px var(--ball-glow2);
+  transition:box-shadow .4s,transform .4s,border-color .4s,background .4s;
   overflow:hidden;
+}
+/* Light theme overrides */
+[data-theme="light"] #mobile-floating-ball .ball-btn {
+  --ball-bg: rgba(255,255,255,0.95);
+  --ball-accent: rgba(33,150,243,0.2);
+  --ball-border: rgba(33,150,243,0.45);
+  --ball-glow: rgba(33,150,243,0.15);
+  --ball-glow2: rgba(33,150,243,0.06);
+}
+/* Dark theme defaults (matches variables when not set) */
+#mobile-floating-ball .ball-btn {
+  --ball-bg: rgba(13,17,23,0.95);
+  --ball-accent: rgba(0,212,255,0.25);
+  --ball-border: rgba(0,212,255,0.35);
+  --ball-glow: rgba(0,212,255,0.2);
+  --ball-glow2: rgba(0,212,255,0.08);
 }
 #mobile-floating-ball .ball-btn::before {
   content:'';position:absolute;inset:-2px;border-radius:50%;
-  background:conic-gradient(from 0deg, transparent, rgba(0,212,255,0.5), rgba(0,212,255,0.2), transparent);
+  background:conic-gradient(from 0deg, transparent, var(--ball-accent2,rgba(0,212,255,0.5)), var(--ball-accent2,rgba(0,212,255,0.2)), transparent);
   animation:ballOrbitSpin 3s linear infinite; opacity:0.6; z-index:0;
+}
+[data-theme="light"] #mobile-floating-ball .ball-btn::before {
+  --ball-accent2: rgba(33,150,243,0.6);
+}
+#mobile-floating-ball .ball-btn::before {
+  --ball-accent2: rgba(0,212,255,0.5);
 }
 #mobile-floating-ball .ball-btn::after {
   content:'';position:absolute;top:3px;left:12px;width:8px;height:8px;border-radius:50%;
-  background:rgba(255,255,255,0.25);z-index:2;
+  background:var(--ball-highlight,rgba(255,255,255,0.25));z-index:2;
+}
+[data-theme="light"] #mobile-floating-ball .ball-btn::after {
+  --ball-highlight: rgba(255,255,255,0.5);
 }
 @keyframes ballOrbitSpin { 100%{transform:rotate(360deg)} }
 @keyframes ballFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
@@ -1150,7 +1175,11 @@
         linkEl.href = d.data.url || '#';
         linkEl.textContent = '📥 v'+d.data.version+' ('+Math.round(d.data.size/1024/1024)+'MB)';
         var theme = (document.documentElement.getAttribute('data-theme')||'dark')==='dark'?'dark':'light';
-        var qrUrl = '/api/share/qr?url='+encodeURIComponent(d.data.url||location.origin)+'&size=200&theme='+theme;
+        var fullUrl = d.data.url;
+        if (fullUrl && fullUrl.indexOf('http') !== 0) {
+          fullUrl = location.origin + (fullUrl.indexOf('/')===0?'':'/') + fullUrl;
+        }
+        var qrUrl = '/api/share/qr?url='+encodeURIComponent(fullUrl||location.href)+'&size=200&theme='+theme;
         var img = document.createElement('img');
         img.src = qrUrl; img.style.width='100%';img.style.height='100%';img.onerror=function(){qrEl.textContent='加载失败'};
         qrEl.innerHTML = ''; qrEl.appendChild(img);
