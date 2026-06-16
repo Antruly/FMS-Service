@@ -1179,10 +1179,15 @@
         if (fullUrl && fullUrl.indexOf('http') !== 0) {
           fullUrl = location.origin + (fullUrl.indexOf('/')===0?'':'/') + fullUrl;
         }
-        var qrUrl = '/api/share/qr?url='+encodeURIComponent(fullUrl||location.href)+'&size=200&theme='+theme;
-        var img = document.createElement('img');
-        img.src = qrUrl; img.style.width='100%';img.style.height='100%';img.onerror=function(){qrEl.textContent='加载失败'};
-        qrEl.innerHTML = ''; qrEl.appendChild(img);
+        var qrApiUrl = '/api/share/qr?url='+encodeURIComponent(fullUrl||location.href)+'&size=200&theme='+theme;
+        // /api/share/qr returns JSON {code:0, data:"data:image/png;base64,..."}, not raw image
+        fetch(qrApiUrl).then(function(r){return r.json()}).then(function(j){
+          if (j.code === 0 && j.data) {
+            var img = document.createElement('img');
+            img.src = j.data; img.style.width='100%';img.style.height='100%';img.onerror=function(){qrEl.textContent='加载失败'};
+            qrEl.innerHTML = ''; qrEl.appendChild(img);
+          } else { qrEl.textContent = '暂无二维码'; }
+        }).catch(function(){ qrEl.textContent = '加载失败'; });
       } else { qrEl.textContent = '暂无版本'; }
     });
   }
