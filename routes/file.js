@@ -605,6 +605,109 @@ router.get('/storage/quota', requireAuth, function(req, res) {
   });
 });
 
+// ==================== 全局搜索 ====================
+
+// GET /api/files/search?q=keyword
+router.get('/files/search', requireAuth, function(req, res) {
+	var q = (req.query.q || '').trim();
+	if (!q || q.length < 1) {
+		return res.json({ code: 1, message: '请输入搜索关键词', data: { files: [], dirs: [], publicFiles: [] } });
+	}
+
+	var userId = req.user.id;
+	var results = { files: [], dirs: [], publicFiles: [] };
+
+	// 1. 搜索个人文件（DB LIKE）
+	try {
+		results.files = VirtualFile.searchByName(userId, q, 30);
+	} catch(e) {
+		log.error('搜索个人文件失败:', e.message);
+	}
+
+	// 2. 搜索个人目录（DB LIKE）
+	try {
+		results.dirs = VirtualDir.searchByName(userId, q, 15);
+	} catch(e) {
+		log.error('搜索个人目录失败:', e.message);
+	}
+
+	// 3. 搜索公共目录（Redis缓存 + 文件系统回退）
+	try {
+		var PublicDirCache = require('../lib/redis').PublicDirCache;
+		PublicDirCache.getTree().then(function(tree) {
+			if (tree && tree.length > 0) {
+				// Redis缓存命中
+				var qLower = q.toLowerCase();
+				results.publicFiles = tree.filter(function(entry) {
+					return entry.name.toLowerCase().indexOf(qLower) !== -1;
+				}).slice(0, 30);
+				return res.json({ code: 0, data: results });
+			}
+
+			// 缓存未命中 → 扫描文件系统
+			try {
+				var storageMod = require('../lib/db').Storage;
+				var publicDir = storageMod.PUBLIC_DIR;
+				if (!publicDir) {
+					return res.json({ code: 0, data: results });
+				}
+				var fs = require('fs');
+				var path = require('path');
+
+				// 递归扫描公共目录（最大深度5层，防止过深）
+				var allEntries = [];
+				var MAX_DEPTH = 5;
+				function scanDir(dirPath, relPath, depth) {
+					if (depth > MAX_DEPTH) return;
+					var entries;
+					try {
+						entries = fs.readdirSync(dirPath, { withFileTypes: true });
+					} catch(e) { return; }
+					for (var i = 0; i < entries.length; i++) {
+						var e = entries[i];
+						var fullPath = path.join(dirPath, e.name);
+						var entryRel = relPath ? relPath + '/' + e.name : e.name;
+						// 跳过隐藏文件和系统文件
+						if (e.name.charAt(0) === '.' || e.name === 'Thumbs.db' || e.name === '__MACOSX') continue;
+						if (e.isDirectory()) {
+							allEntries.push({ name: e.name, path: entryRel, type: 'dir', size: 0, mime_type: '' });
+							scanDir(fullPath, entryRel, depth + 1);
+						} else if (e.isFile()) {
+							var stat;
+							try { stat = fs.statSync(fullPath); } catch(ex) { stat = { size: 0 }; }
+							allEntries.push({
+								name: e.name, path: entryRel, type: 'file',
+								size: stat.size || 0,
+								mime_type: require('mime-types').lookup(e.name) || 'application/octet-stream'
+							});
+						}
+					}
+				}
+				scanDir(publicDir, '', 0);
+
+				// 缓存到Redis（异步，不阻塞响应）
+				PublicDirCache.setTree(allEntries).catch(function(){});
+
+				// 过滤匹配
+				var qLower2 = q.toLowerCase();
+				results.publicFiles = allEntries.filter(function(entry) {
+					return entry.name.toLowerCase().indexOf(qLower2) !== -1;
+				}).slice(0, 30);
+
+				return res.json({ code: 0, data: results });
+			} catch(fsErr) {
+				log.error('扫描公共目录失败:', fsErr.message);
+				return res.json({ code: 0, data: results });
+			}
+		}).catch(function() {
+			return res.json({ code: 0, data: results });
+		});
+	} catch(e) {
+		log.error('公共目录搜索失败:', e.message);
+		return res.json({ code: 0, data: results });
+	}
+});
+
 // ==================== 虚拟目录 ====================
 
 // GET /api/dirs?path=xxx&type=personal|public  (path: 逗号分隔的目录ID，如 "0,5,12")

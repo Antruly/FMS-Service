@@ -8363,6 +8363,208 @@
     }
   }
 
+  // ---------- 全局搜索 ----------
+  var _gsTimer = null;
+  var _gsResults = null;
+
+  function openGlobalSearch() {
+    var overlay = document.getElementById('global-search-overlay');
+    var input = document.getElementById('global-search-input');
+    var body = document.getElementById('global-search-body');
+    if (!overlay || !input) return;
+    overlay.style.display = 'flex';
+    input.value = '';
+    input.focus();
+    body.innerHTML = '<div class="global-search-hint">输入关键词搜索您有权限访问的所有文件和目录</div>';
+    var footer = document.getElementById('global-search-footer');
+    if (footer) footer.style.display = 'none';
+    _gsResults = null;
+    // Bind close on overlay click
+    overlay.onclick = function(e) { if (e.target === overlay) closeGlobalSearch(); };
+    // Bind input
+    input.oninput = function() {
+      var q = input.value.trim();
+      if (_gsTimer) clearTimeout(_gsTimer);
+      if (q.length < 1) {
+        body.innerHTML = '<div class="global-search-hint">输入关键词搜索您有权限访问的所有文件和目录</div>';
+        if (footer) footer.style.display = 'none';
+        return;
+      }
+      body.innerHTML = '<div class="global-search-loading">🔍 搜索中...</div>';
+      _gsTimer = setTimeout(function() { _doGlobalSearch(q); }, 300);
+    };
+    // Esc to close
+    input.onkeydown = function(e) {
+      if (e.key === 'Escape') closeGlobalSearch();
+      if (e.key === 'Enter') {
+        if (_gsTimer) clearTimeout(_gsTimer);
+        _doGlobalSearch(input.value.trim());
+      }
+    };
+  }
+
+  function closeGlobalSearch() {
+    var overlay = document.getElementById('global-search-overlay');
+    if (overlay) overlay.style.display = 'none';
+    if (_gsTimer) clearTimeout(_gsTimer);
+    _gsResults = null;
+  }
+
+  function _doGlobalSearch(q) {
+    if (!q || q.length < 1) return;
+    var body = document.getElementById('global-search-body');
+    var footer = document.getElementById('global-search-footer');
+    axios.get('/api/files/search', { params: { q: q } }).then(function(res) {
+      if (res.data.code !== 0) {
+        body.innerHTML = '<div class="global-search-empty">搜索失败: ' + escHtml(res.data.message || '未知错误') + '</div>';
+        return;
+      }
+      var d = res.data.data;
+      var files = d.files || [];
+      var dirs = d.dirs || [];
+      var publicFiles = d.publicFiles || [];
+      var total = files.length + dirs.length + publicFiles.length;
+
+      if (total === 0) {
+        body.innerHTML = '<div class="global-search-empty">📭 未找到匹配 "<b>' + escHtml(q) + '</b>" 的文件或目录</div>';
+        if (footer) footer.style.display = 'none';
+        return;
+      }
+
+      var html = '';
+      // Section: 个人文件
+      if (files.length > 0) {
+        html += '<div class="global-search-section"><div class="global-search-section-title">📄 个人文件 (' + files.length + ')</div>';
+        files.forEach(function(f) {
+          html += _renderSearchResultItem({
+            icon: '📄', iconClass: 'file', name: f.name,
+            meta: (f.dir_name ? '📁 ' + escHtml(f.dir_name) + ' · ' : '') + formatFileSize(f.size || 0),
+            type: 'file', id: f.id, dirId: f.dir_id || 0
+          });
+        });
+        html += '</div>';
+      }
+      // Section: 个人目录
+      if (dirs.length > 0) {
+        html += '<div class="global-search-section"><div class="global-search-section-title">📁 个人目录 (' + dirs.length + ')</div>';
+        dirs.forEach(function(d) {
+          html += _renderSearchResultItem({
+            icon: '📁', iconClass: 'dir', name: d.name,
+            meta: '目录', type: 'dir', id: d.id, dirId: d.id
+          });
+        });
+        html += '</div>';
+      }
+      // Section: 公共文件
+      if (publicFiles.length > 0) {
+        html += '<div class="global-search-section"><div class="global-search-section-title">🌐 公共目录 (' + publicFiles.length + ')</div>';
+        publicFiles.forEach(function(pf) {
+          var isDir = pf.type === 'dir';
+          html += _renderSearchResultItem({
+            icon: isDir ? '📁' : '📄', iconClass: 'public', name: pf.name,
+            meta: (isDir ? '📁 ' : '') + pf.path + (pf.size ? ' · ' + formatFileSize(pf.size) : ''),
+            type: 'public', path: pf.path, isDir: isDir
+          });
+        });
+        html += '</div>';
+      }
+      body.innerHTML = html;
+      if (footer) {
+        footer.style.display = '';
+        document.getElementById('global-search-stats').textContent = '共找到 ' + total + ' 个结果';
+      }
+      _gsResults = { files: files, dirs: dirs, publicFiles: publicFiles };
+    }).catch(function(err) {
+      body.innerHTML = '<div class="global-search-empty">搜索请求失败: ' + escHtml(err.message || '网络错误') + '</div>';
+    });
+  }
+
+  function _renderSearchResultItem(item) {
+    var actions = '';
+    if (item.type === 'file') {
+      actions += '<button onclick="event.stopPropagation();window.__fm._gsDownload(' + item.id + ')">下载</button>';
+      actions += '<button onclick="event.stopPropagation();window.__fm._gsNavigate(' + item.dirId + ')">定位</button>';
+    } else if (item.type === 'dir') {
+      actions += '<button onclick="event.stopPropagation();window.__fm._gsNavigate(' + item.id + ')">打开</button>';
+    } else if (item.type === 'public') {
+      if (!item.isDir) {
+        actions += '<button onclick="event.stopPropagation();window.__fm._gsDownloadPublic(\'' + escAttr(item.path) + '\')">下载</button>';
+      }
+      actions += '<button onclick="event.stopPropagation();window.__fm._gsNavigatePublic(\'' + escAttr(item.path) + '\', ' + (item.isDir ? 'true' : 'false') + ')">定位</button>';
+    }
+    return '<div class="global-search-result" onclick="' + (item.type === 'file' ? 'window.__fm._gsNavigate(' + item.dirId + ')' : (item.type === 'dir' ? 'window.__fm._gsNavigate(' + item.id + ')' : 'window.__fm._gsNavigatePublic(\'' + escAttr(item.path) + '\', ' + (item.isDir ? 'true' : 'false') + ')')) + '">' +
+      '<div class="global-search-result-icon ' + item.iconClass + '">' + item.icon + '</div>' +
+      '<div class="global-search-result-info">' +
+        '<div class="global-search-result-name">' + escHtml(item.name) + '</div>' +
+        '<div class="global-search-result-meta">' + item.meta + '</div>' +
+      '</div>' +
+      (actions ? '<div class="global-search-result-actions">' + actions + '</div>' : '') +
+    '</div>';
+  }
+
+  // Escape for use inside JS string in HTML attribute (single-quoted)
+  function escAttr(s) {
+    return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Navigate to personal dir (close search, switch to personal dir view, navigate to dir)
+  window.__fm._gsNavigate = function(dirId) {
+    closeGlobalSearch();
+    if (state) state.currentDirId = dirId || 0;
+    if (state) state.dirType = 'personal';
+    showView('files');
+    setTimeout(function() { loadFiles(); }, 100);
+  };
+
+  // Navigate to public dir
+  window.__fm._gsNavigatePublic = function(relPath, isDir) {
+    closeGlobalSearch();
+    if (state) {
+      state.currentDirId = 0;
+      state.dirType = 'public';
+      if (isDir) {
+        state.currentPublicPath = relPath;
+      } else {
+        // For public files, navigate to parent dir
+        var parentPath = relPath.substring(0, relPath.lastIndexOf('/'));
+        state.currentPublicPath = parentPath || '';
+      }
+    }
+    showView('files');
+    setTimeout(function() { loadFiles(); }, 100);
+  };
+
+  // Download personal file
+  window.__fm._gsDownload = function(fileId) {
+    var a = document.createElement('a');
+    a.href = '/api/files/download/' + fileId;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // Download public file
+  window.__fm._gsDownloadPublic = function(relPath) {
+    var a = document.createElement('a');
+    a.href = '/api/public-files/download?path=' + encodeURIComponent(relPath);
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // Keyboard shortcut: Ctrl+K to open global search
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      openGlobalSearch();
+    }
+  });
+  // Attach to window for HTML onclick
+  window.__fm.openGlobalSearch = openGlobalSearch;
+  window.__fm.closeGlobalSearch = closeGlobalSearch;
+
   // ---------- Sidebar ----------
   function initSidebar() {
     var sidebar = $('#sidebar');
