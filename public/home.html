@@ -1010,8 +1010,9 @@
   }
   function showCorner() {
     container.style.display = 'none';
-    corner.style.display = '';
+    corner.style.display = 'block';
     corner.style.right = ''; corner.style.left = ''; corner.style.top = ''; corner.style.bottom = '';
+    corner.style.transform = '';
     if (cornerSide === 'right') {
       corner.style.right = '0'; corner.style.top = '40%';
       corner.setAttribute('data-side', 'right');
