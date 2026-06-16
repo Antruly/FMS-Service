@@ -8458,6 +8458,7 @@
   // ---------- 全局搜索 ----------
   var _gsTimer = null;
   var _gsResults = null;
+  var _gsMode = null;
 
   function openGlobalSearch() {
     var overlay = document.getElementById('global-search-overlay');
