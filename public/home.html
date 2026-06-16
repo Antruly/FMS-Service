@@ -1026,10 +1026,11 @@
   var y = (saved.y != null && !isNaN(saved.y)) ? saved.y : (window.innerHeight * 0.4);
   var hidden = !!saved.hidden;
   var cornerSide = saved.cornerSide || 'right';
+  var cornerPos = saved.cornerPos != null ? saved.cornerPos : 40; // 贴边位置的百分比（右/左侧=top%, 上/下侧=left%）
   var isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent) || window.innerWidth < 768;
 
   function saveState() {
-    try { localStorage.setItem('_fs_ball_pos', JSON.stringify({x:x, y:y, hidden:hidden, cornerSide:cornerSide})); } catch(e) {}
+    try { localStorage.setItem('_fs_ball_pos', JSON.stringify({x:x, y:y, hidden:hidden, cornerSide:cornerSide, cornerPos:cornerPos})); } catch(e) {}
   }
   function position() {
     container.style.left = x + 'px'; container.style.top = y + 'px';
@@ -1042,16 +1043,16 @@
     corner.style.right = ''; corner.style.left = ''; corner.style.top = ''; corner.style.bottom = '';
     corner.style.transform = '';
     if (cornerSide === 'right') {
-      corner.style.right = '0'; corner.style.top = '40%';
+      corner.style.right = '0'; corner.style.top = cornerPos + '%';
       corner.setAttribute('data-side', 'right');
     } else if (cornerSide === 'left') {
-      corner.style.left = '0'; corner.style.top = '40%';
+      corner.style.left = '0'; corner.style.top = cornerPos + '%';
       corner.setAttribute('data-side', 'left');
     } else if (cornerSide === 'bottom') {
-      corner.style.bottom = '0'; corner.style.left = '50%'; corner.style.transform = 'translateX(-50%)';
+      corner.style.bottom = '0'; corner.style.left = cornerPos + '%'; corner.style.transform = 'translateX(-50%)';
       corner.setAttribute('data-side', 'bottom');
     } else {
-      corner.style.top = '0'; corner.style.left = '50%'; corner.style.transform = 'translateX(-50%)';
+      corner.style.top = '0'; corner.style.left = cornerPos + '%'; corner.style.transform = 'translateX(-50%)';
       corner.setAttribute('data-side', 'top'); cornerSide = 'top';
     }
   }
@@ -1230,9 +1231,12 @@
   };
   window._floatBallRefresh = function() { renderUploadList(); };
 
-  // --- Drag logic (preserved from original) ---
+  // --- Drag logic (ball + corner tab) ---
   if (hidden) { showCorner(); } else { position(); }
   var dragging, startX, startY, startOX, startOY, moved;
+  var cornerDragging, cornerStartX, cornerStartY, cornerStartPos, cornerMoved, cornerLastDx, cornerLastDy;
+
+  // Ball drag start
   function onDown(ex, ey) {
     if (ex.target && (panel.contains(ex.target) || ex.target === hideBtn)) return;
     startX = ex; startY = ey; startOX = x; startOY = y;
@@ -1244,7 +1248,42 @@
     ballBtn.classList.add('dragging');
     onDown(e.touches[0].clientX, e.touches[0].clientY);
   }, {passive:false});
+
+  // Corner tab drag start
+  corner.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    cornerDragging = true; cornerMoved = false;
+    cornerStartX = e.clientX; cornerStartY = e.clientY;
+    cornerStartPos = cornerPos;
+    e.preventDefault();
+  });
+  corner.addEventListener('touchstart', function(e) {
+    cornerDragging = true; cornerMoved = false;
+    cornerStartX = e.touches[0].clientX; cornerStartY = e.touches[0].clientY;
+    cornerStartPos = cornerPos;
+  }, {passive: false});
+
   function onMove(ex, ey) {
+    // Corner tab dragging
+    if (cornerDragging) {
+      var cdx = ex - cornerStartX, cdy = ey - cornerStartY;
+      if (Math.abs(cdx) < 2 && Math.abs(cdy) < 2) return;
+      cornerMoved = true;
+      cornerLastDx = cdx; cornerLastDy = cdy; // 保存最后位置用于释放判断
+      if (cornerSide === 'right' || cornerSide === 'left') {
+        // 沿垂直边缘滑动
+        var rawTop = cornerStartPos + (cdy / window.innerHeight * 100);
+        cornerPos = Math.max(5, Math.min(95, rawTop));
+        corner.style.top = cornerPos + '%';
+      } else {
+        // 沿水平边缘滑动
+        var rawLeft = cornerStartPos + (cdx / window.innerWidth * 100);
+        cornerPos = Math.max(5, Math.min(95, rawLeft));
+        corner.style.left = cornerPos + '%';
+      }
+      return;
+    }
+    // Ball dragging
     if (!dragging) return;
     var dx = ex - startX, dy = ey - startY;
     if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
@@ -1256,7 +1295,28 @@
   }
   document.addEventListener('mousemove', function(e){ onMove(e.clientX, e.clientY); });
   document.addEventListener('touchmove', function(e){ onMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+
   function onUp() {
+    // Corner tab release
+    if (cornerDragging) {
+      cornerDragging = false;
+      if (cornerMoved) {
+        var cdx = cornerLastDx || 0, cdy = cornerLastDy || 0;
+        // 判断是否向中间拉动（垂直方向偏离边缘超过阈值）
+        var pulledTowardCenter = false;
+        if (cornerSide === 'right' && cdx < -50) pulledTowardCenter = true;
+        else if (cornerSide === 'left' && cdx > 50) pulledTowardCenter = true;
+        else if (cornerSide === 'bottom' && cdy < -50) pulledTowardCenter = true;
+        else if (cornerSide === 'top' && cdy > 50) pulledTowardCenter = true;
+
+        if (pulledTowardCenter) {
+          showBall();
+        }
+      }
+      saveState();
+      return;
+    }
+    // Ball release
     ballBtn.classList.remove('dragging');
     if (!dragging) return;
     dragging = false;
@@ -1300,7 +1360,10 @@
 
   // --- Hide / corner ---
   hideBtn.addEventListener('click', hideBall);
-  corner.addEventListener('click', showBall);
+  // Corner click: only showBall on tap (not drag). Handled in onUp via cornerMoved flag.
+  corner.addEventListener('click', function(e) {
+    if (!cornerMoved) showBall();
+  });
 
   // --- Resize ---
   window.addEventListener('resize', function() {
