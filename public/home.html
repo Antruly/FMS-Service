@@ -1150,7 +1150,7 @@
         linkEl.href = d.data.url || '#';
         linkEl.textContent = '📥 v'+d.data.version+' ('+Math.round(d.data.size/1024/1024)+'MB)';
         var theme = (document.documentElement.getAttribute('data-theme')||'dark')==='dark'?'dark':'light';
-        var qrUrl = '/api/qr?text='+encodeURIComponent(d.data.url||serverUrl)+'&size=200&theme='+theme;
+        var qrUrl = '/api/qr?text='+encodeURIComponent(d.data.url||window.location.origin)+'&size=200&theme='+theme;
         var img = document.createElement('img');
         img.src = qrUrl; img.style.width='100%';img.style.height='100%';img.onerror=function(){qrEl.textContent='加载失败'};
         qrEl.innerHTML = ''; qrEl.appendChild(img);
