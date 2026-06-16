@@ -623,4 +623,16 @@ router.delete('/transfers/:id', requireAuth, function(req, res) {
   res.json({ code: 1, message: '无效的 ID', data: null });
 });
 
+// ==================== DELETE /api/transfers/clear — 清空历史记录 ====================
+router.delete('/transfers/clear', requireAuth, function(req, res) {
+  var user = req.user;
+  // 删除已完成/失败/取消的传输记录
+  var cleared = db.TransferTask.cleanup(0); // days=0: clear all completed/error/cancelled now
+  // 同时清理下载日志
+  try {
+    db.run("DELETE FROM download_logs WHERE user_id = ? AND status != 'started'", [user.id]);
+  } catch(e) {}
+  res.json({ code: 0, message: '已清空 ' + cleared + ' 条历史记录', data: { cleared: cleared } });
+});
+
 module.exports = router;

@@ -9655,6 +9655,9 @@
   // ==================== 传输列表 ====================
   var _activeTransfers = [];
   var _transferFilter = 'all';
+  var _transferPage = 0;
+  var _transferHasMore = false;
+  var _transferLoading = false;
 
   function loadTransferList() {
     var container = $('#page-panel-body');
@@ -9694,8 +9697,10 @@
     }
     html += '</div>';
 
-    if (items.length > 0 && items.length < total) {
-      html += '<div style="text-align:center;padding:16px"><button class="transfer-action-btn" onclick="window.__fm._loadMoreTransfers()">加载更多...</button></div>';
+    if (_transferHasMore) {
+      html += '<div style="text-align:center;padding:16px"><button class="transfer-action-btn" onclick="window.__fm._loadMoreTransfers()">📥 加载更多 (' + items.length + ' / ' + total + ')</button></div>';
+    } else if (items.length > 0 && total > items.length) {
+      html += '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">已显示全部 ' + total + ' 条记录</div>';
     }
 
     container.innerHTML = html;
@@ -9741,9 +9746,14 @@
     '</div>';
   }
 
-  function fetchTransfers() {
+  function fetchTransfers(append) {
+    if (_transferLoading) return;
+    _transferLoading = true;
     var status = _transferFilter === 'all' ? 'all' : _transferFilter;
-    axios.get('/api/transfers?status=' + status + '&limit=30').then(function(res) {
+    var page = append ? _transferPage + 1 : 0;
+    var limit = 20;
+    axios.get('/api/transfers?status=' + status + '&limit=' + limit + '&offset=' + (page * limit)).then(function(res) {
+      _transferLoading = false;
       if (res.data.code === 0) {
         var d = res.data.data;
         var pending = 0;
@@ -9751,10 +9761,19 @@
           if (item.status === 'uploading' || item.status === 'pending') pending++;
         });
         d._pendingCount = pending;
-        renderTransferList($('#page-panel-body'), d);
+        var container = $('#page-panel-body');
+        if (append && container && container._prevData) {
+          // Append to existing data
+          d.items = (container._prevData.items || []).concat(d.items);
+          d._pendingCount = (container._prevData._pendingCount || 0) + pending;
+        }
+        container._prevData = d;
+        _transferPage = page;
+        _transferHasMore = d.items.length >= limit && d.total > d.items.length;
+        renderTransferList(container, d);
         updateTransferBadge(pending);
       }
-    }).catch(function() {});
+    }).catch(function() { _transferLoading = false; });
   }
 
   function updateTransferBadge(count) {
@@ -9813,7 +9832,21 @@
   };
 
   window.__fm._loadMoreTransfers = function() {
-    fetchTransfers();
+    if (_transferHasMore && !_transferLoading) fetchTransfers(true);
+  };
+
+  window.__fm._clearHistory = function() {
+    if (!confirm('确定要清空所有传输历史记录吗？（进行中的任务不受影响）')) return;
+    axios.delete('/api/transfers/clear').then(function(res) {
+      if (res.data.code === 0) {
+        var container = $('#page-panel-body');
+        if (container) container._prevData = null;
+        _transferPage = 0;
+        _transferHasMore = false;
+        fetchTransfers();
+        showToast('已清空历史记录', '✅');
+      }
+    }).catch(function() { showToast('清空失败', '❌'); });
   };
 
   // Resume
@@ -9991,6 +10024,9 @@
   // ==================== 传输列表 ====================
   var _activeTransfers = [];
   var _transferFilter = 'all';
+  var _transferPage = 0;
+  var _transferHasMore = false;
+  var _transferLoading = false;
 
   function loadTransferList() {
     var container = $('#page-panel-body');
@@ -10010,6 +10046,8 @@
     filters.forEach(function(f) {
       html += '<button class="transfer-filter-btn' + (_transferFilter === f.id ? ' active' : '') + '" data-filter="' + f.id + '">' + f.label + '</button>';
     });
+    html += '<span style="flex:1"></span>';
+    html += '<button class="transfer-action-btn danger" onclick="window.__fm._clearHistory()" style="font-size:11px">🗑 清空历史</button>';
     html += '</div>';
 
     if (pendingCount > 0) {
@@ -10030,8 +10068,10 @@
     }
     html += '</div>';
 
-    if (items.length > 0 && items.length < total) {
-      html += '<div style="text-align:center;padding:16px"><button class="transfer-action-btn" onclick="window.__fm._loadMoreTransfers()">加载更多...</button></div>';
+    if (_transferHasMore) {
+      html += '<div style="text-align:center;padding:16px"><button class="transfer-action-btn" onclick="window.__fm._loadMoreTransfers()">📥 加载更多 (' + items.length + ' / ' + total + ')</button></div>';
+    } else if (items.length > 0 && total > items.length) {
+      html += '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">已显示全部 ' + total + ' 条记录</div>';
     }
 
     container.innerHTML = html;
@@ -10093,9 +10133,14 @@
     '</div>';
   }
 
-  function fetchTransfers() {
+  function fetchTransfers(append) {
+    if (_transferLoading) return;
+    _transferLoading = true;
     var status = _transferFilter === 'all' ? 'all' : _transferFilter;
-    axios.get('/api/transfers?status=' + status + '&limit=30').then(function(res) {
+    var page = append ? _transferPage + 1 : 0;
+    var limit = 20;
+    axios.get('/api/transfers?status=' + status + '&limit=' + limit + '&offset=' + (page * limit)).then(function(res) {
+      _transferLoading = false;
       if (res.data.code === 0) {
         var d = res.data.data;
         var pending = 0;
@@ -10103,10 +10148,19 @@
           if (item.status === 'uploading' || item.status === 'pending') pending++;
         });
         d._pendingCount = pending;
-        renderTransferList($('#page-panel-body'), d);
+        var container = $('#page-panel-body');
+        if (append && container && container._prevData) {
+          // Append to existing data
+          d.items = (container._prevData.items || []).concat(d.items);
+          d._pendingCount = (container._prevData._pendingCount || 0) + pending;
+        }
+        container._prevData = d;
+        _transferPage = page;
+        _transferHasMore = d.items.length >= limit && d.total > d.items.length;
+        renderTransferList(container, d);
         updateTransferBadge(pending);
       }
-    }).catch(function() {});
+    }).catch(function() { _transferLoading = false; });
   }
 
   function updateTransferBadge(count) {
@@ -10165,7 +10219,21 @@
   };
 
   window.__fm._loadMoreTransfers = function() {
-    fetchTransfers();
+    if (_transferHasMore && !_transferLoading) fetchTransfers(true);
+  };
+
+  window.__fm._clearHistory = function() {
+    if (!confirm('确定要清空所有传输历史记录吗？（进行中的任务不受影响）')) return;
+    axios.delete('/api/transfers/clear').then(function(res) {
+      if (res.data.code === 0) {
+        var container = $('#page-panel-body');
+        if (container) container._prevData = null;
+        _transferPage = 0;
+        _transferHasMore = false;
+        fetchTransfers();
+        showToast('已清空历史记录', '✅');
+      }
+    }).catch(function() { showToast('清空失败', '❌'); });
   };
 
   // Resume
