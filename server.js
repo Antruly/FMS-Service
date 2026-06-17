@@ -991,13 +991,21 @@ async function startServer() {
 
     // 创建 HTTP 服务器（与 WebSocket 共享）
     var server = http.createServer(app);
+    // 允许端口复用，避免重启时 EADDRINUSE
+    server.on('error', function(err) {
+      if (err.code === 'EADDRINUSE') {
+        log.error('[Server] 端口 ' + config.PORT + ' 已被占用，请先停止旧进程: npx pm2 stop fileservice');
+        process.exit(1);
+      }
+      throw err;
+    });
 
     // 初始化 WebSocket 服务（同时监听 HTTP 和 HTTPS）
     wsService.init(server);
     if (httpsServer) wsService.init(httpsServer);
 
-    // 启动 HTTP 服务器
-    server.listen(config.PORT, function() {
+    // 启动 HTTP 服务器（SO_REUSEADDR 允许端口快速复用）
+    server.listen({ port: config.PORT, host: '::', reuseAddr: true }, function() {
       log.info('[HTTP] Server running at http://localhost:' + config.PORT);
     });
 
