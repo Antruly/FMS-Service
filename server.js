@@ -130,11 +130,11 @@ function banIP(ip, reason, durationMinutes) {
 // Body parsers（仅在非 WebDAV 路径生效，避免消费 PUT body）
 app.use(function(req, res, next) {
   if (req.path.indexOf('/webdav') === 0) return next();
-  express.json()(req, res, next);
+  express.json({ limit: '10mb' })(req, res, next);
 });
 app.use(function(req, res, next) {
   if (req.path.indexOf('/webdav') === 0) return next();
-  express.urlencoded({ extended: true })(req, res, next);
+  express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
 });
 
 // HTTP 到 HTTPS 重定向（启用 SSL 时）

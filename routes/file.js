@@ -4692,7 +4692,7 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
     var buf = rawData;
     var truncated = fileSize > 5 * 1024 * 1024;
     if (truncated) buf = buf.slice(0, 5 * 1024 * 1024);
-    var decoded = detectAndDecode(buf);
+    var decoded = detectAndDecode(buf, req.query.encoding);
     logTraffic(user.id, '', 'preview', 0, pubPath, fileSize, buf.length);
     return res.json({
       code: 0,
@@ -4743,7 +4743,7 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
       var buf = rawData;
       var truncated = rawData.length > 5 * 1024 * 1024;
       if (truncated) buf = buf.slice(0, 5 * 1024 * 1024);
-      var decoded = detectAndDecode(buf);
+      var decoded = detectAndDecode(buf, req.query.encoding);
       logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
       return res.json({
         code: 0,
@@ -4774,7 +4774,7 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
           var buf = Buffer.concat(chunks);
           var size = buf.length;
           if (size > 5 * 1024 * 1024) buf = buf.slice(0, 5 * 1024 * 1024);
-          var decoded = detectAndDecode(buf);
+          var decoded = detectAndDecode(buf, req.query.encoding);
           logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
           res.json({
             code: 0,
@@ -4809,7 +4809,7 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
           var buf = Buffer.concat(chunks);
           var size = buf.length;
           if (size > 5 * 1024 * 1024) { buf = buf.slice(0, 5 * 1024 * 1024); }
-          var decoded = detectAndDecode(buf);
+          var decoded = detectAndDecode(buf, req.query.encoding);
           logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
           res.json({
             code: 0,
@@ -4836,9 +4836,22 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
 });
 
 // ==================== 文本编码检测辅助 ====================
-function detectAndDecode(buf) {
+function detectAndDecode(buf, overrideEncoding) {
   var result = { encoding: 'UTF-8', content: '', confidence: 0 };
   try {
+    // 用户指定编码时直接使用，跳过自动检测
+    if (overrideEncoding) {
+      var enc = overrideEncoding.toLowerCase();
+      if (enc === 'utf-8' || enc === 'utf8' || enc === 'ascii') {
+        result.content = buf.toString('utf8');
+        result.encoding = overrideEncoding.toUpperCase();
+      } else {
+        result.content = iconv.decode(buf, enc);
+        result.encoding = overrideEncoding.toUpperCase();
+      }
+      result.confidence = 1;
+      return result;
+    }
     var detected = jschardet.detect(buf);
     if (detected && detected.encoding && detected.confidence > 0.5) {
       var enc = detected.encoding.toLowerCase();

@@ -2546,8 +2546,8 @@
       // Excel：调用后端 xlsx 解析为 HTML 表格
       contentHtml = '<div id="pv-xlsx-content" style="width:100%;height:calc(100vh - 180px);background:' + modalBg + ';border:1px solid ' + modalBorder + ';border-radius:12px;overflow:auto;box-sizing:border-box;padding:20px;color:' + modalColor + ';font-size:13px;line-height:1.6;transition:all 0.3s ease"></div>';
     } else if (type === 'pdf') {
-      // PDF：直接使用浏览器内置 PDF 查看器（iframe + streamUrl）
-      contentHtml = '<iframe id="pv-pdf-iframe" src="" style="width:100%;height:calc(100vh - 160px);border-radius:8px;border:1px solid rgba(0,212,255,0.2);background:#525659" sandbox="allow-scripts allow-same-origin"></iframe>' +
+      // PDF：浏览器内置查看器直接加载（iframe + streamUrl），不加 sandbox 避免被屏蔽
+      contentHtml = '<iframe id="pv-pdf-iframe" src="" style="width:100%;height:calc(100vh - 160px);border-radius:8px;border:1px solid rgba(0,212,255,0.2);background:#525659" allowfullscreen></iframe>' +
         '<div id="pv-pdf-loading" style="position:absolute;display:flex;flex-direction:column;align-items:center;gap:12px;color:#7a8194;font-family:\'Share Tech Mono\',monospace;font-size:13px"><div style="width:32px;height:32px;border:3px solid rgba(0,212,255,0.15);border-top-color:#00d4ff;border-radius:50%;animation:spin 0.8s linear infinite"></div>正在加载预览...</div>';
     }
 
@@ -2558,6 +2558,7 @@
           '<span id="pv-title" style="font-size:15px;font-weight:700;color:' + titleColor + ';font-family:\'Syne\',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color 0.3s ease">' + title + '</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0">' +
+          ((isEdit || type === 'text' || type === 'markdown') ? '<select id="pv-encoding-select" style="padding:5px 8px;background:' + btnBg + ';border:1px solid ' + btnBorder + ';border-radius:8px;color:' + btnColor + ';font-size:12px;font-family:\'Share Tech Mono\',monospace;cursor:pointer"><option value="">自动检测</option><option value="UTF-8">UTF-8</option><option value="GBK">GBK</option><option value="GB2312">GB2312</option><option value="BIG5">BIG5</option><option value="Shift_JIS">Shift_JIS</option><option value="EUC-KR">EUC-KR</option><option value="ASCII">ASCII</option><option value="Latin1">Latin1</option></select>' : '') +
           ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-edit-btn" style="display:none;padding:6px 16px;background:' + editBg + ';border:1px solid ' + editBorder + ';border-radius:8px;color:#00d4ff;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#9998; 编辑</button>' : '') +
           ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-save-btn" style="display:none;padding:6px 16px;background:linear-gradient(135deg,#00d4ff,#0099cc);border:none;border-radius:8px;color:#07090f;font-size:13px;font-weight:700;cursor:pointer;font-family:\'Syne\',sans-serif">&#128190; 保存</button>' : '') +
           '<button id="pv-dl-btn" style="padding:6px 16px;background:' + btnBg + ';border:1px solid ' + btnBorder + ';border-radius:8px;color:' + btnColor + ';font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif;transition:all 0.3s ease">&#128229; 下载</button>' +
@@ -2585,6 +2586,8 @@
       var loadingEl = overlay.querySelector('#pv-loading');
       var encInfo = overlay.querySelector('#pv-enc-info');
       var contentContainer = overlay.querySelector('#pv-content');
+      var encSel = overlay.querySelector('#pv-encoding-select');
+      _pv_textUrl = textUrl;
       apiGet(textUrl).then(function(res) {
         if (res.code !== 0) {
           showToast('文件读取失败');
@@ -2598,6 +2601,8 @@
 
         // 编码信息
         if (encInfo) { encInfo.textContent = '编码: ' + enc + (truncated ? ' | 已截断' : ''); encInfo.style.display = 'block'; }
+        // 同步编码选择器
+        if (encSel) { encSel.value = enc; }
 
         initMonacoEditor(contentContainer, content, item.name, false, item, textUrl, enc);
         if (loadingEl) loadingEl.style.display = 'none';
@@ -2700,6 +2705,7 @@
     if (type === 'text' || type === 'markdown') {
       var editBtn = overlay.querySelector('#pv-edit-btn');
       var saveBtn = overlay.querySelector('#pv-save-btn');
+      var encSel = overlay.querySelector('#pv-encoding-select');
       if (editBtn) {
         editBtn.style.display = 'inline-flex';
         editBtn.addEventListener('click', function() { toggleMonacoEdit(); });
@@ -2707,6 +2713,11 @@
       if (saveBtn) {
         saveBtn.style.display = 'none';
         saveBtn.addEventListener('click', function() { saveMonacoContent(); });
+      }
+      if (encSel) {
+        encSel.addEventListener('change', function() {
+          reloadWithEncoding(encSel.value);
+        });
       }
     }
 
@@ -2756,6 +2767,8 @@
   var _pv_editing = false;
   var _pv_saveUrl = "";
   var _pv_item = null;
+  var _pv_encoding = 'UTF-8';
+  var _pv_textUrl = "";
   var _monacoReady = false;
 
   // 预加载 Monaco
@@ -2779,7 +2792,7 @@
 
   function initMonacoEditor(container, content, fileName, startEdit, item, saveUrl, encoding) {
     if (_pv_monaco) { try { _pv_monaco.dispose(); } catch(e) {} _pv_monaco = null; }
-    _pv_editing = startEdit || false; _pv_saveUrl = saveUrl || ''; _pv_item = item || null;
+    _pv_editing = startEdit || false; _pv_saveUrl = saveUrl || ''; _pv_item = item || null; _pv_encoding = encoding || 'UTF-8';
 
     if (!_monacoReady || typeof monaco === 'undefined') {
       var bg = (state && state.theme === 'light') ? '#fff' : '#0a0c14';
@@ -2836,12 +2849,40 @@
 
   function toggleMonacoEdit() { _pv_editing = !_pv_editing; updateMonacoButtons(); }
 
+  function reloadWithEncoding(newEnc) {
+    if (!_pv_textUrl) return;
+    _pv_editing = false; updateMonacoButtons();
+    var url = '/api' + _pv_textUrl;
+    var sep = url.indexOf('?') === -1 ? '?' : '&';
+    url += sep + 'encoding=' + encodeURIComponent(newEnc);
+    var overlay = document.getElementById('preview-overlay');
+    var loadingEl = overlay ? overlay.querySelector('#pv-loading') : null;
+    var encInfo = overlay ? overlay.querySelector('#pv-enc-info') : null;
+    var contentContainer = overlay ? overlay.querySelector('#pv-content') : null;
+    if (loadingEl) loadingEl.style.display = '';
+    _pv_encoding = newEnc || 'UTF-8';
+    axios.get(url).then(function(res) {
+      if (res.data.code !== 0) { showToast('编码切换失败'); if (loadingEl) loadingEl.style.display = 'none'; return; }
+      var content = res.data.content;
+      var enc = res.data.encoding || newEnc || 'UTF-8';
+      var truncated = res.data.truncated;
+      if (truncated) content += '\n\n... (内容已截断，仅显示前 5MB)';
+      _pv_encoding = enc;
+      if (encInfo) { encInfo.textContent = '编码: ' + enc + (truncated ? ' | 已截断' : ''); encInfo.style.display = 'block'; }
+      initMonacoEditor(contentContainer, content, _pv_item ? _pv_item.name : '', false, _pv_item, _pv_textUrl, enc);
+      if (loadingEl) loadingEl.style.display = 'none';
+    }).catch(function(err) {
+      showToast('编码切换失败: ' + (err.message || '网络错误'));
+      if (loadingEl) loadingEl.style.display = 'none';
+    });
+  }
+
   function saveMonacoContent() {
     if (!_pv_saveUrl) return;
     var content = _pv_monaco ? _pv_monaco.getValue() : (document.querySelector('#pv-textarea') || {}).value || '';
     var saveBtn = document.getElementById('pv-save-btn');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
-    axios.put('/api' + _pv_saveUrl, { content: content, encoding: 'utf-8' }).then(function(r) {
+    axios.put('/api' + _pv_saveUrl, { content: content, encoding: _pv_encoding || 'UTF-8' }).then(function(r) {
       if (r.data.code === 0) {
         showToast('保存成功', '✅');
         if (_pv_item) _pv_item.size = r.data.data.size;
@@ -2860,7 +2901,7 @@
     var content = ta.value;
     var saveBtn = document.getElementById('pv-save-btn');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
-    axios.put('/api' + _pv_saveUrl, { content: content, encoding: 'utf-8' }).then(function(r) {
+    axios.put('/api' + _pv_saveUrl, { content: content, encoding: _pv_encoding || 'UTF-8' }).then(function(r) {
       if (r.data.code === 0) { showToast('保存成功', '✅'); _pv_editing = false; updateMonacoButtons(); if (ta) ta.readOnly = true; }
       else showToast('保存失败: ' + r.data.message, '❌');
     }).catch(function(err) {
