@@ -366,25 +366,45 @@
   // ---------- Icon & Color Map ----------
   var ICON_MAP = {
     folder: '&#128193;',
-    'image/jpeg': '&#127912;', 'image/png': '&#127912;', 'image/gif': '&#127912;',
-    'image/webp': '&#127912;', 'image/svg+xml': '&#127912;',
-    'video/mp4': '&#127909;', 'video/webm': '&#127909;',
+    // 图片
+    'image/jpeg': '&#128444;', 'image/png': '&#128444;', 'image/gif': '&#128444;',
+    'image/webp': '&#128444;', 'image/svg+xml': '&#128444;', 'image/bmp': '&#128444;',
+    'image/x-icon': '&#128444;', 'image/tiff': '&#128444;',
+    // 视频
+    'video/mp4': '&#127909;', 'video/webm': '&#127909;', 'video/ogg': '&#127909;',
+    'video/quicktime': '&#127909;', 'video/x-msvideo': '&#127909;', 'video/x-matroska': '&#127909;',
+    // 音频
     'audio/mpeg': '&#127925;', 'audio/wav': '&#127925;', 'audio/ogg': '&#127925;',
+    'audio/flac': '&#127925;', 'audio/aac': '&#127925;', 'audio/mp3': '&#127925;',
+    'audio/x-ms-wma': '&#127925;', 'audio/webm': '&#127925;',
+    // 文档
     'application/pdf': '&#128196;',
     'application/msword': '&#128196;',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '&#128196;',
     'application/vnd.ms-excel': '&#128200;',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '&#128200;',
+    'application/vnd.ms-powerpoint': '&#128202;',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '&#128202;',
+    // 文本
     'text/plain': '&#128221;', 'text/csv': '&#128221;', 'application/json': '&#128221;',
-    'application/javascript': '&#128221;',
+    'application/javascript': '&#128221;', 'text/html': '&#128221;', 'text/css': '&#128221;',
+    'text/xml': '&#128221;', 'application/xml': '&#128221;', 'text/markdown': '&#128221;',
+    // 压缩包
     'application/zip': '&#128230;', 'application/x-rar-compressed': '&#128230;',
-    'application/x-7z-compressed': '&#128230;',
+    'application/x-7z-compressed': '&#128230;', 'application/gzip': '&#128230;',
+    'application/x-tar': '&#128230;', 'application/x-bzip2': '&#128230;',
+    'application/x-xz': '&#128230;',
+    // 可执行文件
     'application/x-msdownload': '&#9881;', 'application/x-msdos-program': '&#9881;',
     'application/x-exe': '&#9881;', 'application/x-elf': '&#9881;',
-    'application/octet-stream': '&#9881;', 'application/x-executable': '&#9881;',
+    'application/x-executable': '&#9881;',
     'application/x-sh': '&#9881;', 'application/x-bat': '&#9881;',
     'application/x-cmd': '&#9881;', 'application/x-com': '&#9881;',
-    unknown: '&#128462;',
+    // APK / 移动应用
+    'application/vnd.android.package-archive': '&#128241;',
+    'application/x-apk': '&#128241;',
+    // 默认
+    unknown: '&#128196;',
   };
 
   var TYPE_CLASS_MAP = {
@@ -2405,9 +2425,12 @@
     if (ext === 'md') return 'markdown';
     // DOCX 转为 HTML 渲染
     if (ext === 'docx') return 'docx';
-    // PDF/旧版 Office 用在线预览器（目前暂时不支持）
+    // xlsx/xls 转为 HTML 表格
+    if (ext === 'xlsx' || ext === 'xls') return 'spreadsheet';
+    // PDF 浏览器原生渲染
     if (ext === 'pdf') return 'pdf';
-    if (ext === 'doc' || ext === 'xls' || ext === 'xlsx' || ext === 'ppt' || ext === 'pptx') return 'office_unsupported';
+    // 旧版 Office 格式暂不支持
+    if (ext === 'doc' || ext === 'ppt' || ext === 'pptx') return 'office_unsupported';
 
     // 图片：优先用 mime 列表判断，兜底按扩展名
     if (PREVIEW_IMAGE.includes(mime)) return 'image';
@@ -2427,6 +2450,9 @@
     return PREVIEW_EDIT.includes(mime) || getPreviewType(mime, name) === 'markdown';
   }
 
+  var DOC_PREVIEW_TYPES = ['text','markdown','docx','spreadsheet','pdf'];
+  var PREVIEW_MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
   function openPreview(item) {
     var type = getPreviewType(item.mime_type, item.name);
     if (!type) {
@@ -2435,6 +2461,11 @@
     }
     if (type === 'office_unsupported') {
       showToast('该格式暂不支持预览，请下载后查看');
+      return;
+    }
+    // 文档类预览限制 10MB
+    if (DOC_PREVIEW_TYPES.indexOf(type) !== -1 && item.size > PREVIEW_MAX_SIZE) {
+      showToast('文件超过10MB，不支持在线预览，请下载后查看');
       return;
     }
     showPreviewModal(item, type);
@@ -2457,6 +2488,9 @@
     var docxUrl = isPublicItem
       ? '/files/docx/0?public_path=' + encodeURIComponent(item.relPath || item.id)
       : '/files/docx/' + filePathId;
+    var xlsxUrl = isPublicItem
+      ? '/files/xlsx/0?public_path=' + encodeURIComponent(item.relPath || item.id)
+      : '/files/xlsx/' + filePathId;
     var overlay = document.createElement('div');
     overlay.id = 'preview-overlay';
     overlay.style.cssText = [
@@ -2474,42 +2508,23 @@
       contentHtml = '<video id="pv-video" src="' + streamUrl + '" controls autoplay playsinline style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,0.6);background:#000" crossorigin="anonymous"></video>';
     } else if (type === 'audio') {
       contentHtml = '<div style="background:var(--bg-card,rgba(20,22,35,0.98));border:1px solid var(--border,rgba(0,212,255,0.2));border-radius:16px;padding:40px 48px;text-align:center"><audio id="pv-audio" src="' + streamUrl + '" controls autoplay style="width:100%"></audio></div>';
-    } else if (type === 'text') {
-      // 文本文件：调用后端 /api/files/text/:id 获取内容
-      var editorHeight = isEdit ? 'calc(100vh - 240px)' : 'calc(100vh - 200px)';
+    } else if (type === 'text' || type === 'markdown') {
+      // CodeMirror 编辑器（文本/代码/Markdown 统一使用）
       contentHtml =
         '<div id="pv-text-wrap" style="width:100%;max-width:900px;display:flex;flex-direction:column;gap:0">' +
-          '<textarea id="pv-textarea" spellcheck="false" ' + (isEdit ? '' : 'readonly ') +
-            'style="width:100%;height:' + editorHeight +
-            ';background:rgba(10,12,20,0.95);color:#e0e6f0;font-family:\'Share Tech Mono\',monospace;' +
-            'font-size:13px;line-height:1.7;padding:20px;border:1px solid rgba(0,212,255,0.2);' +
-            'border-radius:12px;resize:none;outline:none;box-sizing:border-box;' +
-            'tab-size:2;white-space:pre;overflow:auto;' +
-            (isEdit ? '' : 'cursor:default') + '">' +
-          '</textarea>' +
-        '</div>';
-    } else if (type === 'markdown') {
-      // Markdown：先加载内容，再渲染为 HTML
-      var mdHeight = 'calc(100vh - 200px)';
-      contentHtml =
-        '<div id="pv-text-wrap" style="width:100%;max-width:900px;display:flex;flex-direction:column;gap:0">' +
-          '<textarea id="pv-textarea" spellcheck="false" readonly ' +
-            'style="display:none;width:100%;height:' + mdHeight +
-            ';background:rgba(10,12,20,0.95);color:#e0e6f0;font-family:\'Share Tech Mono\',monospace;' +
-            'font-size:13px;line-height:1.7;padding:20px;border:1px solid rgba(0,212,255,0.2);' +
-            'border-radius:12px;resize:none;outline:none;box-sizing:border-box"></textarea>' +
-          '<div id="pv-markdown-content" style="width:100%;height:' + mdHeight +
-            ';background:rgba(10,12,20,0.95);color:#e0e6f0;font-family:\'Microsoft YaHei\',sans-serif;' +
-            'font-size:14px;line-height:1.8;padding:20px;border:1px solid rgba(0,212,255,0.2);' +
-            'border-radius:12px;overflow:auto;box-sizing:border-box"></div>' +
+          '<div id="pv-enc-info" style="display:none;padding:4px 12px;font-size:11px;color:#8b949e;font-family:\'Share Tech Mono\',monospace"></div>' +
+          '<textarea id="pv-textarea" style="width:100%;height:calc(100vh - 200px)"></textarea>' +
         '</div>';
     } else if (type === 'docx') {
       // DOCX：调用后端 mammoth 转为 HTML 后渲染
       contentHtml = '<div id="pv-docx-content" style="width:100%;height:calc(100vh - 180px);background:rgba(10,12,20,0.95);border:1px solid rgba(0,212,255,0.2);border-radius:12px;overflow:auto;box-sizing:border-box;padding:30px 40px;color:#e0e6f0;font-family:\'Microsoft YaHei\',sans-serif;font-size:14px;line-height:1.8"></div>';
+    } else if (type === 'spreadsheet') {
+      // Excel：调用后端 xlsx 解析为 HTML 表格
+      contentHtml = '<div id="pv-xlsx-content" style="width:100%;height:calc(100vh - 180px);background:rgba(10,12,20,0.95);border:1px solid rgba(0,212,255,0.2);border-radius:12px;overflow:auto;box-sizing:border-box;padding:20px;color:#e0e6f0;font-size:13px;line-height:1.6"></div>';
     } else if (type === 'pdf') {
-      // PDF：使用 Microsoft Office Online Viewer（支持 localhost）
-      contentHtml = '<iframe id="pv-online" style="display:none;width:100%;height:calc(100vh - 180px);border-radius:8px;border:1px solid rgba(0,212,255,0.2)" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>' +
-        '<div id="pv-online-loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:calc(100vh - 180px);gap:16px;color:#7a8194;font-family:\'Share Tech Mono\',monospace;font-size:13px"><div style="width:32px;height:32px;border:3px solid rgba(0,212,255,0.15);border-top-color:#00d4ff;border-radius:50%;animation:spin 0.8s linear infinite"></div>正在加载预览...</div>';
+      // PDF：直接使用浏览器内置 PDF 查看器（iframe + streamUrl）
+      contentHtml = '<iframe id="pv-pdf-iframe" src="" style="width:100%;height:calc(100vh - 160px);border-radius:8px;border:1px solid rgba(0,212,255,0.2);background:#525659" sandbox="allow-scripts allow-same-origin"></iframe>' +
+        '<div id="pv-pdf-loading" style="position:absolute;display:flex;flex-direction:column;align-items:center;gap:12px;color:#7a8194;font-family:\'Share Tech Mono\',monospace;font-size:13px"><div style="width:32px;height:32px;border:3px solid rgba(0,212,255,0.15);border-top-color:#00d4ff;border-radius:50%;animation:spin 0.8s linear infinite"></div>正在加载预览...</div>';
     }
 
     overlay.innerHTML =
@@ -2519,8 +2534,8 @@
           '<span id="pv-title" style="font-size:15px;font-weight:700;color:#fff;font-family:\'Syne\',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + title + '</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0">' +
-          (isEdit ? '<button id="pv-edit-btn" style="display:none;padding:6px 16px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.4);border-radius:8px;color:#00d4ff;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#9998; 编辑</button>' : '') +
-          (isEdit ? '<button id="pv-save-btn" style="display:none;padding:6px 16px;background:linear-gradient(135deg,#00d4ff,#0099cc);border:none;border-radius:8px;color:#07090f;font-size:13px;font-weight:700;cursor:pointer;font-family:\'Syne\',sans-serif">&#128190; 保存</button>' : '') +
+          ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-edit-btn" style="display:none;padding:6px 16px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.4);border-radius:8px;color:#00d4ff;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#9998; 编辑</button>' : '') +
+          ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-save-btn" style="display:none;padding:6px 16px;background:linear-gradient(135deg,#00d4ff,#0099cc);border:none;border-radius:8px;color:#07090f;font-size:13px;font-weight:700;cursor:pointer;font-family:\'Syne\',sans-serif">&#128190; 保存</button>' : '') +
           '<button id="pv-dl-btn" style="padding:6px 16px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#e0e6f0;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#128229; 下载</button>' +
           '<button id="pv-close-btn" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#e0e6f0;font-size:18px;cursor:pointer;flex-shrink:0">&#10005;</button>' +
         '</div>' +
@@ -2541,54 +2556,35 @@
     document.addEventListener('keydown', _previewEscHandler);
 
     // 加载内容（根据不同类型）
-    if (type === 'text') {
-      // 文本文件：通过后端接口获取内容
+    if (type === 'text' || type === 'markdown') {
+      // CodeMirror 编辑器：文本/代码/Markdown 统一使用
       var loadingEl = overlay.querySelector('#pv-loading');
       var ta = overlay.querySelector('#pv-textarea');
+      var encInfo = overlay.querySelector('#pv-enc-info');
       apiGet(textUrl).then(function(res) {
         if (res.code !== 0) {
           showToast('文件读取失败');
           closePreviewModal();
           return;
         }
-        if (ta) ta.value = res.data.content + (res.data.truncated ? '\n\n... (内容已截断，仅显示前 5MB)' : '');
+        var content = res.data.content;
+        var enc = res.data.encoding || 'UTF-8';
+        var truncated = res.data.truncated;
+        if (truncated) content += '\n\n... (内容已截断，仅显示前 5MB)';
+
+        // 编码信息
+        if (encInfo) { encInfo.textContent = '编码: ' + enc + (truncated ? ' | 已截断' : ''); encInfo.style.display = 'block'; }
+
+        // 初始化 CodeMirror
+        initCodeMirror(ta, content, item.name, false, item, textUrl, enc);
         if (loadingEl) loadingEl.style.display = 'none';
-      }).catch(function() {
-        if (ta) {
-          ta.value = '&#9888; 文件读取失败，请检查网络连接';
-        }
+      }).catch(function(err) {
+        var errMsg = '文件读取失败';
+        if (err && err.response && err.response.data && err.response.data.message) {
+          errMsg = err.response.data.message;
+        } else if (err && err.message) { errMsg = err.message; }
+        if (ta) { ta.value = '⚠ ' + errMsg; }
         if (loadingEl) loadingEl.style.display = 'none';
-      });
-    } else if (type === 'markdown') {
-      // Markdown：获取内容后用 marked.js 渲染（从 cdn 加载）
-      var loadingEl = overlay.querySelector('#pv-loading');
-      var ta = overlay.querySelector('#pv-textarea');
-      var mdDiv = overlay.querySelector('#pv-markdown-content');
-      apiGet(textUrl).then(function(res) {
-        if (res.code !== 0) {
-          showToast('文件读取失败');
-          closePreviewModal();
-          return;
-        }
-        if (ta) ta.value = res.data.content;
-        // 动态加载 marked.js 渲染 Markdown
-        var markedScript = document.createElement('script');
-        markedScript.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
-        markedScript.onload = function() {
-          if (window.marked && mdDiv) {
-            mdDiv.innerHTML = window.marked(res.data.content);
-          } else if (mdDiv) {
-            mdDiv.innerHTML = res.data.content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          }
-          if (loadingEl) loadingEl.style.display = 'none';
-        };
-        markedScript.onerror = function() {
-          if (mdDiv) mdDiv.innerHTML = res.data.content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          if (loadingEl) loadingEl.style.display = 'none';
-        };
-        document.head.appendChild(markedScript);
-      }).catch(function() {
-        if (loadingEl) loadingEl.innerHTML = '&#9888; 网络错误';
       });
     } else if (type === 'docx') {
       // DOCX：调用后端 mammoth 转 HTML 后渲染
@@ -2605,38 +2601,49 @@
           docxDiv.scrollTop = 0;
         }
         if (loadingEl) loadingEl.style.display = 'none';
-      }).catch(function() {
-        if (docxDiv) docxDiv.innerHTML = '&#9888; 网络错误，请检查网络连接';
+      }).catch(function(err) {
+        var errMsg = '文件读取失败';
+        if (err && err.response && err.response.data && err.response.data.message) {
+          errMsg = err.response.data.message;
+        } else if (err && err.message) { errMsg = err.message; }
+        if (docxDiv) docxDiv.innerHTML = '&#9888; ' + errMsg;
         if (loadingEl) loadingEl.style.display = 'none';
       });
-    } else if (type === 'pdf') {
-      // PDF：使用 Microsoft Office Online Viewer
+    } else if (type === 'spreadsheet') {
+      // Excel：后端 xlsx 解析为 HTML 表格
       var loadingEl = overlay.querySelector('#pv-loading');
-      apiGet('/files/preview-token/' + item.id).then(function(res) {
+      var xlsxDiv = overlay.querySelector('#pv-xlsx-content');
+      apiGet(xlsxUrl).then(function(res) {
         if (res.code !== 0) {
-          showToast('获取预览令牌失败');
+          showToast('Excel 文件解析失败');
           closePreviewModal();
           return;
         }
-        var token = res.data.token;
-        var iframe = overlay.querySelector('#pv-online');
-        var loadingDiv = overlay.querySelector('#pv-online-loading');
-        if (iframe && loadingDiv) {
-          var previewUrl = window.location.origin + streamUrl + '?token=' + encodeURIComponent(token);
-          var officeViewerUrl = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(previewUrl);
-          iframe.src = officeViewerUrl;
-          iframe.addEventListener('load', function() {
-            if (loadingDiv) loadingDiv.style.display = 'none';
-            iframe.style.display = 'block';
-            if (loadingEl) loadingEl.style.display = 'none';
-          });
-          iframe.addEventListener('error', function() {
-            if (loadingDiv) loadingDiv.innerHTML = '&#9888; PDF 预览失败，请下载后查看';
-          });
-        }
-      }).catch(function() {
-        if (loadingEl) loadingEl.innerHTML = '&#9888; 网络错误';
+        if (xlsxDiv) { xlsxDiv.innerHTML = res.data.html; xlsxDiv.scrollTop = 0; }
+        if (loadingEl) loadingEl.style.display = 'none';
+      }).catch(function(err) {
+        var errMsg = '文件读取失败';
+        if (err && err.response && err.response.data && err.response.data.message) {
+          errMsg = err.response.data.message;
+        } else if (err && err.message) { errMsg = err.message; }
+        if (xlsxDiv) xlsxDiv.innerHTML = '&#9888; ' + errMsg;
+        if (loadingEl) loadingEl.style.display = 'none';
       });
+    } else if (type === 'pdf') {
+      // PDF：浏览器内置查看器直接加载 streamUrl
+      var loadingEl = overlay.querySelector('#pv-loading');
+      var pdfLoading = overlay.querySelector('#pv-pdf-loading');
+      var pdfIframe = overlay.querySelector('#pv-pdf-iframe');
+      if (pdfIframe) {
+        pdfIframe.src = streamUrl;
+        pdfIframe.addEventListener('load', function() {
+          if (pdfLoading) pdfLoading.style.display = 'none';
+          if (loadingEl) loadingEl.style.display = 'none';
+        });
+        pdfIframe.addEventListener('error', function() {
+          if (pdfLoading) pdfLoading.innerHTML = '&#9888; PDF 预览失败，请下载后查看';
+        });
+      }
     } else {
       // 图片/视频/音频加载完成后隐藏 loading
       var loadedSelector = type === 'image' ? '#pv-img' : type === 'video' ? '#pv-video' : '#pv-audio';
@@ -2672,18 +2679,11 @@
       var saveBtn = overlay.querySelector('#pv-save-btn');
       if (editBtn) {
         editBtn.style.display = 'inline-flex';
-        editBtn.addEventListener('click', function() {
-          var ta = overlay.querySelector('#pv-textarea');
-          if (ta) { ta.readOnly = false; ta.focus(); }
-          if (editBtn) editBtn.style.display = 'none';
-          if (saveBtn) saveBtn.style.display = 'inline-flex';
-        });
+        editBtn.addEventListener('click', function() { toggleCMEdit(); });
       }
       if (saveBtn) {
-        saveBtn.style.display = 'inline-flex';
-        saveBtn.addEventListener('click', function() {
-          savePreviewContent(overlay, item);
-        });
+        saveBtn.style.display = 'none'; // 默认只读，隐藏保存按钮
+        saveBtn.addEventListener('click', function() { saveCodeMirrorContent(); });
       }
     }
 
@@ -2696,13 +2696,117 @@
   var _previewEscHandler = null;
   var _previewResizeHandler = null;
 
+  // CodeMirror 语言模式映射
+  var CM_MODE_MAP = {
+    js:'javascript', ts:'javascript', jsx:'jsx', json:'application/json',
+    py:'python', rb:'ruby', php:'text/x-php', java:'text/x-java',
+    c:'text/x-csrc', cpp:'text/x-c++src', h:'text/x-csrc', hpp:'text/x-c++src', cs:'text/x-csharp',
+    html:'htmlmixed', htm:'htmlmixed', css:'css', less:'text/x-less', scss:'text/x-sass',
+    xml:'xml', svg:'xml', sql:'text/x-sql', md:'gfm', yml:'yaml', yaml:'yaml',
+    sh:'shell', bash:'shell', zsh:'shell', bat:'shell', cmd:'shell', ps1:'shell',
+    go:'go', rs:'rust', swift:'swift', kt:'text/x-kotlin', lua:'lua', r:'r',
+    toml:'toml', ini:'properties', conf:'properties', cfg:'properties', env:'properties',
+    dockerfile:'dockerfile', vue:'vue',
+  };
+
+  var _pv_cm = null;
+  var _pv_editing = false;
+  var _pv_saveUrl = '';
+  var _pv_item = null;
+
+  function getCMCodeMode(name) {
+    var ext = (name || '').toLowerCase().split('.').pop();
+    // 动态加载对应 mode（已预加载 meta，按需加载特定 mode）
+    if (CM_MODE_MAP[ext]) {
+      var modeName = CM_MODE_MAP[ext];
+      // 确保 mode 已加载
+      if (typeof CodeMirror.modes[modeName] === 'undefined') {
+        var modeFile = modeName.indexOf('/') > -1 ? modeName.split('/').pop() : modeName;
+        var script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/' + modeName + '/' + modeName + '.min.js';
+        document.head.appendChild(script);
+      }
+      return modeName;
+    }
+    return 'text/plain';
+  }
+
+  function initCodeMirror(textarea, content, fileName, startEdit, item, saveUrl, encoding) {
+    // 清理旧实例
+    if (window._pv_cm) { try { window._pv_cm.toTextArea(); } catch(e) {} window._pv_cm = null; }
+    _pv_cm = null; _pv_editing = startEdit || false; _pv_saveUrl = saveUrl || ''; _pv_item = item || null;
+
+    var mode = getCMCodeMode(fileName);
+    var cm = CodeMirror.fromTextArea(textarea, {
+      value: content,
+      mode: mode,
+      theme: 'dracula',
+      lineNumbers: true,
+      matchBrackets: true,
+      readOnly: !_pv_editing,
+      tabSize: 2,
+      indentUnit: 2,
+      viewportMargin: Infinity,
+      extraKeys: {
+        'Ctrl-S': function() { if (_pv_editing) saveCodeMirrorContent(); },
+        'Cmd-S': function() { if (_pv_editing) saveCodeMirrorContent(); }
+      }
+    });
+    window._pv_cm = cm;
+    cm.setSize('100%', 'calc(100vh - 200px)');
+    cm.scrollTo(0, 0);
+
+    // 更新编辑/保存按钮状态
+    updateCMButtons();
+  }
+
+  function updateCMButtons() {
+    var editBtn = document.getElementById('pv-edit-btn');
+    var saveBtn = document.getElementById('pv-save-btn');
+    if (editBtn) { editBtn.style.display = _pv_editing ? 'none' : 'inline-flex'; }
+    if (saveBtn) { saveBtn.style.display = _pv_editing ? 'inline-flex' : 'none'; }
+    if (window._pv_cm) {
+      window._pv_cm.setOption('readOnly', !_pv_editing);
+    }
+  }
+
+  function toggleCMEdit() {
+    _pv_editing = !_pv_editing;
+    updateCMButtons();
+  }
+
+  function saveCodeMirrorContent() {
+    if (!window._pv_cm || !_pv_saveUrl) return;
+    var content = window._pv_cm.getValue();
+    var saveBtn = document.getElementById('pv-save-btn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
+
+    var body = { content: content, encoding: 'utf-8' };
+    axios.put('/api' + _pv_saveUrl, body).then(function(r) {
+      if (r.data.code === 0) {
+        showToast('保存成功', '✅');
+        if (_pv_item) _pv_item.size = r.data.data.size;
+        _pv_editing = false;
+        updateCMButtons();
+      } else {
+        showToast('保存失败: ' + r.data.message, '❌');
+      }
+    }).catch(function(err) {
+      var msg = '保存失败';
+      if (err && err.response && err.response.data && err.response.data.message) msg = err.response.data.message;
+      showToast(msg, '❌');
+    }).finally(function() {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 保存'; }
+    });
+  }
+
   function closePreviewModal() {
     var overlay = document.getElementById('preview-overlay');
     if (overlay) {
-      var ta = overlay.querySelector('#pv-textarea');
-      if (ta && !ta.readOnly) {
-        var confirmed = confirm('有未保存的修改，确定要关闭吗？');
-        if (!confirmed) return;
+      // CodeMirror 实例清理
+      if (window._pv_cm) {
+        try { window._pv_cm.toTextArea(); } catch(e) {}
+        window._pv_cm = null;
       }
     }
     if (_previewEscHandler) { document.removeEventListener('keydown', _previewEscHandler); _previewEscHandler = null; }
@@ -7310,16 +7414,32 @@
   // 获取文件图标
   function getFileIcon(name) {
     var n = (name || '').toLowerCase();
-    if (n.endsWith('.mp4') || n.endsWith('.webm') || n.endsWith('.avi') || n.endsWith('.mkv')) return '&#127909;';
-    if (n.endsWith('.mp3') || n.endsWith('.wav') || n.endsWith('.flac') || n.endsWith('.aac')) return '&#127925;';
-    if (n.endsWith('.jpg') || n.endsWith('.png') || n.endsWith('.gif') || n.endsWith('.webp') || n.endsWith('.svg') || n.endsWith('.jpeg')) return '&#128444;';
-    if (n.endsWith('.pdf')) return '&#128196;';
-    if (n.endsWith('.zip') || n.endsWith('.rar') || n.endsWith('.7z') || n.endsWith('.tar') || n.endsWith('.gz')) return '&#128230;';
-    if (n.endsWith('.doc') || n.endsWith('.docx')) return '&#128196;';
-    if (n.endsWith('.xls') || n.endsWith('.xlsx')) return '&#128202;';
-    if (n.endsWith('.exe') || n.endsWith('.dll') || n.endsWith('.sys') || n.endsWith('.msi') || n.endsWith('.bat') || n.endsWith('.cmd') || n.endsWith('.sh')) return '&#9881;';
-    if (n.endsWith('.apk')) return '&#128241;';
-    if (n.endsWith('.txt') || n.endsWith('.md') || n.endsWith('.json') || n.endsWith('.js') || n.endsWith('.css') || n.endsWith('.html')) return '&#128196;';
+    // 视频
+    if (/\.(mp4|webm|avi|mkv|mov|wmv|flv|m4v|3gp)$/.test(n)) return '&#127909;';
+    // 音频
+    if (/\.(mp3|wav|flac|aac|ogg|wma|m4a|opus)$/.test(n)) return '&#127925;';
+    // 图片
+    if (/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff|tif)$/.test(n)) return '&#128444;';
+    // 文档
+    if (/\.(pdf)$/.test(n)) return '&#128196;';
+    if (/\.(doc|docx|odt|rtf)$/.test(n)) return '&#128196;';
+    if (/\.(xls|xlsx|ods|csv)$/.test(n)) return '&#128200;';
+    if (/\.(ppt|pptx|odp)$/.test(n)) return '&#128202;';
+    // 文本/代码
+    if (/\.(txt|md|log|json|js|ts|css|html|xml|yml|yaml|ini|cfg|conf|sh|py|java|c|cpp|h|php|rb|sql|rs|go|swift|kt)$/.test(n)) return '&#128221;';
+    // 压缩包
+    if (/\.(zip|rar|7z|tar|gz|bz2|xz|tgz|iso)$/.test(n)) return '&#128230;';
+    // 可执行
+    if (/\.(exe|dll|sys|msi|bat|cmd|com|sh|bin|elf)$/.test(n)) return '&#9881;';
+    // APK
+    if (/\.(apk)$/.test(n)) return '&#128241;';
+    // 字体
+    if (/\.(ttf|otf|woff|woff2|eot)$/.test(n)) return '&#128397;';
+    // 数据库
+    if (/\.(db|sqlite|sqlite3|mdb|accdb)$/.test(n)) return '&#128451;';
+    // 磁盘映像
+    if (/\.(iso|dmg|vhd|vmdk)$/.test(n)) return '&#128190;';
+    // 默认
     return '&#128196;';
   }
 

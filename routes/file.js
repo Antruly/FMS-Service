@@ -41,6 +41,10 @@ var formatFileSize = _fileUtils.formatFileSize || function(bytes) {
 };
 const { encryptFileToBuffer, decryptFileFromBuffer, createDecryptStream, createDecryptStreamRange, createEncryptStream, isV1EncryptedFile, createV1DecryptStream, createV1DecryptStreamHead, createDecryptStreamAuto, getV1FileInfo, detectFileEncVersion, upgradeFileToV1, createV1EncryptStreamSync, createV1EncryptStreamTransform, ENC_V1_VERSION } = require('../lib/crypto');
 const crypto = require('crypto');
+const XLSX = require('xlsx');
+const jschardet = require('jschardet');
+const iconv = require('iconv-lite');
+const PREVIEW_MAX_SIZE = 10 * 1024 * 1024; // 文档预览最大 10MB
 
 // 尝试加载流量缓冲（Redis）
 var TrafficBuffer = null;
@@ -4667,7 +4671,7 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
   var fileId = parseInt(req.params.id, 10);
   var user = req.user;
 
-  var TEXT_SUPPORTED = ['txt','log','json','js','css','html','xml','md','csv','sh','py','java','c','cpp','h','php','rb','sql','yml','yaml','ini','conf','properties','env','htaccess'];
+  var TEXT_SUPPORTED = ['txt','log','json','js','ts','jsx','tsx','css','html','htm','xml','md','csv','sh','bash','zsh','bat','cmd','ps1','py','java','c','cpp','h','hpp','cs','php','rb','sql','yml','yaml','ini','conf','cfg','properties','env','htaccess','toml','go','rs','swift','kt','lua','pl','r','scala','vue','svelte','less','scss','sass','asp','aspx','jsp','dockerfile','makefile','cmake','gitignore','editorconfig','nginx','tex','bib','rst','readme','changelog','license'];
 
   // 公共文件：通过 public_path 查询参数指定相对路径（支持子目录）
   if (req.query.public_path) {
@@ -4686,7 +4690,9 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
     var fileSize = fs.statSync(pubFilePath).size;
     var rawData = fs.readFileSync(pubFilePath);
     var buf = rawData;
-    if (buf.length > 5 * 1024 * 1024) buf = buf.slice(0, 5 * 1024 * 1024);
+    var truncated = fileSize > 5 * 1024 * 1024;
+    if (truncated) buf = buf.slice(0, 5 * 1024 * 1024);
+    var decoded = detectAndDecode(buf);
     logTraffic(user.id, '', 'preview', 0, pubPath, fileSize, buf.length);
     return res.json({
       code: 0,
@@ -4694,8 +4700,9 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
         filename: path.basename(pubPath),
         mime_type: 'text/plain',
         size: fileSize,
-        truncated: fileSize > 5 * 1024 * 1024,
-        content: buf.toString('utf8')
+        truncated: truncated,
+        content: decoded.content,
+        encoding: decoded.encoding
       }
     });
   }
@@ -4734,7 +4741,9 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
     try {
       var rawData = fs.readFileSync(filePath);
       var buf = rawData;
-      if (buf.length > 5 * 1024 * 1024) buf = buf.slice(0, 5 * 1024 * 1024);
+      var truncated = rawData.length > 5 * 1024 * 1024;
+      if (truncated) buf = buf.slice(0, 5 * 1024 * 1024);
+      var decoded = detectAndDecode(buf);
       logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
       return res.json({
         code: 0,
@@ -4742,8 +4751,9 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
           filename: file.name,
           mime_type: file.mime_type,
           size: rawData.length,
-          truncated: rawData.length > 5 * 1024 * 1024,
-          content: buf.toString('utf8')
+          truncated: truncated,
+          content: decoded.content,
+          encoding: decoded.encoding
         }
       });
     } catch(e) {
@@ -4752,39 +4762,181 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
     }
   }
 
-  try {
-    var streamInfo = createDecryptStream(filePath);
-    var chunks = [];
-
-    streamInfo.readStream.on('data', function(chunk) { chunks.push(chunk); });
-    streamInfo.readStream.on('end', function() {
-      try {
-        var buf = Buffer.concat(chunks);
-        var size = buf.length;
-        if (size > 5 * 1024 * 1024) {
-          buf = buf.slice(0, 5 * 1024 * 1024);
+  // 根据加密版本选择解密方式
+  if (file.enc_version === 1) {
+    // V1 分块加密格式
+    try {
+      var decryptStream = createV1DecryptStream(filePath, 0, fileSize - 1);
+      var chunks = [];
+      decryptStream.on('data', function(chunk) { chunks.push(chunk); });
+      decryptStream.on('end', function() {
+        try {
+          var buf = Buffer.concat(chunks);
+          var size = buf.length;
+          if (size > 5 * 1024 * 1024) buf = buf.slice(0, 5 * 1024 * 1024);
+          var decoded = detectAndDecode(buf);
+          logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
+          res.json({
+            code: 0,
+            data: {
+              filename: file.name,
+              mime_type: file.mime_type,
+              size: size,
+              truncated: size > 5 * 1024 * 1024,
+              content: decoded.content,
+              encoding: decoded.encoding
+            }
+          });
+        } catch(e) {
+          if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解码失败: ' + e.message });
         }
-        var text = buf.toString('utf8');
-        logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
-        res.json({
-          code: 0,
-          data: {
-            filename: file.name,
-            mime_type: file.mime_type,
-            size: size,
-            truncated: size > 5 * 1024 * 1024,
-            content: text
-          }
-        });
-      } catch(e) {
-        if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解码失败' });
+      });
+      decryptStream.on('error', function(err) {
+        if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解密失败: ' + (err && err.message || '未知错误') });
+      });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: 'V1文件解密失败: ' + e.message });
+    }
+  } else {
+    // V0 原始加密格式
+    try {
+      var streamInfo = createDecryptStream(filePath);
+      var chunks = [];
+
+      streamInfo.readStream.on('data', function(chunk) { chunks.push(chunk); });
+      streamInfo.readStream.on('end', function() {
+        try {
+          var buf = Buffer.concat(chunks);
+          var size = buf.length;
+          if (size > 5 * 1024 * 1024) { buf = buf.slice(0, 5 * 1024 * 1024); }
+          var decoded = detectAndDecode(buf);
+          logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
+          res.json({
+            code: 0,
+            data: {
+              filename: file.name,
+              mime_type: file.mime_type,
+              size: size,
+              truncated: size > 5 * 1024 * 1024,
+              content: decoded.content,
+              encoding: decoded.encoding
+            }
+          });
+        } catch(e) {
+          if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解码失败' });
+        }
+      });
+      streamInfo.readStream.on('error', function(err) {
+        if (!res.headersSent) res.status(500).json({ code: 500, message: '文件读取失败: ' + (err && err.message || '') });
+      });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: '文件解密失败: ' + e.message });
+    }
+  }
+});
+
+// ==================== 文本编码检测辅助 ====================
+function detectAndDecode(buf) {
+  var result = { encoding: 'UTF-8', content: '', confidence: 0 };
+  try {
+    var detected = jschardet.detect(buf);
+    if (detected && detected.encoding && detected.confidence > 0.5) {
+      var enc = detected.encoding.toLowerCase();
+      if (enc === 'utf-8' || enc === 'utf8' || enc === 'ascii') {
+        result.content = buf.toString('utf8');
+        result.encoding = 'UTF-8';
+      } else {
+        try {
+          result.content = iconv.decode(buf, enc);
+          result.encoding = enc.toUpperCase();
+        } catch(e) {
+          result.content = buf.toString('utf8');
+          result.encoding = 'UTF-8 (fallback)';
+        }
       }
-    });
-    streamInfo.readStream.on('error', function() {
-      if (!res.headersSent) res.status(500).json({ code: 500, message: '文件读取失败' });
-    });
+      result.confidence = detected.confidence;
+    } else {
+      result.content = buf.toString('utf8');
+      result.encoding = 'UTF-8';
+      result.confidence = detected ? detected.confidence : 1;
+    }
   } catch(e) {
-    return res.status(500).json({ code: 500, message: '文件解密失败: ' + e.message });
+    result.content = buf.toString('utf8');
+    result.encoding = 'UTF-8';
+  }
+  return result;
+}
+
+// ==================== 文本文件保存（编辑后覆盖上传）====================
+// PUT /api/files/text/:id  — 个人加密文件
+// POST /api/files/text/0?public_path=xxx — 公共文件
+router.put('/files/text/:id', requireAuth, function(req, res) {
+  var fileId = parseInt(req.params.id, 10);
+  var user = req.user;
+  var content = req.body && req.body.content;
+  if (!content && content !== '') return res.status(400).json({ code: 400, message: '缺少 content 字段' });
+
+  // 公共文件保存
+  if (req.query.public_path) {
+    var pubPath = req.query.public_path;
+    var pubRoot = Storage.PUBLIC_DIR;
+    var pubFilePath = path.resolve(pubRoot, pubPath);
+    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '路径不合法');
+    try {
+      var saveEncoding = (req.body.encoding || 'utf-8').toLowerCase();
+      var saveBuf;
+      if (saveEncoding === 'utf-8' || saveEncoding === 'utf8' || saveEncoding === 'ascii') {
+        saveBuf = Buffer.from(content, 'utf8');
+      } else {
+        saveBuf = iconv.encode(content, saveEncoding);
+      }
+      fs.writeFileSync(pubFilePath, saveBuf);
+      logTraffic(user.id, '', 'edit_save', 0, pubPath, saveBuf.length, saveBuf.length);
+      return res.json({ code: 0, message: '保存成功', data: { size: saveBuf.length } });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: '保存失败: ' + e.message });
+    }
+  }
+
+  // 个人文件保存
+  var file = VirtualFile.findById(fileId);
+  if (!file || file.user_id !== user.id) return deny404(res, '文件不存在');
+  if (!checkPerm(user, file.dir_id, 'write')) return deny403(res, '无写入权限');
+
+  // 获取原文件路径
+  var filePath;
+  try { filePath = getDecryptedFilePath(file); } catch(e) { filePath = null; }
+  if (!filePath) return deny404(res, '文件路径解析失败');
+
+  try {
+    // 编码新内容
+    var saveEncoding = (req.body.encoding || 'utf-8').toLowerCase();
+    var plainBuf;
+    if (saveEncoding === 'utf-8' || saveEncoding === 'utf8' || saveEncoding === 'ascii') {
+      plainBuf = Buffer.from(content, 'utf8');
+    } else {
+      plainBuf = iconv.encode(content, saveEncoding);
+    }
+
+    // 判断加密版本并重新加密
+    if (file.enc_version === 1 || file.enc_version === ENC_V1_VERSION) {
+      // V1 加密：createV1EncryptStreamSync 直接写入文件
+      var encResult = createV1EncryptStreamSync(filePath, plainBuf);
+      if (!encResult.ok) throw new Error(encResult.error);
+    } else {
+      // V0 加密
+      var encResult2 = encryptFileToBuffer(plainBuf);
+      fs.writeFileSync(filePath, encResult2.encrypted);
+    }
+
+    // 更新文件大小
+    db.run('UPDATE virtual_files SET size = ? WHERE id = ?', [plainBuf.length, file.id]);
+    file.size = plainBuf.length;
+
+    logTraffic(user.id, '', 'edit_save', file.id, file.name, plainBuf.length, encryptedBuf.length);
+    return res.json({ code: 0, message: '保存成功', data: { size: plainBuf.length } });
+  } catch(e) {
+    return res.status(500).json({ code: 500, message: '保存失败: ' + e.message });
   }
 });
 
@@ -4833,78 +4985,215 @@ router.get('/files/docx/:id', requireAuth, function(req, res) {
     return res.status(415).json({ code: 415, message: '仅支持 docx 格式' });
   }
 
-  var filePath = getDecryptedFilePath(file);
+  var filePath;
+  try { filePath = getDecryptedFilePath(file); } catch(e) { filePath = null; }
   if (!filePath) return deny404(res, '文件不存在');
 
-  var fileSize = fs.statSync(filePath).size;
-  var ENCRYPTED_MIN_SIZE = 88;
-  var isUnencrypted = (fileSize < ENCRYPTED_MIN_SIZE);
+  var fileSize;
+  try { fileSize = fs.statSync(filePath).size; } catch(e) { return deny404(res, '文件不存在或已被删除'); }
 
-  var chunks = [];
-
-  if (isUnencrypted) {
-    var rawData = fs.readFileSync(filePath);
-    mammoth.convertToHtml({ buffer: rawData }, {
-      styleMap: [
-        "p[style-name='Heading 1'] => h1:fresh",
-        "p[style-name='Heading 2'] => h2:fresh",
-        "p[style-name='Heading 3'] => h3:fresh",
-        "b => strong",
-        "i => em",
-        "u => u"
-      ]
-    }).then(function(result) {
-      var warnings = result.messages.map(function(m) { return m.message; });
-      logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, rawData.length);
-      res.json({
-        code: 0,
-        data: {
-          filename: file.name,
-          html: result.value,
-          warnings: warnings
-        }
-      });
-    }).catch(function(err) {
-      log.error('[DOCX] 转换失败:', err.message);
-      res.status(500).json({ code: 500, message: 'DOCX 转换失败' });
-    });
-    return;
-  }
-
-  var streamInfo = createDecryptStream(filePath);
-
-  streamInfo.readStream.on('data', function(chunk) { chunks.push(chunk); });
-  streamInfo.readStream.on('end', function() {
-    var buf = Buffer.concat(chunks);
+  function convertDocxBuffer(buf, size) {
     mammoth.convertToHtml({ buffer: buf }, {
       styleMap: [
         "p[style-name='Heading 1'] => h1:fresh",
         "p[style-name='Heading 2'] => h2:fresh",
         "p[style-name='Heading 3'] => h3:fresh",
-        "b => strong",
-        "i => em",
-        "u => u"
+        "b => strong", "i => em", "u => u"
       ]
     }).then(function(result) {
-      var warnings = result.messages.map(function(m) { return m.message; });
-      logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
-      res.json({
-        code: 0,
-        data: {
-          filename: file.name,
-          html: result.value,
-          warnings: warnings
-        }
-      });
+      logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, size);
+      res.json({ code: 0, data: { filename: file.name, html: result.value, warnings: result.messages.map(function(m) { return m.message; }) } });
     }).catch(function(err) {
       log.error('[DOCX] 转换失败:', err.message);
-      res.status(500).json({ code: 500, message: 'DOCX 转换失败' });
+      if (!res.headersSent) res.status(500).json({ code: 500, message: 'DOCX 转换失败: ' + err.message });
     });
-  });
-  streamInfo.readStream.on('error', function() {
-    res.status(500).json({ code: 500, message: '文件读取失败' });
+  }
+
+  var ENCRYPTED_MIN_SIZE = 88;
+  var isUnencrypted = (fileSize < ENCRYPTED_MIN_SIZE);
+
+  if (isUnencrypted) {
+    try {
+      var rawData = fs.readFileSync(filePath);
+      convertDocxBuffer(rawData, rawData.length);
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: '文件读取失败: ' + e.message });
+    }
+    return;
+  }
+
+  // 根据加密版本选择解密方式
+  if (file.enc_version === 1) {
+    // V1 分块加密格式
+    try {
+      var decryptStream = createV1DecryptStream(filePath, 0, fileSize - 1);
+      decryptStream.on('error', function(err) {
+        if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解密失败: ' + (err && err.message || '') });
+      });
+      var chunks = [];
+      decryptStream.on('data', function(chunk) { chunks.push(chunk); });
+      decryptStream.on('end', function() {
+        try {
+          var buf = Buffer.concat(chunks);
+          convertDocxBuffer(buf, buf.length);
+        } catch(e) {
+          if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解码失败' });
+        }
+      });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: 'V1文件解密失败: ' + e.message });
+    }
+  } else {
+    // V0 原始加密格式
+    try {
+      var streamInfo = createDecryptStream(filePath);
+      var chunks = [];
+      streamInfo.readStream.on('data', function(chunk) { chunks.push(chunk); });
+      streamInfo.readStream.on('end', function() {
+        try {
+          var buf = Buffer.concat(chunks);
+          convertDocxBuffer(buf, buf.length);
+        } catch(e) {
+          if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解码失败' });
+        }
+      });
+      streamInfo.readStream.on('error', function(err) {
+        if (!res.headersSent) res.status(500).json({ code: 500, message: '文件读取失败: ' + (err && err.message || '') });
+      });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: '文件解密失败: ' + e.message });
+    }
+  }
+
+});
+
+// ==================== 辅助函数：解密文件到 Buffer ====================
+// 根据 enc_version 自动选择 V0/V1 解密，返回完整解密后的 Buffer
+function decryptFileToBuffer(fileRecord, filePath, callback) {
+  var fileSize;
+  try { fileSize = fs.statSync(filePath).size; } catch(e) { return callback(e); }
+
+  if (fileSize < 88) {
+    // 未加密小文件，直接读取
+    try {
+      var raw = fs.readFileSync(filePath);
+      return callback(null, raw, raw.length);
+    } catch(e) { return callback(e); }
+  }
+
+  if (fileRecord.enc_version === 1) {
+    // V1 分块加密
+    try {
+      var v1Stream = createV1DecryptStream(filePath, 0, fileSize - 1);
+      var chunks = [];
+      v1Stream.on('data', function(c) { chunks.push(c); });
+      v1Stream.on('end', function() {
+        try {
+          var buf = Buffer.concat(chunks);
+          callback(null, buf, buf.length);
+        } catch(e) { callback(e); }
+      });
+      v1Stream.on('error', function(err) { callback(err); });
+    } catch(e) { callback(e); }
+  } else {
+    // V0 原始加密
+    try {
+      var streamInfo = createDecryptStream(filePath);
+      var chunks = [];
+      streamInfo.readStream.on('data', function(c) { chunks.push(c); });
+      streamInfo.readStream.on('end', function() {
+        try {
+          var buf = Buffer.concat(chunks);
+          callback(null, buf, buf.length);
+        } catch(e) { callback(e); }
+      });
+      streamInfo.readStream.on('error', function(err) { callback(err); });
+    } catch(e) { callback(e); }
+  }
+}
+
+// ==================== XLSX/Excel 转换为 HTML 预览 ====================
+// GET /api/files/xlsx/:id?public_path=xxx
+router.get('/files/xlsx/:id', requireAuth, function(req, res) {
+  var fileId = parseInt(req.params.id, 10);
+  var user = req.user;
+
+  // 公共文件
+  if (req.query.public_path) {
+    var pubPath = req.query.public_path;
+    var pubRoot = Storage.PUBLIC_DIR;
+    var pubFilePath = path.resolve(pubRoot, pubPath);
+    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '文件不存在');
+    if (!fs.existsSync(pubFilePath)) return deny404(res, '文件不存在');
+    var pubExt = pubPath.toLowerCase().split('.').pop();
+    if (pubExt !== 'xlsx' && pubExt !== 'xls') return res.status(415).json({ code: 415, message: '仅支持 xlsx/xls 格式' });
+
+    var pubSize = fs.statSync(pubFilePath).size;
+    if (pubSize > PREVIEW_MAX_SIZE) return res.status(413).json({ code: 413, message: '文件超过10MB，不支持在线预览，请下载后查看' });
+
+    try {
+      var workbook = XLSX.readFile(pubFilePath);
+      var html = renderXlsxToHtml(workbook);
+      logTraffic(user.id, '', 'preview', 0, pubPath, pubSize, 0);
+      return res.json({ code: 0, data: { filename: path.basename(pubPath), html: html, sheets: workbook.SheetNames } });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: 'Excel 解析失败: ' + e.message });
+    }
+  }
+
+  // 个人文件
+  var file = VirtualFile.findById(fileId);
+  if (!file || file.user_id !== user.id) return deny404(res, '文件不存在');
+  if (!checkPerm(user, file.dir_id, 'read')) return deny403(res, '无权限');
+
+  if (file.size > PREVIEW_MAX_SIZE) {
+    return res.status(413).json({ code: 413, message: '文件超过10MB，不支持在线预览，请下载后查看' });
+  }
+
+  var ext = (file.name || '').toLowerCase().split('.').pop();
+  if (ext !== 'xlsx' && ext !== 'xls') return res.status(415).json({ code: 415, message: '仅支持 xlsx/xls 格式' });
+
+  var filePath;
+  try { filePath = getDecryptedFilePath(file); } catch(e) { filePath = null; }
+  if (!filePath) return deny404(res, '文件不存在');
+
+  decryptFileToBuffer(file, filePath, function(err, buf, decSize) {
+    if (err) return res.status(500).json({ code: 500, message: '文件解密失败: ' + (err.message || '') });
+    try {
+      var workbook = XLSX.read(buf, { type: 'buffer' });
+      var html = renderXlsxToHtml(workbook);
+      logTraffic(user.id, '', 'preview', file.id, file.name, file.size, decSize);
+      return res.json({ code: 0, data: { filename: file.name, html: html, sheets: workbook.SheetNames } });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: 'Excel 解析失败: ' + e.message });
+    }
   });
 });
+
+// 将 xlsx workbook 渲染为带样式的 HTML 表格
+function renderXlsxToHtml(workbook) {
+  var esc = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+  var html = '';
+  var sheetNames = workbook.SheetNames;
+  if (sheetNames.length === 1) {
+    var sheet = workbook.Sheets[sheetNames[0]];
+    html = XLSX.utils.sheet_to_html(sheet, { id: '', editable: false });
+  } else {
+    // 多工作表：用 tab 切换
+    html = '<div class="xlsx-tabs" style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">';
+    for (var i = 0; i < sheetNames.length; i++) {
+      html += '<button class="xlsx-tab" style="padding:6px 16px;border:1px solid rgba(0,212,255,0.3);border-radius:6px;background:' + (i === 0 ? 'rgba(0,212,255,0.15)' : 'transparent') + ';color:' + (i === 0 ? '#00d4ff' : '#8b949e') + ';cursor:pointer;font-size:13px" onclick="var p=this.parentNode;var s=p.nextElementSibling;var btns=p.querySelectorAll(\'.xlsx-tab\');var sheets=s.querySelectorAll(\'.xlsx-sheet\');for(var j=0;j<btns.length;j++){btns[j].style.background=j===' + i + '?\'rgba(0,212,255,0.15)\':\'transparent\';btns[j].style.color=j===' + i + '?\'#00d4ff\':\'#8b949e\';sheets[j].style.display=j===' + i + '?\'block\':\'none\';}">' + esc(sheetNames[i]) + '</button>';
+    }
+    html += '</div><div class="xlsx-sheets">';
+    for (var i = 0; i < sheetNames.length; i++) {
+      var sheet = workbook.Sheets[sheetNames[i]];
+      var sheetHtml = XLSX.utils.sheet_to_html(sheet, { id: '', editable: false });
+      html += '<div class="xlsx-sheet" style="' + (i === 0 ? '' : 'display:none') + '">' + sheetHtml + '</div>';
+    }
+    html += '</div>';
+  }
+  return html;
+}
 
 // ==================== 文件升级管理 API（管理员） ====================
 
