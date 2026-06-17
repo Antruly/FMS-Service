@@ -4671,7 +4671,7 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
   var fileId = parseInt(req.params.id, 10);
   var user = req.user;
 
-  var TEXT_SUPPORTED = ['txt','log','json','js','ts','jsx','tsx','css','html','htm','xml','md','csv','sh','bash','zsh','bat','cmd','ps1','py','java','c','cpp','h','hpp','cs','php','rb','sql','yml','yaml','ini','conf','cfg','properties','env','htaccess','toml','go','rs','swift','kt','lua','pl','r','scala','vue','svelte','less','scss','sass','asp','aspx','jsp','dockerfile','makefile','cmake','gitignore','editorconfig','nginx','tex','bib','rst','readme','changelog','license'];
+  var TEXT_SUPPORTED = ['txt','log','json','jsonc','json5','js','ts','jsx','tsx','css','html','htm','xml','svg','md','mdx','csv','sh','bash','zsh','bat','cmd','ps1','py','pyw','java','c','cpp','cc','cxx','h','hpp','hh','hxx','cs','php','rb','pl','pm','sql','yml','yaml','ini','conf','cfg','properties','env','htaccess','toml','go','rs','swift','kt','lua','r','scala','vue','svelte','less','scss','sass','asp','aspx','jsp','dockerfile','makefile','cmake','gitignore','editorconfig','nginx','tex','bib','rst','readme','changelog','license','graphql','gql','dart'];
 
   // 公共文件：通过 public_path 查询参数指定相对路径（支持子目录）
   if (req.query.public_path) {

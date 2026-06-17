@@ -464,7 +464,7 @@
   }
 
   function safeMimeType(mime) { return mime || 'unknown'; }
-  function getIcon(mime) { return ICON_MAP[safeMimeType(mime)] || ICON_MAP['unknown']; }
+  function getIcon(mime, name) { var r = ICON_MAP[safeMimeType(mime)]; if (r) return r; return getFileIcon(name); }
   function getTypeClass(mime) { return TYPE_CLASS_MAP[safeMimeType(mime)] || 'type-default'; }
   function getFileExt(name) { var parts = name.split('.'); return parts.length > 1 ? '.' + parts[parts.length - 1].toLowerCase() : ''; }
 
@@ -639,6 +639,8 @@
     if (_pv_monaco) {
       monaco.editor.setTheme(theme === 'light' ? 'vs' : 'vs-dark');
     }
+    // 同步预览弹窗主题（若打开）
+    updatePreviewOverlayTheme(theme);
     // 通知嵌入的 iframe 同步主题
     try {
       ['storage-iframe','backup-iframe','tasks-iframe'].forEach(function(id) {
@@ -1978,7 +1980,7 @@
     data.forEach(function (item, i) {
       var mime = safeMimeType(item.mimeType);
       var typeClass = item.isDirectory ? 'type-folder' : getTypeClass(mime);
-      var icon = item.isDirectory ? ICON_MAP['folder'] : getIcon(mime);
+      var icon = item.isDirectory ? ICON_MAP['folder'] : getIcon(mime, item.name);
       var ext = !item.isDirectory ? getFileExt(item.name) : '';
       var displayName = item.name != null ? String(item.name) : '';
       var isSelected = state.selectedFiles.indexOf(String(item.id)) !== -1;
@@ -2140,7 +2142,7 @@
     data.forEach(function (item, i) {
       var mime = safeMimeType(item.mimeType);
       var typeClass = item.isDirectory ? 'type-folder' : getTypeClass(mime);
-      var icon = item.isDirectory ? ICON_MAP['folder'] : getIcon(mime);
+      var icon = item.isDirectory ? ICON_MAP['folder'] : getIcon(mime, item.name);
       var isSelected = state.selectedFiles.indexOf(String(item.id)) !== -1;
       var showMenu = item.isRecycleItem ||
         (state.dirType === 'public') ||
@@ -2436,6 +2438,9 @@
     // 旧版 Office 格式暂不支持
     if (ext === 'doc' || ext === 'ppt' || ext === 'pptx') return 'office_unsupported';
 
+    // 所有 Monaco 支持的代码/文本文件 → 自动识别语言高亮
+    if (MONACO_LANG_MAP[ext]) return 'text';
+
     // 图片：优先用 mime 列表判断，兜底按扩展名
     if (PREVIEW_IMAGE.includes(mime)) return 'image';
     if (PREVIEW_VIDEO.includes(mime)) return 'video';
@@ -2451,7 +2456,8 @@
   }
 
   function isEditable(mime, name) {
-    return PREVIEW_EDIT.includes(mime) || getPreviewType(mime, name) === 'markdown';
+    var ext = (name || '').toLowerCase().split('.').pop();
+    return PREVIEW_EDIT.includes(mime) || getPreviewType(mime, name) === 'markdown' || !!MONACO_LANG_MAP[ext];
   }
 
   var DOC_PREVIEW_TYPES = ['text','markdown','docx','spreadsheet','pdf'];
@@ -2495,12 +2501,27 @@
     var xlsxUrl = isPublicItem
       ? '/files/xlsx/0?public_path=' + encodeURIComponent(item.relPath || item.id)
       : '/files/xlsx/' + filePathId;
+
+    // 主题适配
+    var isLight = state && state.theme === 'light';
+    var overlayBg = isLight ? 'rgba(255,255,255,0.94)' : 'rgba(0,0,0,0.92)';
+    var titleColor = isLight ? '#1a1a2e' : '#fff';
+    var modalBg = isLight ? 'rgba(255,255,255,0.98)' : 'rgba(10,12,20,0.95)';
+    var modalBorder = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(0,212,255,0.2)';
+    var modalColor = isLight ? '#333' : '#e0e6f0';
+    var btnBg = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)';
+    var btnBorder = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)';
+    var btnColor = isLight ? '#333' : '#e0e6f0';
+    var editBg = isLight ? 'rgba(0,180,216,0.08)' : 'rgba(0,212,255,0.15)';
+    var editBorder = isLight ? 'rgba(0,180,216,0.3)' : 'rgba(0,212,255,0.4)';
     var overlay = document.createElement('div');
     overlay.id = 'preview-overlay';
     overlay.style.cssText = [
-      'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.92);',
+      'position:fixed;inset:0;z-index:9000;',
       'display:flex;flex-direction:column;align-items:center;',
-      'justify-content:center;padding:20px;box-sizing:border-box;'
+      'justify-content:center;padding:20px;box-sizing:border-box;',
+      'background:' + overlayBg + ';',
+      'transition:background 0.3s ease;'
     ].join('');
 
     var title = item.name;
@@ -2520,10 +2541,10 @@
         '</div>';
     } else if (type === 'docx') {
       // DOCX：调用后端 mammoth 转为 HTML 后渲染
-      contentHtml = '<div id="pv-docx-content" style="width:100%;height:calc(100vh - 180px);background:rgba(10,12,20,0.95);border:1px solid rgba(0,212,255,0.2);border-radius:12px;overflow:auto;box-sizing:border-box;padding:30px 40px;color:#e0e6f0;font-family:\'Microsoft YaHei\',sans-serif;font-size:14px;line-height:1.8"></div>';
+      contentHtml = '<div id="pv-docx-content" style="width:100%;height:calc(100vh - 180px);background:' + modalBg + ';border:1px solid ' + modalBorder + ';border-radius:12px;overflow:auto;box-sizing:border-box;padding:30px 40px;color:' + modalColor + ';font-family:\'Microsoft YaHei\',sans-serif;font-size:14px;line-height:1.8;transition:all 0.3s ease"></div>';
     } else if (type === 'spreadsheet') {
       // Excel：调用后端 xlsx 解析为 HTML 表格
-      contentHtml = '<div id="pv-xlsx-content" style="width:100%;height:calc(100vh - 180px);background:rgba(10,12,20,0.95);border:1px solid rgba(0,212,255,0.2);border-radius:12px;overflow:auto;box-sizing:border-box;padding:20px;color:#e0e6f0;font-size:13px;line-height:1.6"></div>';
+      contentHtml = '<div id="pv-xlsx-content" style="width:100%;height:calc(100vh - 180px);background:' + modalBg + ';border:1px solid ' + modalBorder + ';border-radius:12px;overflow:auto;box-sizing:border-box;padding:20px;color:' + modalColor + ';font-size:13px;line-height:1.6;transition:all 0.3s ease"></div>';
     } else if (type === 'pdf') {
       // PDF：直接使用浏览器内置 PDF 查看器（iframe + streamUrl）
       contentHtml = '<iframe id="pv-pdf-iframe" src="" style="width:100%;height:calc(100vh - 160px);border-radius:8px;border:1px solid rgba(0,212,255,0.2);background:#525659" sandbox="allow-scripts allow-same-origin"></iframe>' +
@@ -2534,13 +2555,13 @@
       '<div style="display:flex;align-items:center;justify-content:space-between;width:100%;max-width:900px;margin-bottom:16px;gap:16px;flex-shrink:0">' +
         '<div style="display:flex;align-items:center;gap:12px;min-width:0">' +
           '<span id="pv-icon" style="font-size:20px;flex-shrink:0">&#128196;</span>' +
-          '<span id="pv-title" style="font-size:15px;font-weight:700;color:#fff;font-family:\'Syne\',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + title + '</span>' +
+          '<span id="pv-title" style="font-size:15px;font-weight:700;color:' + titleColor + ';font-family:\'Syne\',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color 0.3s ease">' + title + '</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0">' +
-          ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-edit-btn" style="display:none;padding:6px 16px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.4);border-radius:8px;color:#00d4ff;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#9998; 编辑</button>' : '') +
+          ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-edit-btn" style="display:none;padding:6px 16px;background:' + editBg + ';border:1px solid ' + editBorder + ';border-radius:8px;color:#00d4ff;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#9998; 编辑</button>' : '') +
           ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-save-btn" style="display:none;padding:6px 16px;background:linear-gradient(135deg,#00d4ff,#0099cc);border:none;border-radius:8px;color:#07090f;font-size:13px;font-weight:700;cursor:pointer;font-family:\'Syne\',sans-serif">&#128190; 保存</button>' : '') +
-          '<button id="pv-dl-btn" style="padding:6px 16px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#e0e6f0;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#128229; 下载</button>' +
-          '<button id="pv-close-btn" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#e0e6f0;font-size:18px;cursor:pointer;flex-shrink:0">&#10005;</button>' +
+          '<button id="pv-dl-btn" style="padding:6px 16px;background:' + btnBg + ';border:1px solid ' + btnBorder + ';border-radius:8px;color:' + btnColor + ';font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif;transition:all 0.3s ease">&#128229; 下载</button>' +
+          '<button id="pv-close-btn" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:' + btnBg + ';border:1px solid ' + btnBorder + ';border-radius:8px;color:' + btnColor + ';font-size:18px;cursor:pointer;flex-shrink:0;transition:all 0.3s ease">&#10005;</button>' +
         '</div>' +
       '</div>' +
       '<div id="pv-content" style="width:100%;max-width:900px;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
@@ -2700,19 +2721,35 @@
 
   // Monaco Editor (VS Code 内核) — 扩展名 → 语言映射
   var MONACO_LANG_MAP = {
+    // Web 前端
     js:'javascript', ts:'typescript', jsx:'javascript', tsx:'typescript',
     html:'html', htm:'html', vue:'html', svelte:'html',
     css:'css', scss:'scss', sass:'scss', less:'less',
     json:'json', jsonc:'json', json5:'json', xml:'xml', svg:'xml',
+    // Shell / CLI
     sh:'shell', bash:'shell', zsh:'shell', bat:'bat', cmd:'bat', ps1:'powershell',
+    // 后端 / 系统语言
     py:'python', pyw:'python', java:'java', kt:'kotlin', scala:'scala',
     c:'c', cpp:'cpp', cc:'cpp', cxx:'cpp', h:'cpp', hpp:'cpp', hh:'cpp', hxx:'cpp',
     cs:'csharp', go:'go', rs:'rust', rb:'ruby', php:'php', pl:'perl', pm:'perl',
     swift:'swift', dart:'dart', lua:'lua', r:'r',
-    sql:'sql', md:'markdown', mdx:'markdown', yaml:'yaml', yml:'yaml', toml:'ini',
+    // 数据 / 查询
+    sql:'sql',
+    // 标记 / 文档
+    md:'markdown', mdx:'markdown', tex:'latex', bib:'bibtex', rst:'restructuredtext',
+    readme:'markdown', changelog:'markdown', license:'plaintext',
+    // 配置
+    yaml:'yaml', yml:'yaml', toml:'ini',
     ini:'ini', conf:'ini', cfg:'ini', properties:'ini', env:'ini',
-    dockerfile:'dockerfile', graphql:'graphql', gql:'graphql',
-    txt:'plaintext', log:'plaintext',
+    editorconfig:'ini', gitignore:'plaintext', htaccess:'apache',
+    // 容器 / 构建
+    dockerfile:'dockerfile', makefile:'makefile', cmake:'cmake',
+    // API 查询
+    graphql:'graphql', gql:'graphql',
+    // 服务器 / 模板
+    nginx:'plaintext', asp:'asp', aspx:'asp', jsp:'java',
+    // 纯文本 / 其他
+    txt:'plaintext', log:'plaintext', csv:'plaintext',
   };
 
   var _pv_monaco = null;
@@ -2845,6 +2882,39 @@
     if (_previewEscHandler) { document.removeEventListener('keydown', _previewEscHandler); _previewEscHandler = null; }
     if (_previewResizeHandler) { window.removeEventListener('resize', _previewResizeHandler); _previewResizeHandler = null; }
     if (overlay) overlay.remove();
+  }
+
+  // 主题切换时动态更新预览弹窗颜色
+  function updatePreviewOverlayTheme(theme) {
+    var overlay = document.getElementById('preview-overlay');
+    if (!overlay) return;
+    var isLight = theme === 'light';
+    overlay.style.background = isLight ? 'rgba(255,255,255,0.94)' : 'rgba(0,0,0,0.92)';
+    // 标题颜色
+    var titleEl = overlay.querySelector('#pv-title');
+    if (titleEl) titleEl.style.color = isLight ? '#1a1a2e' : '#fff';
+    // 下载/关闭按钮
+    var btnBg = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)';
+    var btnBorder = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)';
+    var btnColor = isLight ? '#333' : '#e0e6f0';
+    ['#pv-dl-btn','#pv-close-btn'].forEach(function(sel) {
+      var el = overlay.querySelector(sel);
+      if (el) { el.style.background = btnBg; el.style.borderColor = btnBorder; el.style.color = btnColor; }
+    });
+    // 编辑按钮
+    var editBtn = overlay.querySelector('#pv-edit-btn');
+    if (editBtn) {
+      editBtn.style.background = isLight ? 'rgba(0,180,216,0.08)' : 'rgba(0,212,255,0.15)';
+      editBtn.style.borderColor = isLight ? 'rgba(0,180,216,0.3)' : 'rgba(0,212,255,0.4)';
+    }
+    // 文档内容容器
+    var modalBg = isLight ? 'rgba(255,255,255,0.98)' : 'rgba(10,12,20,0.95)';
+    var modalBorder = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(0,212,255,0.2)';
+    var modalColor = isLight ? '#333' : '#e0e6f0';
+    ['#pv-docx-content','#pv-xlsx-content'].forEach(function(sel) {
+      var el = overlay.querySelector(sel);
+      if (el) { el.style.background = modalBg; el.style.borderColor = modalBorder; el.style.color = modalColor; }
+    });
   }
 
   // ESC 关闭预览（动态创建 handler）
@@ -7447,32 +7517,73 @@
   // 获取文件图标
   function getFileIcon(name) {
     var n = (name || '').toLowerCase();
-    // 视频
+    // 无扩展名的特殊文件（精确匹配）
+    if (n === 'dockerfile' || /^dockerfile\./.test(n)) return '&#128051;'; // 🐳
+    if (n === 'makefile' || n === 'gnumakefile') return '&#128736;'; // 🔧
+    if (n === 'cmakelists.txt' || n === 'cmake') return '&#128736;';
+    if (n === 'license' || n === 'license.md' || n === 'license.txt') return '&#128214;'; // 📔
+    if (n === 'readme' || n === 'readme.md' || n === 'readme.txt' || n === 'readme.markdown') return '&#128214;';
+    if (n === 'changelog' || n === 'changelog.md' || n === 'changes' || n === 'changes.md') return '&#128214;';
+    if (n === '.editorconfig') return '&#9881;'; // ⚙
+    if (n === '.htaccess') return '&#9881;';
+    if (n === '.gitignore' || n === '.gitattributes' || n === '.gitmodules') return '&#9881;';
+    // 视频 &#127909;
     if (/\.(mp4|webm|avi|mkv|mov|wmv|flv|m4v|3gp)$/.test(n)) return '&#127909;';
-    // 音频
+    // 音频 &#127925;
     if (/\.(mp3|wav|flac|aac|ogg|wma|m4a|opus)$/.test(n)) return '&#127925;';
-    // 图片
-    if (/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff|tif)$/.test(n)) return '&#128444;';
-    // 文档
+    // 图片 &#128444;
+    if (/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|tiff|tif|heic|heif)$/.test(n)) return '&#128444;';
+    // PDF &#128196;
     if (/\.(pdf)$/.test(n)) return '&#128196;';
+    // Word 文档 &#128196;
     if (/\.(doc|docx|odt|rtf)$/.test(n)) return '&#128196;';
+    // Excel 表格 &#128200;
     if (/\.(xls|xlsx|ods|csv)$/.test(n)) return '&#128200;';
+    // PPT 演示 &#128202;
     if (/\.(ppt|pptx|odp)$/.test(n)) return '&#128202;';
-    // 文本/代码
-    if (/\.(txt|md|log|json|js|ts|css|html|xml|yml|yaml|ini|cfg|conf|sh|py|java|c|cpp|h|php|rb|sql|rs|go|swift|kt)$/.test(n)) return '&#128221;';
-    // 压缩包
-    if (/\.(zip|rar|7z|tar|gz|bz2|xz|tgz|iso)$/.test(n)) return '&#128230;';
-    // 可执行
-    if (/\.(exe|dll|sys|msi|bat|cmd|com|sh|bin|elf)$/.test(n)) return '&#9881;';
-    // APK
-    if (/\.(apk)$/.test(n)) return '&#128241;';
-    // 字体
-    if (/\.(ttf|otf|woff|woff2|eot)$/.test(n)) return '&#128397;';
-    // 数据库
+    // 数据库 &#128451;
     if (/\.(db|sqlite|sqlite3|mdb|accdb)$/.test(n)) return '&#128451;';
-    // 磁盘映像
-    if (/\.(iso|dmg|vhd|vmdk)$/.test(n)) return '&#128190;';
-    // 默认
+    // SQL 查询 &#128451;
+    if (/\.(sql)$/.test(n)) return '&#128451;';
+    // 配置文件 &#9881;
+    if (/\.(ini|conf|cfg|properties|env|toml|yaml|yml)$/.test(n)) return '&#9881;';
+    // 日志文件 &#128221;
+    if (/\.(log)$/.test(n)) return '&#128221;';
+    // Markdown / 文档 &#128214;
+    if (/\.(md|mdx|tex|bib|rst)$/.test(n)) return '&#128214;';
+    // 脚本 (Shell / Batch / PowerShell) &#128187;
+    if (/\.(sh|bash|zsh|bat|cmd|ps1)$/.test(n)) return '&#128187;';
+    // C / C++ &#9889;
+    if (/\.(c|cpp|cc|cxx|h|hpp|hh|hxx)$/.test(n)) return '&#9889;';
+    // JVM 语言 (Java / Kotlin / Scala) &#9749;
+    if (/\.(java|kt|kts|scala)$/.test(n)) return '&#9749;';
+    // Python &#128013;
+    if (/\.(py|pyw|ipynb)$/.test(n)) return '&#128013;';
+    // JavaScript / TypeScript 生态 &#128309;
+    if (/\.(js|jsx|ts|tsx|mjs|cjs|json|jsonc|json5)$/.test(n)) return '&#128309;';
+    // Web 前端 &#127760;
+    if (/\.(html|htm|css|scss|sass|less|xml|vue|svelte|asp|aspx|jsp)$/.test(n)) return '&#127760;';
+    // C# / .NET &#128310;
+    if (/\.(cs|csx|csproj|sln)$/.test(n)) return '&#128310;';
+    // Go / Rust / Swift / Dart / PHP / Ruby / Perl / Lua / R &#128736;
+    if (/\.(go|rs|swift|dart|php|rb|pl|pm|lua|r)$/.test(n)) return '&#128736;';
+    // GraphQL &#9670;
+    if (/\.(graphql|gql)$/.test(n)) return '&#9670;';
+    // Nginx config
+    if (/\.(nginx)$/.test(n) || n.indexOf('nginx.') === 0) return '&#128736;';
+    // 压缩包 &#128230;
+    if (/\.(zip|rar|7z|tar|gz|bz2|xz|tgz)$/.test(n)) return '&#128230;';
+    // 可执行文件 &#9881;
+    if (/\.(exe|dll|sys|msi|bin|elf|com)$/.test(n)) return '&#9881;';
+    // APK &#128241;
+    if (/\.(apk|aab)$/.test(n)) return '&#128241;';
+    // 字体 &#128397;
+    if (/\.(ttf|otf|woff|woff2|eot)$/.test(n)) return '&#128397;';
+    // 磁盘映像 &#128190;
+    if (/\.(iso|dmg|vhd|vmdk|img)$/.test(n)) return '&#128190;';
+    // 纯文本 &#128196;
+    if (/\.(txt|text)$/.test(n)) return '&#128196;';
+    // 默认 &#128196;
     return '&#128196;';
   }
 
