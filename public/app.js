@@ -635,15 +635,9 @@
       if (sun) sun.style.display = theme === 'light' ? 'block' : 'none';
       if (moon) moon.style.display = theme === 'dark' ? 'block' : 'none';
     }
-    // 同步 CodeMirror 主题
-    if (window._pv_cm) {
-      window._pv_cm.setOption('theme', theme === 'light' ? 'eclipse' : 'dracula');
-    } else {
-      var ta = document.querySelector('#pv-textarea');
-      if (ta && ta.style.display === 'block') {
-        ta.style.background = theme === 'light' ? '#ffffff' : '#0a0c14';
-        ta.style.color = theme === 'light' ? '#222' : '#e0e6f0';
-      }
+    // 同步 Monaco 编辑器主题
+    if (_pv_monaco) {
+      monaco.editor.setTheme(theme === 'light' ? 'vs' : 'vs-dark');
     }
     // 通知嵌入的 iframe 同步主题
     try {
@@ -2519,11 +2513,10 @@
     } else if (type === 'audio') {
       contentHtml = '<div style="background:var(--bg-card,rgba(20,22,35,0.98));border:1px solid var(--border,rgba(0,212,255,0.2));border-radius:16px;padding:40px 48px;text-align:center"><audio id="pv-audio" src="' + streamUrl + '" controls autoplay style="width:100%"></audio></div>';
     } else if (type === 'text' || type === 'markdown') {
-      // CodeMirror 编辑器（文本/代码/Markdown 统一使用）
+      // Monaco Editor（VS Code 内核 — 文本/代码/Markdown 统一使用）
       contentHtml =
         '<div id="pv-text-wrap" style="width:100%;max-width:900px;display:flex;flex-direction:column;gap:0">' +
           '<div id="pv-enc-info" style="display:none;padding:4px 12px;font-size:11px;color:#8b949e;font-family:\'Share Tech Mono\',monospace"></div>' +
-          '<textarea id="pv-textarea" style="width:100%;height:calc(100vh - 200px)"></textarea>' +
         '</div>';
     } else if (type === 'docx') {
       // DOCX：调用后端 mammoth 转为 HTML 后渲染
@@ -2567,10 +2560,10 @@
 
     // 加载内容（根据不同类型）
     if (type === 'text' || type === 'markdown') {
-      // CodeMirror 编辑器：文本/代码/Markdown 统一使用
+      // Monaco Editor：文本/代码/Markdown 统一使用
       var loadingEl = overlay.querySelector('#pv-loading');
-      var ta = overlay.querySelector('#pv-textarea');
       var encInfo = overlay.querySelector('#pv-enc-info');
+      var contentContainer = overlay.querySelector('#pv-content');
       apiGet(textUrl).then(function(res) {
         if (res.code !== 0) {
           showToast('文件读取失败');
@@ -2585,15 +2578,14 @@
         // 编码信息
         if (encInfo) { encInfo.textContent = '编码: ' + enc + (truncated ? ' | 已截断' : ''); encInfo.style.display = 'block'; }
 
-        // 初始化 CodeMirror
-        initCodeMirror(ta, content, item.name, false, item, textUrl, enc);
+        initMonacoEditor(contentContainer, content, item.name, false, item, textUrl, enc);
         if (loadingEl) loadingEl.style.display = 'none';
       }).catch(function(err) {
         var errMsg = '文件读取失败';
         if (err && err.response && err.response.data && err.response.data.message) {
           errMsg = err.response.data.message;
         } else if (err && err.message) { errMsg = err.message; }
-        if (ta) { ta.value = '⚠ ' + errMsg; }
+        if (contentContainer) contentContainer.innerHTML = '<div style="color:#ef4444;padding:20px">⚠ ' + errMsg + '</div>';
         if (loadingEl) loadingEl.style.display = 'none';
       });
     } else if (type === 'docx') {
@@ -2689,11 +2681,11 @@
       var saveBtn = overlay.querySelector('#pv-save-btn');
       if (editBtn) {
         editBtn.style.display = 'inline-flex';
-        editBtn.addEventListener('click', function() { toggleCMEdit(); });
+        editBtn.addEventListener('click', function() { toggleMonacoEdit(); });
       }
       if (saveBtn) {
-        saveBtn.style.display = 'none'; // 默认只读，隐藏保存按钮
-        saveBtn.addEventListener('click', function() { saveCodeMirrorContent(); });
+        saveBtn.style.display = 'none';
+        saveBtn.addEventListener('click', function() { saveMonacoContent(); });
       }
     }
 
@@ -2706,105 +2698,133 @@
   var _previewEscHandler = null;
   var _previewResizeHandler = null;
 
-  // CodeMirror 语言模式映射
-  var CM_MODE_MAP = {
-    js:'javascript', ts:'javascript', jsx:'jsx', json:'application/json',
-    py:'python', rb:'ruby', php:'text/x-php', java:'text/x-java',
-    c:'text/x-csrc', cpp:'text/x-c++src', h:'text/x-csrc', hpp:'text/x-c++src', cs:'text/x-csharp',
-    html:'htmlmixed', htm:'htmlmixed', css:'css', less:'text/x-less', scss:'text/x-sass',
-    xml:'xml', svg:'xml', sql:'text/x-sql', md:'gfm', yml:'yaml', yaml:'yaml',
-    sh:'shell', bash:'shell', zsh:'shell', bat:'shell', cmd:'shell', ps1:'shell',
-    go:'go', rs:'rust', swift:'swift', kt:'text/x-kotlin', lua:'lua', r:'r',
-    toml:'toml', ini:'properties', conf:'properties', cfg:'properties', env:'properties',
-    dockerfile:'dockerfile', vue:'vue',
+  // Monaco Editor (VS Code 内核) — 扩展名 → 语言映射
+  var MONACO_LANG_MAP = {
+    js:'javascript', ts:'typescript', jsx:'javascript', tsx:'typescript',
+    html:'html', htm:'html', vue:'html', svelte:'html',
+    css:'css', scss:'scss', sass:'scss', less:'less',
+    json:'json', jsonc:'json', json5:'json', xml:'xml', svg:'xml',
+    sh:'shell', bash:'shell', zsh:'shell', bat:'bat', cmd:'bat', ps1:'powershell',
+    py:'python', pyw:'python', java:'java', kt:'kotlin', scala:'scala',
+    c:'c', cpp:'cpp', cc:'cpp', cxx:'cpp', h:'cpp', hpp:'cpp', hh:'cpp', hxx:'cpp',
+    cs:'csharp', go:'go', rs:'rust', rb:'ruby', php:'php', pl:'perl', pm:'perl',
+    swift:'swift', dart:'dart', lua:'lua', r:'r',
+    sql:'sql', md:'markdown', mdx:'markdown', yaml:'yaml', yml:'yaml', toml:'ini',
+    ini:'ini', conf:'ini', cfg:'ini', properties:'ini', env:'ini',
+    dockerfile:'dockerfile', graphql:'graphql', gql:'graphql',
+    txt:'plaintext', log:'plaintext',
   };
 
-  var _pv_cm = null;
+  var _pv_monaco = null;
   var _pv_editing = false;
-  var _pv_saveUrl = '';
+  var _pv_saveUrl = "";
   var _pv_item = null;
+  var _monacoReady = false;
 
-  function getCMCodeMode(name) {
-    var ext = (name || '').toLowerCase().split('.').pop();
-    // 动态加载对应 mode（已预加载 meta，按需加载特定 mode）
-    if (CM_MODE_MAP[ext]) {
-      var modeName = CM_MODE_MAP[ext];
-      // 确保 mode 已加载
-      if (typeof CodeMirror.modes[modeName] === 'undefined') {
-        var modeFile = modeName.indexOf('/') > -1 ? modeName.split('/').pop() : modeName;
-        var script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/' + modeName + '/' + modeName + '.min.js';
-        document.head.appendChild(script);
+  // 预加载 Monaco
+  (function() {
+    if (typeof require === 'undefined') return;
+    require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs' } });
+    require(['vs/editor/editor.main'], function() {
+      _monacoReady = true;
+      if (window.monaco) {
+        monaco.editor.registerCommand('_pv.save', function() {
+          if (_pv_editing) saveMonacoContent();
+        }, { keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS });
       }
-      return modeName;
-    }
-    return 'text/plain';
+    });
+  })();
+
+  function getMonacoLang(name) {
+    var ext = (name || '').toLowerCase().split('.').pop();
+    return MONACO_LANG_MAP[ext] || 'plaintext';
   }
 
-  function initCodeMirror(textarea, content, fileName, startEdit, item, saveUrl, encoding) {
-    // 清理旧实例
-    if (window._pv_cm) { try { window._pv_cm.toTextArea(); } catch(e) {} window._pv_cm = null; }
-    _pv_cm = null; _pv_editing = startEdit || false; _pv_saveUrl = saveUrl || ''; _pv_item = item || null;
+  function initMonacoEditor(container, content, fileName, startEdit, item, saveUrl, encoding) {
+    if (_pv_monaco) { try { _pv_monaco.dispose(); } catch(e) {} _pv_monaco = null; }
+    _pv_editing = startEdit || false; _pv_saveUrl = saveUrl || ''; _pv_item = item || null;
 
-    // CodeMirror 未加载时回退到原生 textarea
-    if (typeof CodeMirror === 'undefined' || window._cmLoadFailed) {
-      textarea.value = content;
-      textarea.style.display = 'block';
-      textarea.style.background = state && state.theme === 'light' ? '#ffffff' : '#0a0c14';
-      textarea.style.color = state && state.theme === 'light' ? '#222' : '#e0e6f0';
-      textarea.style.fontFamily = "'Share Tech Mono',monospace";
-      textarea.style.fontSize = '13px';
-      textarea.style.lineHeight = '1.7';
-      textarea.style.padding = '20px';
-      textarea.style.border = '1px solid rgba(0,212,255,0.2)';
-      textarea.style.borderRadius = '12px';
-      textarea.style.resize = 'none';
-      textarea.style.tabSize = '2';
-      textarea.style.whiteSpace = 'pre';
-      textarea.style.overflow = 'auto';
-      textarea.spellcheck = false;
-      textarea.readOnly = !_pv_editing;
-      textarea.addEventListener('keydown', function(e) {
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (_pv_editing) savePlainTextareaContent(); }
-      });
-      window._pv_cm = null; // 标记为 textarea 模式
-      updateCMButtons();
+    if (!_monacoReady || typeof monaco === 'undefined') {
+      var bg = (state && state.theme === 'light') ? '#fff' : '#0a0c14';
+      var fg = (state && state.theme === 'light') ? '#222' : '#e0e6f0';
+      container.innerHTML = '<textarea id="pv-textarea" style="width:100%;height:calc(100vh - 200px);background:' + bg + ';color:' + fg + ';font-family:Consolas,Monaco,monospace;font-size:13px;line-height:1.7;padding:20px;border:1px solid rgba(0,212,255,0.2);border-radius:12px;resize:none;tab-size:2;white-space:pre;overflow:auto">' + content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</textarea>';
+      var ta = container.querySelector('#pv-textarea');
+      if (ta) {
+        ta.readOnly = !_pv_editing;
+        ta.addEventListener('keydown', function(e) {
+          if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (_pv_editing) saveFallbackContent(); }
+        });
+      }
+      updateMonacoButtons();
       return;
     }
 
-    var mode = getCMCodeMode(fileName);
-    var theme = (state && state.theme === 'light') ? 'eclipse' : 'dracula';
-    var cm = CodeMirror.fromTextArea(textarea, {
-      value: content,
-      mode: mode,
-      theme: theme,
-      lineNumbers: true,
-      matchBrackets: true,
-      readOnly: !_pv_editing,
-      tabSize: 2,
-      indentUnit: 2,
-      viewportMargin: Infinity,
-      extraKeys: {
-        'Ctrl-S': function() { if (_pv_editing) saveCodeMirrorContent(); },
-        'Cmd-S': function() { if (_pv_editing) saveCodeMirrorContent(); }
-      }
+    var lang = getMonacoLang(fileName);
+    var theme = (state && state.theme === 'light') ? 'vs' : 'vs-dark';
+    container.innerHTML = '';
+    var editorEl = document.createElement('div');
+    editorEl.style.width = '100%';
+    editorEl.style.height = 'calc(100vh - 200px)';
+    container.appendChild(editorEl);
+
+    _pv_monaco = monaco.editor.create(editorEl, {
+      value: content, language: lang, theme: theme,
+      readOnly: !_pv_editing, fontSize: 13,
+      fontFamily: "'Cascadia Code','Fira Code','Consolas','Monaco','Courier New',monospace",
+      fontLigatures: true, wordWrap: 'on', lineNumbers: 'on',
+      minimap: { enabled: false }, scrollBeyondLastLine: false, automaticLayout: true,
+      tabSize: 2, insertSpaces: true, renderWhitespace: 'selection',
+      bracketPairColorization: { enabled: true },
+      guides: { bracketPairs: true, indentation: true },
+      smoothScrolling: true, cursorBlinking: 'smooth',
+      padding: { top: 12, bottom: 12 },
+      scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
+      overviewRulerLanes: 0, hideCursorInOverviewRuler: true, overviewRulerBorder: false, contextmenu: true
     });
-    window._pv_cm = cm;
-    cm.setSize('100%', 'calc(100vh - 200px)');
-    cm.scrollTo(0, 0);
-    updateCMButtons();
+    updateMonacoButtons();
   }
 
-  // textarea 模式下的保存
-  function savePlainTextareaContent() {
+  function updateMonacoButtons() {
+    var editBtn = document.getElementById('pv-edit-btn');
+    var saveBtn = document.getElementById('pv-save-btn');
+    if (editBtn) editBtn.style.display = _pv_editing ? 'none' : 'inline-flex';
+    if (saveBtn) saveBtn.style.display = _pv_editing ? 'inline-flex' : 'none';
+    if (_pv_monaco) {
+      _pv_monaco.updateOptions({ readOnly: !_pv_editing });
+    } else {
+      var ta = document.querySelector('#pv-textarea');
+      if (ta) ta.readOnly = !_pv_editing;
+    }
+  }
+
+  function toggleMonacoEdit() { _pv_editing = !_pv_editing; updateMonacoButtons(); }
+
+  function saveMonacoContent() {
     if (!_pv_saveUrl) return;
-    var ta = document.querySelector('#pv-textarea');
-    if (!ta) return;
+    var content = _pv_monaco ? _pv_monaco.getValue() : (document.querySelector('#pv-textarea') || {}).value || '';
+    var saveBtn = document.getElementById('pv-save-btn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
+    axios.put('/api' + _pv_saveUrl, { content: content, encoding: 'utf-8' }).then(function(r) {
+      if (r.data.code === 0) {
+        showToast('保存成功', '✅');
+        if (_pv_item) _pv_item.size = r.data.data.size;
+        _pv_editing = false; updateMonacoButtons();
+      } else showToast('保存失败: ' + r.data.message, '❌');
+    }).catch(function(err) {
+      var msg = '保存失败';
+      if (err && err.response && err.response.data && err.response.data.message) msg = err.response.data.message;
+      showToast(msg, '❌');
+    }).finally(function() { if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 保存'; } });
+  }
+
+  function saveFallbackContent() {
+    if (!_pv_saveUrl) return;
+    var ta = document.querySelector('#pv-textarea'); if (!ta) return;
     var content = ta.value;
     var saveBtn = document.getElementById('pv-save-btn');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
     axios.put('/api' + _pv_saveUrl, { content: content, encoding: 'utf-8' }).then(function(r) {
-      if (r.data.code === 0) { showToast('保存成功', '✅'); _pv_editing = false; updateCMButtons(); if (ta) ta.readOnly = true; }
+      if (r.data.code === 0) { showToast('保存成功', '✅'); _pv_editing = false; updateMonacoButtons(); if (ta) ta.readOnly = true; }
       else showToast('保存失败: ' + r.data.message, '❌');
     }).catch(function(err) {
       var msg = '保存失败';
@@ -2813,74 +2833,13 @@
     }).finally(function() { if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 保存'; } });
   }
 
-  function updateCMButtons() {
-    var editBtn = document.getElementById('pv-edit-btn');
-    var saveBtn = document.getElementById('pv-save-btn');
-    if (editBtn) { editBtn.style.display = _pv_editing ? 'none' : 'inline-flex'; }
-    if (saveBtn) { saveBtn.style.display = _pv_editing ? 'inline-flex' : 'none'; }
-    if (window._pv_cm) {
-      // CodeMirror 模式
-      window._pv_cm.setOption('readOnly', !_pv_editing);
-    } else {
-      // textarea 模式
-      var ta = document.querySelector('#pv-textarea');
-      if (ta) ta.readOnly = !_pv_editing;
-    }
-  }
-
-  function toggleCMEdit() {
-    _pv_editing = !_pv_editing;
-    updateCMButtons();
-  }
-
-  // 监听主题切换，同步更新 CodeMirror 主题
-  var _origApplyTheme = window.__fm && window.__fm._applyTheme;
-  window.__fm._origApplyTheme = _origApplyTheme;
-  window.addEventListener('themechange', function() {
-    if (window._pv_cm) {
-      var theme = (state && state.theme === 'light') ? 'eclipse' : 'dracula';
-      window._pv_cm.setOption('theme', theme);
-    } else {
-      var ta = document.querySelector('#pv-textarea');
-      if (ta && ta.style.display === 'block') {
-        ta.style.background = (state && state.theme === 'light') ? '#ffffff' : '#0a0c14';
-        ta.style.color = (state && state.theme === 'light') ? '#222' : '#e0e6f0';
-      }
-    }
-  });
-
-  function saveCodeMirrorContent() {
-    if (!window._pv_cm || !_pv_saveUrl) return;
-    var content = window._pv_cm.getValue();
-    var saveBtn = document.getElementById('pv-save-btn');
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
-
-    var body = { content: content, encoding: 'utf-8' };
-    axios.put('/api' + _pv_saveUrl, body).then(function(r) {
-      if (r.data.code === 0) {
-        showToast('保存成功', '✅');
-        if (_pv_item) _pv_item.size = r.data.data.size;
-        _pv_editing = false;
-        updateCMButtons();
-      } else {
-        showToast('保存失败: ' + r.data.message, '❌');
-      }
-    }).catch(function(err) {
-      var msg = '保存失败';
-      if (err && err.response && err.response.data && err.response.data.message) msg = err.response.data.message;
-      showToast(msg, '❌');
-    }).finally(function() {
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 保存'; }
-    });
-  }
-
   function closePreviewModal() {
     var overlay = document.getElementById('preview-overlay');
     if (overlay) {
-      // CodeMirror 实例清理
-      if (window._pv_cm) {
-        try { window._pv_cm.toTextArea(); } catch(e) {}
-        window._pv_cm = null;
+      // Monaco 实例清理
+      if (_pv_monaco) {
+        try { _pv_monaco.dispose(); } catch(e) {}
+        _pv_monaco = null;
       }
     }
     if (_previewEscHandler) { document.removeEventListener('keydown', _previewEscHandler); _previewEscHandler = null; }
