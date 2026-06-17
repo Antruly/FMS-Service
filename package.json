@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "postinstall": "node -e \"var fs=require('fs');var p=require('path');var src='node_modules/monaco-editor/min/vs';var dst='public/monaco/vs';if(!fs.existsSync(dst)&&fs.existsSync(src)){fs.mkdirSync('public/monaco',{recursive:true});fs.cpSync(src,dst,{recursive:true});console.log('[setup] Monaco Editor 已复制到 public/monaco/vs/');}\""
   },
   "dependencies": {
     "adm-zip": "^0.5.17",
@@ -18,6 +19,7 @@
     "jschardet": "^3.1.4",
     "mammoth": "^1.12.0",
     "mime-types": "^2.1.35",
+    "monaco-editor": "^0.55.1",
     "multer": "^2.1.1",
     "nodemailer": "^6.10.0",
     "qrcode": "^1.5.4",

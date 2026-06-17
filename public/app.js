@@ -2724,7 +2724,7 @@
   // 预加载 Monaco
   (function() {
     if (typeof require === 'undefined') return;
-    require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs' } });
+    require.config({ paths: { vs: './monaco/vs' } });
     require(['vs/editor/editor.main'], function() {
       _monacoReady = true;
       if (window.monaco) {
