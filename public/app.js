@@ -1117,6 +1117,42 @@
       });
   }
 
+  function createNewFile() {
+    // 回收站不支持新建文件
+    if (state.dirType === 'recycle') { showToast('回收站不支持新建文件', '&#9888;'); return; }
+    // 公共目录仅管理员可新建
+    if (state.dirType === 'public' && state.currentUser && !state.currentUser.is_admin) {
+      showToast('仅管理员可在公共目录新建文件', '&#9888;'); return;
+    }
+    var name = prompt('请输入文件名（支持 .txt .ini .sql .js 等文本类型）：');
+    if (!name || name.trim() === '') return;
+    name = name.trim();
+    // 基本文件名验证
+    if (/[<>:"/\\|?*]/.test(name)) { showToast('文件名包含非法字符', '&#9888;'); return; }
+
+    showLoading();
+    var postData = { name: name };
+    if (state.dirType === 'public') {
+      postData.public_path = state.currentPublicPath || '';
+    } else {
+      postData.dir_id = state.currentDirId || 0;
+    }
+    apiPost('/files/create', JSON.stringify(postData))
+      .then(function(res) {
+        hideLoading();
+        if (res.code === 0) {
+          showToast('文件「' + name + '」已创建', '&#9989;');
+          refreshCurrentDir();
+        } else {
+          showToast(res.message || '创建失败', '&#9888;');
+        }
+      })
+      .catch(function() {
+        hideLoading();
+        showToast('创建失败，请检查文件名或权限', '&#9888;');
+      });
+  }
+
   // ---------- User Panel ----------
   function toggleUserMenu() {
     if (!$('#user-dropdown')) return;
@@ -9767,6 +9803,7 @@
   window.__fm.deleteSelectedFiles = function() { deleteSelectedFiles(); };
   window.__fm.moveSelectedFiles = function() { moveSelectedFiles(); };
   window.__fm.createNewFolder = function() { createNewFolder(); };
+  window.__fm.createNewFile = function() { createNewFile(); };
   window.__fm.triggerUpload = function() { triggerUpload(); };
   window.__fm.handleFiles = function(files) { handleFiles(files); };
   window.__fm.goBackDir = function() { goBackDir(); };

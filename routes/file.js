@@ -4962,6 +4962,75 @@ router.put('/files/text/:id', requireAuth, function(req, res) {
   }
 });
 
+// ==================== 新建空白文件（个人/公共目录）====================
+// POST /api/files/create
+// 个人目录: { dir_id, name } — 创建加密空白文件
+// 公共目录: { name, public_path } — 管理员创建空白文件
+router.post('/files/create', requireAuth, function(req, res) {
+  var user = req.user;
+  var name = (req.body && req.body.name || '').trim();
+  if (!name) return res.status(400).json({ code: 400, message: '请输入文件名' });
+
+  // ======== 公共目录新建（仅管理员）========
+  if (req.body.public_path !== undefined) {
+    if (!user.is_admin) return deny403(res, '仅管理员可在公共目录新建文件');
+    var pubRoot = Storage.PUBLIC_DIR;
+    var pubFilePath = path.resolve(pubRoot, String(req.body.public_path || ''), name);
+    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '路径不合法');
+    try {
+      fs.writeFileSync(pubFilePath, Buffer.alloc(0));
+      logTraffic(user.id, '', 'create_file', 0, name, 0, 0);
+      return res.json({ code: 0, message: '文件创建成功', data: { name: name, size: 0 } });
+    } catch(e) {
+      return res.status(500).json({ code: 500, message: '创建失败: ' + e.message });
+    }
+  }
+
+  // ======== 个人目录新建 ========
+  var dirId = parseInt(req.body.dir_id, 10) || 0;
+  if (dirId > 0) {
+    var dir = VirtualDir.findById(dirId);
+    if (!dir || dir.user_id !== user.id) return deny404(res, '目录不存在');
+  }
+  if (!checkPerm(user, dirId, 'write')) return deny403(res, '无写入权限');
+
+  try {
+    var mimeType = require('mime-types').lookup(name) || 'text/plain';
+    var fileUuid = require('crypto').randomUUID();
+    var encVersion = 1;
+
+    // 写入一个 V1 加密空文件
+    var StorageMod = require('../lib/db').Storage;
+    var relPath = StorageMod.getDateBasedPath(fileUuid);
+    var userDir = Storage.ensureUserDir(user.id);
+    var absDir = path.join(userDir, path.dirname(relPath));
+    if (!fs.existsSync(absDir)) fs.mkdirSync(absDir, { recursive: true });
+    var absPath = path.join(userDir, relPath);
+
+    // 加密空 buffer 写入文件
+    var plainBuf = Buffer.alloc(0);
+    var encResult = createV1EncryptStreamSync(absPath, plainBuf);
+    if (!encResult.ok) throw new Error(encResult.error);
+
+    // 创建 file_storage 记录（空文件哈希）
+    var fileHash = require('crypto').createHash('sha256').update(plainBuf).digest('hex');
+    var FileStorage = require('../lib/db').FileStorage;
+    var storageId = FileStorage.create(fileUuid, fileHash, 0, 0, encVersion, true, '');
+
+    // 创建 virtual_files 记录
+    var fileId = VirtualFile.createWithEncVersion(user.id, dirId, name, 0, mimeType, relPath, fileUuid, encVersion);
+    if (fileId) {
+      require('../lib/db').run('UPDATE virtual_files SET storage_id = ? WHERE id = ?', [storageId, fileId]);
+    }
+
+    logTraffic(user.id, '', 'create_file', fileId, name, 0, 0);
+    return res.json({ code: 0, message: '文件创建成功', data: { id: fileId, name: name, size: 0 } });
+  } catch(e) {
+    log.error('[create-file] 个人文件创建失败:', e.message);
+    return res.status(500).json({ code: 500, message: '创建失败: ' + e.message });
+  }
+});
+
 // ==================== DOCX 转换为HTML====================
 // GET /api/files/docx/:id?public_path=xxx
 router.get('/files/docx/:id', requireAuth, function(req, res) {
