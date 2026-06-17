@@ -2,14 +2,14 @@
 <html lang="zh" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#07090f">
   <meta name="description" content="文件管理 - 科技感文件浏览器">
   <title>文件管理 // FMS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="icon" href="/favicon.png">
-  <link rel="stylesheet" href="./style.css?v=2026041301">
+  <link rel="stylesheet" href="./style.css?v=2026061702">
   <script src="./axios.min.js?v=2026040303"></script>
 </head>
 <body>
@@ -481,7 +481,7 @@
 <!-- ===================== SCRIPTS ===================== -->
 <!-- app.js 必须在 home.html 的脚本之前加载 -->
   <script src="./qrcode.min.js"></script>
-  <script src="./app.js?v=2026041306"></script>
+  <script src="./app.js?v=2026061706"></script>
 
 <!-- Auth check + 视图初始化 -->
 <script>
@@ -748,7 +748,7 @@
 
 <!-- 悬浮球：多功能进度球（上传进度 / App下载） -->
 <style>
-#mobile-floating-ball { position:fixed; z-index:9999; user-select:none; -webkit-user-select:none; }
+#mobile-floating-ball { position:fixed; z-index:9999; user-select:none; -webkit-user-select:none; touch-action:none; -webkit-touch-callout:none; }
 #mobile-floating-ball .ball-btn {
   width:52px;height:52px;border-radius:50%;cursor:grab;position:relative;
   background:radial-gradient(circle at 35% 35%, var(--ball-accent,rgba(0,212,255,0.25)), var(--ball-bg,rgba(13,17,23,0.95)) 70%);
@@ -794,7 +794,7 @@
 @keyframes ballOrbitSpin { 100%{transform:rotate(360deg)} }
 @keyframes ballFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
 #mobile-floating-ball .ball-btn { animation:ballFloat 3s ease-in-out infinite; }
-#mobile-floating-ball .ball-btn.dragging { animation:none; }
+#mobile-floating-ball .ball-btn.dragging { animation:none; transition:none !important; will-change:left,top; }
 #mobile-floating-ball .ball-btn:active { cursor:grabbing; }
 #mobile-floating-ball .ball-btn:hover { box-shadow:0 0 30px rgba(0,212,255,0.45),0 0 60px rgba(0,212,255,0.12);border-color:rgba(0,212,255,0.6); }
 #mobile-floating-ball .ball-btn svg { width:100%;height:100%;display:block;position:relative;z-index:1; }
@@ -813,9 +813,9 @@
   text-anchor:middle;dominant-baseline:central;
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
-/* Panel */
+/* Panel — position set dynamically via JS (bottom/top, right/left) */
 #mobile-floating-ball .ball-panel {
-  display:none;position:absolute;bottom:58px;right:-4px;
+  display:none;position:absolute;
   background:var(--bg-card,#1c2128);border:1px solid var(--border,#30363d);
   border-radius:12px;padding:14px;width:240px;max-height:360px;overflow-y:auto;
   box-shadow:0 8px 32px rgba(0,0,0,.6);text-align:left;
@@ -859,7 +859,7 @@
   width:26px;height:52px;
   background:linear-gradient(135deg, var(--ball-bg,rgba(13,17,23,0.95)), var(--bg-card,rgba(22,27,34,0.98)));
   border:2px solid var(--ball-border,rgba(0,212,255,0.35));
-  cursor:pointer;
+  cursor:pointer;touch-action:none;
   box-shadow:0 0 10px var(--ball-glow,rgba(0,212,255,0.15)), 0 4px 20px rgba(0,0,0,.35);
   transition:all .35s cubic-bezier(.4,0,.2,1);
   overflow:hidden;
@@ -1133,12 +1133,14 @@
 
   // --- Render upload list ---
   function renderUploadList() {
+    console.log('[FloatBall] renderUploadList called');
     var transfers = [];
     try {
       if (window.__fm && window.__fm._getActiveTransfers) {
         transfers = window.__fm._getActiveTransfers();
+        console.log('[FloatBall] _getActiveTransfers returned', transfers.length, 'items');
       }
-    } catch(e) {}
+    } catch(e) { console.error('[FloatBall] _getActiveTransfers error:', e); }
     // Also check pending from localStorage
     try {
       for (var i = 0; i < localStorage.length; i++) {
@@ -1163,15 +1165,27 @@
     // Calculate overall progress
     var totalChunks = 0, doneChunks = 0;
     transfers.forEach(function(t) {
-      totalChunks += (t.totalChunks || 1);
-      doneChunks += (t.uploadedChunks ? t.uploadedChunks.size || t.uploadedChunks.length : 0);
+      // 如果是直接上传（非切片），使用 progress 字段
+      if (t.progress != null && (!t.uploadedChunks || t.uploadedChunks.size === 0)) {
+        totalChunks += 100;
+        doneChunks += t.progress;
+      } else {
+        totalChunks += (t.totalChunks || 1);
+        doneChunks += (t.uploadedChunks ? t.uploadedChunks.size || t.uploadedChunks.length : 0);
+      }
     });
     var overallPct = totalChunks > 0 ? Math.round(doneChunks / totalChunks * 100) : 0;
     updateProgressCircle(overallPct);
 
     var html = '';
     transfers.forEach(function(t) {
-      var pct = t.totalChunks > 0 ? Math.round((t.uploadedChunks ? (t.uploadedChunks.size || t.uploadedChunks.length) : 0) / t.totalChunks * 100) : 0;
+      // 直接上传（非切片）：使用 progress 字段；切片上传：基于 uploadedChunks 计算
+      var pct;
+      if (t.progress != null && (!t.uploadedChunks || t.uploadedChunks.size === 0)) {
+        pct = t.progress;
+      } else {
+        pct = t.totalChunks > 0 ? Math.round((t.uploadedChunks ? (t.uploadedChunks.size || t.uploadedChunks.length) : 0) / t.totalChunks * 100) : 0;
+      }
       var statusClass = t.status === 'completed' ? 'completed' : (t.status === 'error' ? 'error' : 'uploading');
       var statusText = t.status === 'completed' ? '✓' : (t.status === 'error' ? '✕' : pct + '%');
       var sizeStr = t.fileSize > 1048576 ? (t.fileSize/1048576).toFixed(1)+'MB' : (t.fileSize/1024).toFixed(0)+'KB';
@@ -1212,24 +1226,26 @@
   initPanel();
   var updateTimer = setInterval(function() {
     if (panel.classList.contains('show')) return;
-    // Only update if there might be uploads
-    if (panelMode === 'upload' || (window.__fm && window.__fm._getActiveTransfers && window.__fm._getActiveTransfers().length > 0)) {
+    // Only update if there might be uploads (panelMode is 'app' or 'transfer')
+    if (panelMode === 'transfer' || (window.__fm && window.__fm._getActiveTransfers && window.__fm._getActiveTransfers().length > 0)) {
       renderUploadList();
     }
   }, 1000);
 
   // Public API for app.js to call
   window._floatBallPulse = function() {
+    console.log('[FloatBall] _floatBallPulse called');
     ballBtn.classList.add('float-ball-bounce');
     setTimeout(function(){ ballBtn.classList.remove('float-ball-bounce'); }, 500);
     switchBallTab('transfer');
     // Open panel briefly
     if (!panel.classList.contains('show')) {
       panel.classList.add('show');
+      positionPanel();
       setTimeout(function(){ panel.classList.remove('show'); }, 2000);
     }
   };
-  window._floatBallRefresh = function() { renderUploadList(); };
+  window._floatBallRefresh = function() { console.log('[FloatBall] _floatBallRefresh called'); renderUploadList(); };
 
   // --- Drag logic (ball + corner tab) ---
   if (hidden) { showCorner(); } else { position(); }
@@ -1245,8 +1261,13 @@
   ballBtn.addEventListener('mousedown', function(e){ ballBtn.classList.add('dragging'); onDown(e.clientX, e.clientY); });
   ballBtn.addEventListener('touchstart', function(e){
     if (e.target && (panel.contains(e.target) || e.target === hideBtn)) return;
+    e.preventDefault(); // 阻止浏览器下拉刷新手势
     ballBtn.classList.add('dragging');
     onDown(e.touches[0].clientX, e.touches[0].clientY);
+    // 抑制 body 的 overscroll 行为，防止页面级下拉刷新
+    document.body.style.overscrollBehavior = 'none';
+    // 通知原生 App 禁用下拉刷新（SwipeRefreshLayout）
+    try { window.AndroidApp && window.AndroidApp.setPageScrollState(true); } catch(ignore) {}
   }, {passive:false});
 
   // Corner tab drag start
@@ -1258,6 +1279,10 @@
     e.preventDefault();
   });
   corner.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    document.body.style.overscrollBehavior = 'none';
+    // 通知原生 App 禁用下拉刷新（SwipeRefreshLayout）
+    try { window.AndroidApp && window.AndroidApp.setPageScrollState(true); } catch(ignore) {}
     cornerDragging = true; cornerMoved = false;
     cornerStartX = e.touches[0].clientX; cornerStartY = e.touches[0].clientY;
     cornerStartPos = cornerPos;
@@ -1294,12 +1319,15 @@
     position();
   }
   document.addEventListener('mousemove', function(e){ onMove(e.clientX, e.clientY); });
-  document.addEventListener('touchmove', function(e){ onMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+  document.addEventListener('touchmove', function(e){ if (dragging || cornerDragging) e.preventDefault(); onMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
 
   function onUp() {
+    // 恢复原生 App 下拉刷新
+    try { window.AndroidApp && window.AndroidApp.setPageScrollState(false); } catch(ignore) {}
     // Corner tab release
     if (cornerDragging) {
       cornerDragging = false;
+      document.body.style.overscrollBehavior = '';
       if (cornerMoved) {
         var cdx = cornerLastDx || 0, cdy = cornerLastDy || 0;
         // 判断是否向中间拉动（垂直方向偏离边缘超过阈值）
@@ -1312,12 +1340,16 @@
         if (pulledTowardCenter) {
           showBall();
         }
+      } else {
+        // 轻触贴边标签（未拖动）→ 显示悬浮球（替代被 preventDefault 阻止的 click 事件）
+        showBall();
       }
       saveState();
       return;
     }
     // Ball release
     ballBtn.classList.remove('dragging');
+    document.body.style.overscrollBehavior = ''; // 恢复 body overscroll
     if (!dragging) return;
     dragging = false;
     if (!moved) return;
@@ -1333,11 +1365,53 @@
   document.addEventListener('mouseup', onUp);
   document.addEventListener('touchend', onUp);
 
+  // --- Adaptive panel positioning ---
+  function positionPanel() {
+    var cx = x + 26, cy = y + 26; // ball center
+    var panelW = 240, panelH = Math.min(360, panel.scrollHeight || 300);
+    var gap = 8; // gap between ball and panel
+    var margin = 10; // min distance from viewport edge
+
+    // Reset all position props
+    panel.style.bottom = ''; panel.style.top = '';
+    panel.style.right = ''; panel.style.left = '';
+    panel.style.maxHeight = '360px';
+
+    // Vertical: show above if enough space, otherwise below
+    var spaceAbove = cy - gap - margin;
+    var spaceBelow = window.innerHeight - cy - 26 - gap - margin;
+    if (spaceAbove > panelH) {
+      panel.style.bottom = (52 + gap) + 'px'; // above ball
+    } else if (spaceBelow > panelH) {
+      panel.style.top = (52 + gap) + 'px'; // below ball
+    } else if (spaceAbove > spaceBelow) {
+      panel.style.bottom = (52 + gap) + 'px';
+      panel.style.maxHeight = Math.max(120, spaceAbove) + 'px';
+    } else {
+      panel.style.top = (52 + gap) + 'px';
+      panel.style.maxHeight = Math.max(120, spaceBelow) + 'px';
+    }
+
+    // Horizontal: align to side with more space
+    if (cx + panelW + margin < window.innerWidth) {
+      panel.style.left = '-4px'; // align left edge with ball left
+    } else {
+      panel.style.right = '-4px'; // align right edge with ball right
+    }
+
+    // Clamp if panel would overflow viewport
+    var panelLeft = x + (panel.style.left !== '' ? -4 : (52 - panelW + 4));
+    if (panelLeft < margin) { panel.style.left = (margin - x) + 'px'; panel.style.right = ''; }
+    var panelRightEdge = x + 52 + (panel.style.right !== '' ? -4 : 0);
+    if (panelRightEdge + panelW > window.innerWidth - margin) { panel.style.right = ''; panel.style.left = (window.innerWidth - margin - panelW - x) + 'px'; }
+  }
+
   // --- Panel toggle ---
   ballBtn.addEventListener('click', function(e) {
     if (moved) return;
     panel.classList.toggle('show');
     if (panel.classList.contains('show')) {
+      positionPanel();
       if (panelMode === 'upload') { renderUploadList(); }
       else { tryRenderQr(); }
     }
@@ -1347,6 +1421,7 @@
     e.preventDefault();
     panel.classList.toggle('show');
     if (panel.classList.contains('show')) {
+      positionPanel();
       if (panelMode === 'upload') { renderUploadList(); }
       else { tryRenderQr(); }
     }
@@ -1370,6 +1445,7 @@
     x = Math.max(-30, Math.min(window.innerWidth - 30, x));
     y = Math.max(-30, Math.min(window.innerHeight - 30, y));
     if (hidden) showCorner(); else position();
+    if (panel.classList.contains('show')) positionPanel();
   });
 
   // --- QR Code (lazy load on first panel open) ---
@@ -1405,7 +1481,7 @@
 </script>
 
 <!-- ==================== 全局搜索弹窗 ==================== -->
-<div class="global-search-overlay" id="global-search-overlay" style="display:none">
+<div class="global-search-overlay" id="global-search-overlay">
   <div class="global-search-modal" id="global-search-modal">
     <div class="global-search-header">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent,#00d4ff)" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>

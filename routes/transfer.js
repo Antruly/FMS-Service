@@ -514,12 +514,14 @@ router.get('/transfers', requireAuth, function(req, res) {
   // 转换为统一格式
   var items = [];
   uploadTasks.forEach(function(t) {
+    var dirPath = t.dir_id ? db.VirtualDir.getFullPath(t.dir_id) : '';
     items.push({
       id: 'u_' + t.id, type: 'upload', file_name: t.file_name, file_size: t.file_size,
       status: t.status, progress: t.progress, device_name: t.device_name,
       transfer_id: t.transfer_id, error_message: t.error_message,
       created_at: t.created_at, updated_at: t.updated_at,
-      total_chunks: t.total_chunks, uploaded_chunks: t.uploaded_chunks
+      total_chunks: t.total_chunks, uploaded_chunks: t.uploaded_chunks,
+      dir_id: t.dir_id || 0, dir_path: dirPath, dir_type: 'personal'
     });
   });
   downloadLogs.forEach(function(d) {

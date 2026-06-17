@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>端到端加密的私有文件管理服务</strong><br><sub>v1.0.3 — 全局文件搜索 · 断点续传 · 悬浮球增强 · WebDAV权限修复</sub>
+  <strong>端到端加密的私有文件管理服务</strong><br><sub>v1.1.0 — Android 全面屏适配 · 全局搜索 · 断点续传 · 数据备份 · 存储均衡</sub>
 </p>
 
 <p align="center">

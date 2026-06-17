@@ -623,10 +623,10 @@
   }
 
   // ---------- 目录类型切换 (个人/公共/回收站/分享) ----------
-  function setDirType(type) {
+  function setDirType(type, dirId, publicPath) {
     state.dirType = type;
-    state.currentDirId = 0; // 重置到根目录
-    state.currentPublicPath = ''; // 公共目录路径也要重置
+    state.currentDirId = (typeof dirId === 'number' ? dirId : 0); // 支持指定目录ID
+    state.currentPublicPath = (typeof publicPath === 'string' ? publicPath : ''); // 支持指定公共目录路径
     state.selectedFiles = []; // 清空选择
     state.isSelectionMode = false;
     state.fileData = [];
@@ -699,7 +699,7 @@
     updateStats([]);
     updateRecycleBadge();
     if (state.isAdmin) updatePublicRecycleBadge();
-    loadFiles(0);
+    loadFiles(state.currentDirId);
   }
 
   function updateDirTypeUI() {
@@ -8364,9 +8364,9 @@
     var modeEl = document.getElementById('global-search-mode');
     var bodyEl = document.getElementById('global-search-body');
     if (!overlay || !input) return;
-    overlay.style.display = 'flex';
+    overlay.classList.add('show');
     input.value = '';
-    input.focus();
+    setTimeout(function() { input.focus(); }, 50);
     input.placeholder = '搜索当前目录及子目录...';
     if (modeEl) { modeEl.textContent = '当前目录'; modeEl.className = 'global-search-mode local'; }
     bodyEl.innerHTML = '<div class="global-search-hint">输入关键词搜索当前目录及其所有子目录中的文件</div>';
@@ -8429,7 +8429,7 @@
         var isPublic = dirType === 'public';
         html += _renderSearchResultItem({
           icon: '📄', iconClass: isPublic ? 'public' : 'file', name: f.name,
-          meta: (isPublic ? (f.path || '') : ('📁 ' + (d.currentDir != null ? '当前目录' : ''))) + (f.size ? ' · ' + formatFileSize(f.size) : ''),
+          meta: (isPublic ? (f.path || '') : ('📁 /个人文件/' + (f.dir_path || ''))) + (f.size ? ' · ' + formatFileSize(f.size) : ''),
           type: isPublic ? 'public' : 'file', id: isPublic ? null : f.id, dirId: isPublic ? null : (f.dir_id || dirId),
           path: isPublic ? f.path : null
         });
@@ -8439,7 +8439,7 @@
         var isPublic = dirType === 'public';
         html += _renderSearchResultItem({
           icon: '📁', iconClass: isPublic ? 'public' : 'dir', name: dr.name,
-          meta: isPublic ? (dr.path || '') : '子目录',
+          meta: isPublic ? (dr.path || '') : ('📁 /个人文件/' + (dr.dir_path || '')),
           type: isPublic ? 'publicDir' : 'dir', id: isPublic ? null : dr.id, dirId: isPublic ? null : dr.id,
           path: isPublic ? dr.path : null
         });
@@ -8466,9 +8466,9 @@
     var modeEl = document.getElementById('global-search-mode');
     var body = document.getElementById('global-search-body');
     if (!overlay || !input) return;
-    overlay.style.display = 'flex';
+    overlay.classList.add('show');
     input.value = '';
-    input.focus();
+    setTimeout(function() { input.focus(); }, 50);
     input.placeholder = '搜索全部个人文件 + 公共目录...';
     if (modeEl) { modeEl.textContent = '全局'; modeEl.className = 'global-search-mode global'; }
     body.innerHTML = '<div class="global-search-hint">输入关键词搜索您所有的个人文件和公共目录</div>';
@@ -8502,7 +8502,7 @@
 
   function closeGlobalSearch() {
     var overlay = document.getElementById('global-search-overlay');
-    if (overlay) overlay.style.display = 'none';
+    if (overlay) overlay.classList.remove('show');
     if (_gsTimer) clearTimeout(_gsTimer);
     _gsResults = null;
   }
@@ -8535,7 +8535,7 @@
         files.forEach(function(f) {
           html += _renderSearchResultItem({
             icon: '📄', iconClass: 'file', name: f.name,
-            meta: (f.dir_name ? '📁 ' + escHtml(f.dir_name) + ' · ' : '') + formatFileSize(f.size || 0),
+            meta: (f.dir_path ? '📁 /个人文件/' + escHtml(f.dir_path) + ' · ' : '') + formatFileSize(f.size || 0),
             type: 'file', id: f.id, dirId: f.dir_id || 0
           });
         });
@@ -8547,7 +8547,7 @@
         dirs.forEach(function(d) {
           html += _renderSearchResultItem({
             icon: '📁', iconClass: 'dir', name: d.name,
-            meta: '目录', type: 'dir', id: d.id, dirId: d.id
+            meta: '📁 /个人文件/' + (d.dir_path || ''), type: 'dir', id: d.id, dirId: d.id
           });
         });
         html += '</div>';
@@ -8614,28 +8614,21 @@
   // Navigate to personal dir (close search, switch to personal dir view, navigate to dir)
   window.__fm._gsNavigate = function(dirId) {
     closeGlobalSearch();
-    if (state) state.currentDirId = dirId || 0;
-    if (state) state.dirType = 'personal';
-    showView('files');
-    setTimeout(function() { loadFiles(); }, 100);
+    // 使用 setDirType 支持的 dirId 参数，避免 loadFiles(0) 覆盖为根目录
+    setDirType('personal', parseInt(dirId, 10) || 0);
   };
 
   // Navigate to public dir
   window.__fm._gsNavigatePublic = function(relPath, isDir) {
     closeGlobalSearch();
-    if (state) {
-      state.currentDirId = 0;
-      state.dirType = 'public';
-      if (isDir) {
-        state.currentPublicPath = relPath;
-      } else {
-        // For public files, navigate to parent dir
-        var parentPath = relPath.substring(0, relPath.lastIndexOf('/'));
-        state.currentPublicPath = parentPath || '';
-      }
+    var targetPath = relPath || '';
+    if (!isDir) {
+      // For public files, navigate to parent dir
+      var parentPath = targetPath.substring(0, targetPath.lastIndexOf('/'));
+      targetPath = parentPath || '';
     }
-    showView('files');
-    setTimeout(function() { loadFiles(); }, 100);
+    // 使用 setDirType 的 publicPath 参数，避免先重置再覆盖导致的两次 loadFiles
+    setDirType('public', 0, targetPath);
   };
 
   // Download personal file
@@ -9961,6 +9954,7 @@
 
   // ==================== 传输列表 ====================
   var _activeTransfers = [];
+  var _recentTransfers = [];   // 最近完成/失败的任务，保留 60 秒供展示
   var _transferFilter = 'all';
   var _transferPage = 0;
   var _transferHasMore = false;
@@ -10021,9 +10015,29 @@
     var statusText = statusMap[item.status] || item.status;
     var timeStr = (item.created_at || '').substring(0, 16).replace('T', ' ');
 
+    // 目录路径信息
+    var dirInfo = '';
+    if (item.dir_type === 'public') {
+      dirInfo = '<span title="公共目录">🌐 /public' + (item.dir_path ? '/' + item.dir_path : '') + '</span>';
+    } else if (item.dir_type === 'personal') {
+      dirInfo = '<span title="个人目录">🏠 /个人文件' + (item.dir_path ? '/' + item.dir_path : '') + '</span>';
+    }
+
     var actionBtns = '';
+    // 定位按钮
+    var locDirType = escHtml(item.dir_type || 'personal');
+    var locDirPath = escHtml(item.dir_path || '');
+    var locDirId = parseInt(item.dir_id, 10) || 0;
+    if (item.type === 'upload' && item.status === 'completed') {
+      console.log('[TransferItem] file=' + item.file_name + ' dir_id=' + item.dir_id + ' dir_path=' + item.dir_path + ' dir_type=' + item.dir_type + ' → locDirId=' + locDirId);
+    }
+    actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._locateTransferDir(\'' + locDirType + '\',\'' + locDirPath + '\',' + locDirId + ')" title="跳转到文件所在目录">📍 定位</button>';
     if (item.status === 'error' || item.status === 'cancelled') {
       actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._retryTransfer(String(item.id))">重试</button>';
+    }
+    // 续传按钮
+    if ((item.status === 'error' || item.status === 'pending') && item.total_chunks > 1 && item.type === 'upload') {
+      actionBtns += '<button class="transfer-action-btn resume" onclick="window.__fm._resumeSingleTransfer(\'' + escHtml(item.transfer_id || '') + '\',\'' + escHtml(item.file_name) + '\',' + (item.file_size || 0) + ')">🔄 续传</button>';
     }
     if (item.status === 'uploading' || item.status === 'pending') {
       actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._cancelTransfer(String(item.id))">取消</button>';
@@ -10044,12 +10058,13 @@
         '<div class="transfer-meta">' +
           '<span>' + formatFileSize(item.file_size || 0) + '</span>' +
           (item.device_name ? '<span>💻 ' + escHtml(item.device_name) + '</span>' : '') +
+          dirInfo +
           '<span>' + timeStr + '</span>' +
         '</div>' +
       '</div>' +
       progressHtml +
       '<div class="transfer-status"><span class="transfer-status-badge ' + item.status + '">' + statusText + '</span></div>' +
-      (actionBtns ? '<div class="transfer-actions">' + actionBtns + '</div>' : '') +
+      '<div class="transfer-actions">' + actionBtns + '</div>' +
     '</div>';
   }
 
@@ -10062,23 +10077,68 @@
     axios.get('/api/transfers?status=' + status + '&limit=' + limit + '&offset=' + (page * limit)).then(function(res) {
       _transferLoading = false;
       if (res.data.code === 0) {
-        var d = res.data.data;
+        var d = res.data.data || {};
+        d.items = d.items || [];
         var pending = 0;
         d.items.forEach(function(item) {
           if (item.status === 'uploading' || item.status === 'pending') pending++;
         });
+        // 合并本地活跃 + 最近完成的传输（公共目录直传等未入库的任务）
+        var active = window.__fm && window.__fm._getActiveTransfers ? window.__fm._getActiveTransfers() : [];
+        for (var ai = 0; ai < active.length; ai++) {
+          var at = active[ai];
+          // 检查是否已在服务端列表中（通过 transferId 去重）
+          var dup = d.items.some(function(si) { return si.transfer_id === at.transferId || si.id === at.transferId; });
+          if (!dup) {
+            if (at.status === 'uploading' || at.status === 'pending') pending++;
+            d.total = (d.total || 0) + 1;
+            d.items.unshift({
+              id: at.transferId,
+              transfer_id: at.transferId,
+              file_name: at.fileName,
+              file_size: at.fileSize,
+              type: at.direction || 'upload',
+              status: at.status,
+              progress: at.status === 'completed' ? 100 : (at.progress || 0),
+              total_chunks: at.totalChunks || 1,
+              uploaded_chunks: at.status === 'completed' ? (at.totalChunks || 1) : (at.uploadedChunks ? (at.uploadedChunks.size || at.uploadedChunks.length || 0) : 0),
+              device_name: at.deviceName || (/Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? '手机浏览器' : 'PC浏览器'),
+              created_at: new Date(at.startTime || at._completedAt).toISOString(),
+              dir_id: at.dirId || 0, dir_path: at.dir_path || '', dir_type: at.dir_type || 'personal',
+              _local: true
+            });
+          }
+        }
         d._pendingCount = pending;
         var container = $('#page-panel-body');
-        if (append && container && container._prevData) {
-          // Append to existing data
-          d.items = (container._prevData.items || []).concat(d.items);
-          d._pendingCount = (container._prevData._pendingCount || 0) + pending;
-        }
-        container._prevData = d;
         _transferPage = page;
-        _transferHasMore = d.items.length >= limit && d.total > d.items.length;
+        _transferHasMore = d.items.length >= limit && d.total > (d.items.length);
         renderTransferList(container, d);
         updateTransferBadge(pending);
+      } else {
+        // API 失败时仍尝试显示本地活跃传输
+        var active = window.__fm && window.__fm._getActiveTransfers ? window.__fm._getActiveTransfers() : [];
+        if (active.length > 0) {
+          var pd = { items: [], total: 0, _pendingCount: 0 };
+          active.forEach(function(at) {
+            if (at.status === 'uploading' || at.status === 'pending') pd._pendingCount++;
+            pd.total++;
+            pd.items.push({
+              id: at.transferId, transfer_id: at.transferId,
+              file_name: at.fileName, file_size: at.fileSize,
+              type: at.direction || 'upload', status: at.status,
+              progress: at.status === 'completed' ? 100 : (at.progress || 0),
+              total_chunks: at.totalChunks || 1,
+              uploaded_chunks: at.status === 'completed' ? (at.totalChunks || 1) : (at.uploadedChunks ? (at.uploadedChunks.size || at.uploadedChunks.length || 0) : 0),
+              device_name: at.deviceName || (/Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? '手机浏览器' : 'PC浏览器'),
+              created_at: new Date(at.startTime || at._completedAt).toISOString(),
+              dir_id: at.dirId || 0, dir_path: at.dir_path || '', dir_type: at.dir_type || 'personal',
+              _local: true
+            });
+          });
+          renderTransferList($('#page-panel-body'), pd);
+          updateTransferBadge(pd._pendingCount);
+        }
       }
     }).catch(function() { _transferLoading = false; });
   }
@@ -10156,7 +10216,49 @@
     }).catch(function() { showToast('清空失败', '❌'); });
   };
 
-  // Resume
+  // 定位到传输文件所在目录
+  window.__fm._locateTransferDir = function(dirType, dirPath, dirId) {
+    console.log('[Locate] dirType=' + dirType + ' dirPath=' + dirPath + ' dirId=' + dirId);
+    var targetDirId = parseInt(dirId, 10) || 0;
+    if (dirType === 'public') {
+      // setDirType 第三个参数 publicPath 直接设置 currentPublicPath，不会先重置再覆盖导致两次 loadFiles
+      setDirType('public', 0, dirPath || '');
+      console.log('[Locate] public → currentPublicPath=' + state.currentPublicPath);
+    } else {
+      // setDirType 第二个参数 dirId 直接设置 currentDirId，内部 loadFiles 传入正确的目录ID
+      setDirType('personal', targetDirId);
+      console.log('[Locate] personal → currentDirId=' + state.currentDirId);
+    }
+    // setDirType 已调用 loadFiles，无需再调 showView
+    var label = (dirType === 'public' ? '公共目录' : '个人目录') + (dirPath ? ' /' + dirPath : (targetDirId > 0 ? ' #' + targetDirId : ''));
+    showToast('已跳转到: ' + label, '📍');
+  };
+
+  // 单个续传：选择文件后从断点继续
+  window.__fm._resumeSingleTransfer = function(transferId, fileName, fileSize) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.onchange = function() {
+      var file = input.files[0];
+      if (!file) return;
+      // 校验文件名和大小
+      if (file.name !== fileName || Math.abs(file.size - fileSize) > 100) {
+        showToast('文件不匹配，请选择原始文件: ' + fileName + ' (' + formatFileSize(fileSize) + ')', '⚠');
+        return;
+      }
+      // 获取缓存的 meta（含已上传 chunks）
+      var meta = null;
+      try {
+        var raw = localStorage.getItem('transfer_pending_' + transferId);
+        if (raw) meta = JSON.parse(raw);
+      } catch(e) {}
+      _doChunkedUpload(file, meta ? (meta.dirId || 0) : 0, transferId, meta);
+      showToast('开始续传: ' + fileName, '🔄');
+    };
+    input.click();
+  };
+
+  // Resume all
   window.__fm._resumeAllTransfers = function() {
     var pendingKeys = [];
     try {
@@ -10202,7 +10304,7 @@
 
     var task = {
       fileName: file.name, fileSize: file.size, lastModified: file.lastModified,
-      dirId: dirId || 0, transferId: transferId, totalChunks: 0, chunkSize: CHUNK_SIZE,
+      dirId: dirId || 0, dir_type: 'personal', transferId: transferId, totalChunks: 0, chunkSize: CHUNK_SIZE,
       uploadedChunks: uploadedChunks, status: 'uploading', taskId: 0, cancelled: false
     };
 
@@ -10289,7 +10391,9 @@
     }).then(function(res) {
       if (res && res.data && res.data.code === 0) {
         task.status = 'completed';
+        task._completedAt = Date.now();
         _activeTransfers = _activeTransfers.filter(function(t) { return t !== task; });
+        _recentTransfers.push(task);
         try { localStorage.removeItem('transfer_pending_' + task.transferId); } catch(e) {}
         fetchTransfers();
         if (window.__fm && window.__fm.refreshFileList) window.__fm.refreshFileList();
@@ -10297,422 +10401,99 @@
       }
     }).catch(function(err) {
       task.status = 'error';
-      task.errorMessage = err.message || '上传失败';
+      task._completedAt = Date.now();
       _activeTransfers = _activeTransfers.filter(function(t) { return t !== task; });
+      _recentTransfers.push(task);
+      task.errorMessage = err.message || '上传失败';
       fetchTransfers();
       showToast('上传失败: ' + file.name + ' - ' + task.errorMessage, '❌');
     });
   }
 
-  // Override upload handler to use chunked
+  // Override upload handler — public dir uses FormData (with progress), personal dir uses chunked
   var _origHandleUploadBatch = handleUploadBatch;
   handleUploadBatch = function(files) {
+    console.log('[Upload] handleUploadBatch called, files:', files.length, 'isPublic:', state && state.dirType === 'public');
     if (!files || files.length === 0) return;
-    if (!state || !state.currentDirId) { state.currentDirId = 0; }
+    if (!state) return;
+    var isPublic = state.dirType === 'public';
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
       if (file.size === 0) continue;
-      _doChunkedUpload(file, state.currentDirId || 0, null, null);
-    }
-    // Pulse the floating ball instead of navigating
-    if (window._floatBallPulse) window._floatBallPulse();
-    showToast('已添加 ' + files.length + ' 个文件到上传队列', '📤');
-  };
+      if (isPublic) {
+        console.log('[Upload] Creating pubTask for:', file.name);
+        // 公共目录上传：使用 FormData 直传 + 进度条跟踪
+        var pubTask = {
+          transferId: 'pub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+          fileName: file.name,
+          fileSize: file.size,
+          totalChunks: 1,
+          uploadedChunks: new Set(),
+          status: 'uploading',
+          progress: 0,
+          direction: 'upload',
+          startTime: Date.now(),
+          deviceName: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? '手机浏览器' : 'PC浏览器',
+          dir_path: state.currentPublicPath || '',
+          dir_type: 'public'
+        };
+        _activeTransfers.push(pubTask);
+        console.log('[Upload] _activeTransfers count:', _activeTransfers.length);
+        updateTransferBadge(_activeTransfers.length);
+        console.log('[Upload] calling _floatBallRefresh:', typeof window._floatBallRefresh);
+        if (window._floatBallRefresh) window._floatBallRefresh();
 
-  // Expose active transfers for floating ball
-  window.__fm._getActiveTransfers = function() { return _activeTransfers; };
-
-  // Check pending on load
-  window.__fm._checkPendingTransfers = function() {
-    axios.get('/api/transfers/pending').then(function(res) {
-      if (res.data.code === 0 && res.data.data.pending.length > 0) {
-        updateTransferBadge(res.data.data.pending.length);
-      }
-    }).catch(function() {});
-  };
-
-
-
-  // ==================== 传输列表 ====================
-  var _activeTransfers = [];
-  var _transferFilter = 'all';
-  var _transferPage = 0;
-  var _transferHasMore = false;
-  var _transferLoading = false;
-
-  function loadTransferList() {
-    var container = $('#page-panel-body');
-    if (!container) return;
-    renderTransferList(container);
-    fetchTransfers();
-  }
-
-  function renderTransferList(container, data) {
-    var items = data ? data.items || [] : [];
-    var total = data ? data.total : 0;
-    var pendingCount = data ? data._pendingCount || 0 : 0;
-
-    var html = '';
-    html += '<div class="transfer-filters">';
-    var filters = [{id:'all',label:'全部'},{id:'uploading',label:'上传中'},{id:'completed',label:'已完成'},{id:'error',label:'失败'}];
-    filters.forEach(function(f) {
-      html += '<button class="transfer-filter-btn' + (_transferFilter === f.id ? ' active' : '') + '" data-filter="' + f.id + '">' + f.label + '</button>';
-    });
-    html += '<span style="flex:1"></span>';
-    html += '<button class="transfer-action-btn danger" onclick="window.__fm._clearHistory()" style="font-size:11px">🗑 清空历史</button>';
-    html += '</div>';
-
-    if (pendingCount > 0) {
-      html += '<div class="transfer-resume-banner" id="transfer-resume-banner">';
-      html += '<span class="banner-text">⚠ 检测到 ' + pendingCount + ' 个未完成的上传任务</span>';
-      html += '<button class="banner-btn" onclick="window.__fm._resumeAllTransfers()">▶ 恢复全部</button>';
-      html += '<button class="banner-dismiss" onclick="var t=this.parentElement;t.parentElement.removeChild(t)">✕</button>';
-      html += '</div>';
-    }
-
-    html += '<div class="transfer-list" id="transfer-list">';
-    if (items.length === 0) {
-      html += '<div class="transfer-empty"><div class="transfer-empty-icon">📦</div><p>暂无传输记录</p><p style="font-size:11px;color:var(--text-muted);margin-top:4px">上传文件将自动添加到此处</p></div>';
-    } else {
-      items.forEach(function(item) {
-        html += renderTransferItem(item);
-      });
-    }
-    html += '</div>';
-
-    if (_transferHasMore) {
-      html += '<div style="text-align:center;padding:16px"><button class="transfer-action-btn" onclick="window.__fm._loadMoreTransfers()">📥 加载更多 (' + items.length + ' / ' + total + ')</button></div>';
-    } else if (items.length > 0 && total > items.length) {
-      html += '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px">已显示全部 ' + total + ' 条记录</div>';
-    }
-
-    container.innerHTML = html;
-
-    // Event delegation for transfer list buttons
-    container.onclick = function(e) {
-      var btn = e.target.closest('button');
-      if (!btn) return;
-      // Filter buttons
-      var filter = btn.getAttribute('data-filter');
-      if (filter) { window.__fm._filterTransfers(filter); return; }
-      // Action buttons
-      var action = btn.getAttribute('data-action');
-      var id = btn.getAttribute('data-id');
-      if (!action) return;
-      if (action === 'retry') window.__fm._retryTransfer(id);
-      else if (action === 'cancel') window.__fm._cancelTransfer(id);
-      else if (action === 'delete') window.__fm._deleteTransfer(id);
-    };
-  }
-
-  function renderTransferItem(item) {
-    var typeIcon = item.type === 'upload' ? '📤' : '📥';
-    var typeClass = item.type === 'upload' ? 'upload' : 'download';
-    var progressClass = item.status === 'completed' ? 'completed' : (item.status === 'error' ? 'error' : '');
-    var statusMap = {pending:'等待中',uploading:'上传中',completed:'已完成',error:'失败',cancelled:'已取消',assembling:'组装中'};
-    var statusText = statusMap[item.status] || item.status;
-    var timeStr = (item.created_at || '').substring(0, 16).replace('T', ' ');
-
-    var actionBtns = '';
-    if (item.status === 'error' || item.status === 'cancelled') {
-      actionBtns += '<button class="transfer-action-btn" data-action="retry" data-id="' + item.id + '">重试</button>';
-    }
-    if (item.status === 'uploading' || item.status === 'pending') {
-      actionBtns += '<button class="transfer-action-btn danger" data-action="cancel" data-id="' + item.id + '">取消</button>';
-    }
-    if (item.status === 'completed' || item.status === 'error' || item.status === 'cancelled') {
-      actionBtns += '<button class="transfer-action-btn danger" data-action="delete" data-id="' + item.id + '">删除</button>';
-    }
-
-    var progressHtml = '';
-    if (item.status === 'uploading' || item.status === 'assembling') {
-      progressHtml = '<div class="transfer-progress-wrap"><div class="transfer-progress-bar"><div class="transfer-progress-fill ' + progressClass + '" style="width:' + (item.progress || 0) + '%"></div></div></div>';
-    }
-
-    return '<div class="transfer-item">' +
-      '<div class="transfer-icon ' + typeClass + '">' + typeIcon + '</div>' +
-      '<div class="transfer-info">' +
-        '<div class="transfer-name" title="' + escHtml(item.file_name) + '">' + escHtml(item.file_name) + '</div>' +
-        '<div class="transfer-meta">' +
-          '<span>' + formatFileSize(item.file_size || 0) + '</span>' +
-          (item.device_name ? '<span>💻 ' + escHtml(item.device_name) + '</span>' : '') +
-          '<span>' + timeStr + '</span>' +
-        '</div>' +
-      '</div>' +
-      progressHtml +
-      '<div class="transfer-status"><span class="transfer-status-badge ' + item.status + '">' + statusText + '</span></div>' +
-      (actionBtns ? '<div class="transfer-actions">' + actionBtns + '</div>' : '') +
-    '</div>';
-  }
-
-  function fetchTransfers(append) {
-    if (_transferLoading) return;
-    _transferLoading = true;
-    var status = _transferFilter === 'all' ? 'all' : _transferFilter;
-    var page = append ? _transferPage + 1 : 0;
-    var limit = 20;
-    axios.get('/api/transfers?status=' + status + '&limit=' + limit + '&offset=' + (page * limit)).then(function(res) {
-      _transferLoading = false;
-      if (res.data.code === 0) {
-        var d = res.data.data;
-        var pending = 0;
-        d.items.forEach(function(item) {
-          if (item.status === 'uploading' || item.status === 'pending') pending++;
-        });
-        d._pendingCount = pending;
-        var container = $('#page-panel-body');
-        if (append && container && container._prevData) {
-          // Append to existing data
-          d.items = (container._prevData.items || []).concat(d.items);
-          d._pendingCount = (container._prevData._pendingCount || 0) + pending;
-        }
-        container._prevData = d;
-        _transferPage = page;
-        _transferHasMore = d.items.length >= limit && d.total > d.items.length;
-        renderTransferList(container, d);
-        updateTransferBadge(pending);
-      }
-    }).catch(function() { _transferLoading = false; });
-  }
-
-  function updateTransferBadge(count) {
-    var badge = $('#transfer-badge');
-    if (!badge) return;
-    if (count > 0) {
-      badge.textContent = count;
-      badge.style.display = 'inline-flex';
-    } else {
-      badge.style.display = 'none';
-    }
-  }
-
-  // Filter
-  window.__fm._filterTransfers = function(filter) {
-    _transferFilter = filter;
-    fetchTransfers();
-  };
-
-  // Retry
-  window.__fm._retryTransfer = function(id) {
-    if (!confirm('确定要重试此传输吗？')) return;
-    var tid = id.replace('u_', '');
-    axios.post('/api/transfers/' + tid + '/retry').then(function(res) {
-      if (res.data.code === 0) fetchTransfers();
-    }).catch(function(err) {
-      showToast('重试失败: ' + (err.message || ''), '❌');
-    });
-  };
-
-  // Cancel
-  window.__fm._cancelTransfer = function(id) {
-    if (!confirm('确定要取消此上传吗？')) return;
-    var tid = id.replace('u_', '');
-    var active = _activeTransfers.find(function(t) { return String(t.taskId) === String(tid); });
-    if (active) {
-      active.cancelled = true;
-      _activeTransfers = _activeTransfers.filter(function(t) { return t !== active; });
-      axios.post('/api/transfer/upload/cancel', { transfer_id: active.transferId }).then(function() {
-        fetchTransfers();
-      }).catch(function() { fetchTransfers(); });
-    } else {
-      // Try to cancel via API
-      axios.post('/api/transfer/upload/cancel', { transfer_id: '' }).then(function() {
-        axios.delete('/api/transfers/' + id).then(function() { fetchTransfers(); });
-      }).catch(function() { fetchTransfers(); });
-    }
-  };
-
-  // Delete
-  window.__fm._deleteTransfer = function(id) {
-    if (!confirm('确定要删除此传输记录吗？')) return;
-    axios.delete('/api/transfers/' + id).then(function(res) {
-      if (res.data.code === 0) fetchTransfers();
-    });
-  };
-
-  window.__fm._loadMoreTransfers = function() {
-    if (_transferHasMore && !_transferLoading) fetchTransfers(true);
-  };
-
-  window.__fm._clearHistory = function() {
-    if (!confirm('确定要清空所有传输历史记录吗？（进行中的任务不受影响）')) return;
-    axios.delete('/api/transfers/clear').then(function(res) {
-      if (res.data.code === 0) {
-        var container = $('#page-panel-body');
-        if (container) container._prevData = null;
-        _transferPage = 0;
-        _transferHasMore = false;
-        fetchTransfers();
-        showToast('已清空历史记录', '✅');
-      }
-    }).catch(function() { showToast('清空失败', '❌'); });
-  };
-
-  // Resume
-  window.__fm._resumeAllTransfers = function() {
-    var pendingKeys = [];
-    try {
-      for (var i = 0; i < localStorage.length; i++) {
-        var k = localStorage.key(i);
-        if (k.indexOf('transfer_pending_') === 0) pendingKeys.push(k);
-      }
-    } catch(e) {}
-    if (pendingKeys.length === 0) {
-      showToast('没有可恢复的上传任务', 'ℹ');
-      return;
-    }
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.onchange = function() {
-      var files = Array.from(input.files);
-      pendingKeys.forEach(function(key) {
-        try {
-          var meta = JSON.parse(localStorage.getItem(key));
-          var matchedFile = files.find(function(f) {
-            return f.name === meta.fileName && Math.abs(f.size - meta.fileSize) < 100 && f.lastModified === meta.lastModified;
-          });
-          if (matchedFile) {
-            _doChunkedUpload(matchedFile, meta.dirId || (state && state.currentDirId) || 0, meta.transferId, meta);
+        var postData = new FormData();
+        postData.append('file', file);
+        postData.append('dir_path', state.currentPublicPath || '');
+        axios.post('/api/public-files/upload', postData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: function(pe) {
+            if (pe.total > 0) {
+              pubTask.progress = Math.round(pe.loaded / pe.total * 100);
+              if (window._floatBallRefresh) window._floatBallRefresh();
+            }
           }
-        } catch(e) {}
-      });
-      if (files.length > 0) {
-        showToast('开始恢复 ' + files.length + ' 个上传任务', '✅');
-        fetchTransfers();
-      }
-    };
-    input.click();
-  };
-
-  // ==================== 分块上传引擎 ====================
-  function _doChunkedUpload(file, dirId, existingTransferId, existingMeta) {
-    var CHUNK_SIZE = 4 * 1024 * 1024;
-    var transferId = existingTransferId || '';
-    var meta = existingMeta || null;
-    var uploadedChunks = meta ? new Set(meta.uploadedChunks || []) : new Set();
-
-    var task = {
-      fileName: file.name, fileSize: file.size, lastModified: file.lastModified,
-      dirId: dirId || 0, transferId: transferId, totalChunks: 0, chunkSize: CHUNK_SIZE,
-      uploadedChunks: uploadedChunks, status: 'uploading', taskId: 0, cancelled: false
-    };
-
-    // Save metadata to localStorage for resume
-    function saveMeta() {
-      try {
-        localStorage.setItem('transfer_pending_' + task.transferId, JSON.stringify({
-          transferId: task.transferId, fileName: task.fileName, fileSize: task.fileSize,
-          lastModified: task.lastModified, totalChunks: task.totalChunks, chunkSize: task.chunkSize,
-          uploadedChunks: Array.from(task.uploadedChunks), dirId: task.dirId
-        }));
-      } catch(e) {}
-    }
-
-    computeFileHash(file).then(function(fileHash) {
-      return axios.post('/api/transfer/upload/init', {
-        file_name: file.name, file_size: file.size,
-        mime_type: file.type || 'application/octet-stream',
-        dir_id: task.dirId, file_hash: fileHash,
-        device_id: localStorage.getItem('_fs_device_id') || '',
-        device_name: /Mobile|Android/.test(navigator.userAgent) ? '手机浏览器' : 'PC浏览器'
-      });
-    }).then(function(res) {
-      if (res.data.code !== 0) {
-        task.status = 'error'; task.errorMessage = res.data.message;
-        showToast('上传失败: ' + file.name + ' - ' + res.data.message, '❌');
-        return;
-      }
-      var d = res.data.data;
-      if (d.instant) {
-        task.status = 'completed';
-        fetchTransfers();
-        if (window.__fm && window.__fm.refreshFileList) window.__fm.refreshFileList();
-        showToast('秒传成功: ' + file.name, '⚡');
-        return;
-      }
-      task.transferId = d.transfer_id;
-      task.taskId = d.task_id;
-      task.totalChunks = d.total_chunks;
-      task.chunkSize = d.chunk_size;
-      _activeTransfers.push(task);
-      saveMeta();
-      fetchTransfers();
-      return _uploadChunks(task, file, saveMeta);
-    }).catch(function(err) {
-      var errMsg = '上传失败';
-      if (err && err.response && err.response.data && err.response.data.message) {
-        errMsg = err.response.data.message;
-      } else if (err && err.message) {
-        errMsg = err.message;
-      }
-      task.status = 'error';
-      showToast('上传失败: ' + file.name + ' - ' + errMsg, '❌');
-    });
-  }
-
-  function _uploadChunks(task, file, saveMeta) {
-    var chain = Promise.resolve();
-    for (var ci = 0; ci < task.totalChunks; ci++) {
-      (function(chunkIndex) {
-        chain = chain.then(function() {
-          if (task.cancelled) return;
-          if (task.uploadedChunks.has(chunkIndex)) return;
-          var start = chunkIndex * task.chunkSize;
-          var end = Math.min(start + task.chunkSize, file.size);
-          var chunk = file.slice(start, end);
-          return axios.post(
-            '/api/transfer/upload/chunk?transfer_id=' + encodeURIComponent(task.transferId) + '&chunk_index=' + chunkIndex,
-            chunk,
-            { headers: { 'Content-Type': 'application/octet-stream' }, timeout: 120000 }
-          ).then(function(res) {
-            if (res.data.code !== 0) throw new Error(res.data.message);
-            task.uploadedChunks.add(chunkIndex);
-            saveMeta();
-            fetchTransfers();
-            if (window._floatBallRefresh) window._floatBallRefresh();
-          });
+        }).then(function(res) {
+          _activeTransfers = _activeTransfers.filter(function(t) { return t !== pubTask; });
+          pubTask.status = res.data.code === 0 ? 'completed' : 'error';
+          pubTask.progress = 100;
+          pubTask._completedAt = Date.now();
+          _recentTransfers.push(pubTask);
+          updateTransferBadge(_activeTransfers.length);
+          if (res.data.code === 0) {
+            showToast('上传成功: ' + file.name, '✅');
+            loadFiles();
+          } else {
+            showToast('上传失败: ' + (res.data.message || file.name), '❌');
+          }
+          if (window._floatBallRefresh) window._floatBallRefresh();
+        }).catch(function(err) {
+          _activeTransfers = _activeTransfers.filter(function(t) { return t !== pubTask; });
+          pubTask.status = 'error';
+          pubTask.progress = 100;
+          pubTask._completedAt = Date.now();
+          _recentTransfers.push(pubTask);
+          updateTransferBadge(_activeTransfers.length);
+          showToast('上传失败: ' + (err.message || file.name), '❌');
+          if (window._floatBallRefresh) window._floatBallRefresh();
         });
-      })(ci);
-    }
-    return chain.then(function() {
-      if (task.cancelled) return;
-      return axios.post('/api/transfer/upload/complete', { transfer_id: task.transferId });
-    }).then(function(res) {
-      if (res && res.data && res.data.code === 0) {
-        task.status = 'completed';
-        _activeTransfers = _activeTransfers.filter(function(t) { return t !== task; });
-        try { localStorage.removeItem('transfer_pending_' + task.transferId); } catch(e) {}
-        fetchTransfers();
-        if (window.__fm && window.__fm.refreshFileList) window.__fm.refreshFileList();
-        showToast('上传完成: ' + file.name, '✅');
+      } else {
+        _doChunkedUpload(file, state.currentDirId || 0, null, null);
       }
-    }).catch(function(err) {
-      task.status = 'error';
-      task.errorMessage = err.message || '上传失败';
-      _activeTransfers = _activeTransfers.filter(function(t) { return t !== task; });
-      fetchTransfers();
-      showToast('上传失败: ' + file.name + ' - ' + task.errorMessage, '❌');
-    });
-  }
-
-  // Override upload handler to use chunked
-  var _origHandleUploadBatch = handleUploadBatch;
-  handleUploadBatch = function(files) {
-    if (!files || files.length === 0) return;
-    if (!state || !state.currentDirId) { state.currentDirId = 0; }
-    for (var i = 0; i < files.length; i++) {
-      var file = files[i];
-      if (file.size === 0) continue;
-      _doChunkedUpload(file, state.currentDirId || 0, null, null);
     }
-    // Pulse the floating ball instead of navigating
     if (window._floatBallPulse) window._floatBallPulse();
     showToast('已添加 ' + files.length + ' 个文件到上传队列', '📤');
   };
 
-  // Expose active transfers for floating ball
-  window.__fm._getActiveTransfers = function() { return _activeTransfers; };
+  // 定时清理最近完成的传输记录（保留 30 秒供悬浮球/传输列表展示）
+  setInterval(function() {
+    var now = Date.now();
+    _recentTransfers = _recentTransfers.filter(function(t) { return now - t._completedAt < 30000; });
+  }, 10000);
+
+  // Expose active + recent transfers for floating ball
+  window.__fm._getActiveTransfers = function() { return _activeTransfers.concat(_recentTransfers); };
 
   // Check pending on load
   window.__fm._checkPendingTransfers = function() {

@@ -682,6 +682,14 @@ router.get('/files/search-local', requireAuth, function(req, res) {
 					results.dirs.push(childDirs[di]);
 				}
 			}
+
+			// 补全个人文件/目录的完整路径（递归获取直至根目录）
+			for (var fi = 0; fi < results.files.length; fi++) {
+				results.files[fi].dir_path = VirtualDir.getFullPath(results.files[fi].dir_id);
+			}
+			for (var di = 0; di < results.dirs.length; di++) {
+				results.dirs[di].dir_path = VirtualDir.getFullPath(results.dirs[di].parent_id);
+			}
 		} catch(e) {
 			log.error('局部搜索个人目录失败:', e.message);
 		}
@@ -765,6 +773,16 @@ router.get('/files/search', requireAuth, function(req, res) {
 		results.dirs = VirtualDir.searchByName(userId, q, 500);
 	} catch(e) {
 		log.error('搜索个人目录失败:', e.message);
+	}
+
+	// 补全个人文件/目录的完整路径
+	for (var fi = 0; fi < results.files.length; fi++) {
+		var f = results.files[fi];
+		f.dir_path = VirtualDir.getFullPath(f.dir_id);
+	}
+	for (var di = 0; di < results.dirs.length; di++) {
+		var d = results.dirs[di];
+		d.dir_path = VirtualDir.getFullPath(d.parent_id);
 	}
 
 	// 3. 搜索公共目录（Redis缓存优先 + 文件系统回退）

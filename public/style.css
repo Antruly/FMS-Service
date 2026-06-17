@@ -397,7 +397,8 @@ body {
   body.sidebar-collapsed .page-panel[data-type="profile"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="change-password"] .page-panel-body,
   body.sidebar-collapsed .page-panel[data-type="about"] .page-panel-body,
-  body.sidebar-collapsed .page-panel[data-type="offline"] .page-panel-body {
+  body.sidebar-collapsed .page-panel[data-type="offline"] .page-panel-body,
+  body.sidebar-collapsed .page-panel[data-type="transfers"] .page-panel-body {
     margin-left: var(--sidebar-collapsed-width) !important;
   }
 
@@ -4176,6 +4177,7 @@ body {
 .page-panel[data-type="change-password"] .page-panel-body,
 .page-panel[data-type="about"] .page-panel-body,
 .page-panel[data-type="offline"] .page-panel-body,
+.page-panel[data-type="transfers"] .page-panel-body,
 .page-panel[data-type="admin-storage"] .page-panel-body,
 .page-panel[data-type="admin-backup"] .page-panel-body,
 .page-panel[data-type="admin-tasks"] .page-panel-body {
@@ -4224,6 +4226,7 @@ body {
   .page-panel[data-type="admin-storage"] .page-panel-body,
   .page-panel[data-type="admin-backup"] .page-panel-body,
   .page-panel[data-type="admin-tasks"] .page-panel-body,
+  .page-panel[data-type="transfers"] .page-panel-body,
   .page-panel[data-type="offline"] .page-panel-body {
     margin-left: 0 !important;
     padding: 12px;
@@ -7450,10 +7453,22 @@ noscript {
 
 /* ==================== 全局搜索弹窗 ==================== */
 .global-search-overlay {
-  position: fixed; inset: 0; z-index: 10000;
-  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 10000;
+  background: rgba(0,0,0,0.85);
   display: flex; align-items: flex-start; justify-content: center;
-  padding-top: 12vh; animation: gsFadeIn .2s ease;
+  padding-top: 12vh;
+  /* 默认隐藏：用 visibility+opacity，不用 display:none —
+     Android WebView 在 position:fixed 上切 display:none→flex 有渲染 bug */
+  visibility: hidden; opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.global-search-overlay.show {
+  visibility: visible; opacity: 1; pointer-events: auto;
+}
+@media (max-width: 768px) {
+  .global-search-overlay {
+    padding-top: max(60px, env(safe-area-inset-top, 20px));
+  }
 }
 @keyframes gsFadeIn { from{opacity:0} to{opacity:1} }
 .global-search-modal {
