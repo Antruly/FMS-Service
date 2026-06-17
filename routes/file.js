@@ -3941,7 +3941,7 @@ router.get('/files/thumb/:id?', requireAuth, async function(req, res) {
 // HEAD /api/files/stream/:id   - 获取文件大小（元数据），让浏览器知道视频总长度
 // 支持图片直接显示、视频/音频流式播放
 // ID 格式同 thumb：纯数字 | UUID格式nonce（含扩展名）
-var STREAM_SUPPORTED = ['jpg','jpeg','png','gif','webp','bmp','mp4','avi','mov','webm','mkv','mp3','wav','ogg','flac','aac'];
+var STREAM_SUPPORTED = ['jpg','jpeg','png','gif','webp','bmp','mp4','avi','mov','webm','mkv','mp3','wav','ogg','flac','aac','pdf'];
 var ENCRYPTED_HEADER_SIZE = 88; // keyNonce(12) + encFileKey(32) + keyAuthTag(16) + nonce(12) + authTag(16)
 
 // 解析 Range header，返回 {start, end} 或 null

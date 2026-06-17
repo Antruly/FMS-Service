@@ -635,6 +635,16 @@
       if (sun) sun.style.display = theme === 'light' ? 'block' : 'none';
       if (moon) moon.style.display = theme === 'dark' ? 'block' : 'none';
     }
+    // 同步 CodeMirror 主题
+    if (window._pv_cm) {
+      window._pv_cm.setOption('theme', theme === 'light' ? 'eclipse' : 'dracula');
+    } else {
+      var ta = document.querySelector('#pv-textarea');
+      if (ta && ta.style.display === 'block') {
+        ta.style.background = theme === 'light' ? '#ffffff' : '#0a0c14';
+        ta.style.color = theme === 'light' ? '#222' : '#e0e6f0';
+      }
+    }
     // 通知嵌入的 iframe 同步主题
     try {
       ['storage-iframe','backup-iframe','tasks-iframe'].forEach(function(id) {
@@ -2736,11 +2746,38 @@
     if (window._pv_cm) { try { window._pv_cm.toTextArea(); } catch(e) {} window._pv_cm = null; }
     _pv_cm = null; _pv_editing = startEdit || false; _pv_saveUrl = saveUrl || ''; _pv_item = item || null;
 
+    // CodeMirror 未加载时回退到原生 textarea
+    if (typeof CodeMirror === 'undefined' || window._cmLoadFailed) {
+      textarea.value = content;
+      textarea.style.display = 'block';
+      textarea.style.background = state && state.theme === 'light' ? '#ffffff' : '#0a0c14';
+      textarea.style.color = state && state.theme === 'light' ? '#222' : '#e0e6f0';
+      textarea.style.fontFamily = "'Share Tech Mono',monospace";
+      textarea.style.fontSize = '13px';
+      textarea.style.lineHeight = '1.7';
+      textarea.style.padding = '20px';
+      textarea.style.border = '1px solid rgba(0,212,255,0.2)';
+      textarea.style.borderRadius = '12px';
+      textarea.style.resize = 'none';
+      textarea.style.tabSize = '2';
+      textarea.style.whiteSpace = 'pre';
+      textarea.style.overflow = 'auto';
+      textarea.spellcheck = false;
+      textarea.readOnly = !_pv_editing;
+      textarea.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (_pv_editing) savePlainTextareaContent(); }
+      });
+      window._pv_cm = null; // 标记为 textarea 模式
+      updateCMButtons();
+      return;
+    }
+
     var mode = getCMCodeMode(fileName);
+    var theme = (state && state.theme === 'light') ? 'eclipse' : 'dracula';
     var cm = CodeMirror.fromTextArea(textarea, {
       value: content,
       mode: mode,
-      theme: 'dracula',
+      theme: theme,
       lineNumbers: true,
       matchBrackets: true,
       readOnly: !_pv_editing,
@@ -2755,9 +2792,25 @@
     window._pv_cm = cm;
     cm.setSize('100%', 'calc(100vh - 200px)');
     cm.scrollTo(0, 0);
-
-    // 更新编辑/保存按钮状态
     updateCMButtons();
+  }
+
+  // textarea 模式下的保存
+  function savePlainTextareaContent() {
+    if (!_pv_saveUrl) return;
+    var ta = document.querySelector('#pv-textarea');
+    if (!ta) return;
+    var content = ta.value;
+    var saveBtn = document.getElementById('pv-save-btn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
+    axios.put('/api' + _pv_saveUrl, { content: content, encoding: 'utf-8' }).then(function(r) {
+      if (r.data.code === 0) { showToast('保存成功', '✅'); _pv_editing = false; updateCMButtons(); if (ta) ta.readOnly = true; }
+      else showToast('保存失败: ' + r.data.message, '❌');
+    }).catch(function(err) {
+      var msg = '保存失败';
+      if (err && err.response && err.response.data && err.response.data.message) msg = err.response.data.message;
+      showToast(msg, '❌');
+    }).finally(function() { if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 保存'; } });
   }
 
   function updateCMButtons() {
@@ -2766,7 +2819,12 @@
     if (editBtn) { editBtn.style.display = _pv_editing ? 'none' : 'inline-flex'; }
     if (saveBtn) { saveBtn.style.display = _pv_editing ? 'inline-flex' : 'none'; }
     if (window._pv_cm) {
+      // CodeMirror 模式
       window._pv_cm.setOption('readOnly', !_pv_editing);
+    } else {
+      // textarea 模式
+      var ta = document.querySelector('#pv-textarea');
+      if (ta) ta.readOnly = !_pv_editing;
     }
   }
 
@@ -2774,6 +2832,22 @@
     _pv_editing = !_pv_editing;
     updateCMButtons();
   }
+
+  // 监听主题切换，同步更新 CodeMirror 主题
+  var _origApplyTheme = window.__fm && window.__fm._applyTheme;
+  window.__fm._origApplyTheme = _origApplyTheme;
+  window.addEventListener('themechange', function() {
+    if (window._pv_cm) {
+      var theme = (state && state.theme === 'light') ? 'eclipse' : 'dracula';
+      window._pv_cm.setOption('theme', theme);
+    } else {
+      var ta = document.querySelector('#pv-textarea');
+      if (ta && ta.style.display === 'block') {
+        ta.style.background = (state && state.theme === 'light') ? '#ffffff' : '#0a0c14';
+        ta.style.color = (state && state.theme === 'light') ? '#222' : '#e0e6f0';
+      }
+    }
+  });
 
   function saveCodeMirrorContent() {
     if (!window._pv_cm || !_pv_saveUrl) return;
