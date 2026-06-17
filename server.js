@@ -167,6 +167,112 @@ var sessionConfig = {
 if (redisStore) sessionConfig.store = redisStore;
 app.use(session(sessionConfig));
 
+// ==================== 升级维护模式中间件 ====================
+// 必须在 Session 之后（可检查登录状态），在流量统计和频率限制之前
+app.use(function(req, res, next) {
+  var state = global.upgradeState;
+  if (!state || !state.active) return next();
+
+  // 白名单路径（升级过程中仍然可用）
+  var whitelist = [
+    '/api/admin/upgrade/status',
+    '/api/admin/upgrade/upload',
+    '/api/auth/login',
+    '/api/auth/logout',
+    '/api/version/server',
+    '/api/version/latest'
+  ];
+  for (var i = 0; i < whitelist.length; i++) {
+    if (req.path === whitelist[i] || req.path.startsWith(whitelist[i])) {
+      return next();
+    }
+  }
+
+  // 管理员可访问版本管理相关接口
+  if (req.session && req.session.userId) {
+    try {
+      var User = require('./lib/db').User;
+      var u = User.findById(req.session.userId);
+      if (u && u.is_admin) {
+        // 管理员在升级期间可访问状态查询
+        if (req.path.startsWith('/api/admin/')) {
+          return next();
+        }
+      }
+    } catch(e) {}
+  }
+
+  // API 请求返回 JSON
+  if (req.path.startsWith('/api/') || req.xhr || (req.headers.accept && req.headers.accept.indexOf('json') !== -1)) {
+    return res.status(503).json({
+      code: 503,
+      message: '系统正在升级中，请稍后再访问',
+      data: {
+        phase: state.phase,
+        progress: state.progress,
+        stepLabel: state.stepLabel
+      }
+    });
+  }
+
+  // 页面请求返回 HTML 维护页面
+  var maintHtml = '<!DOCTYPE html>' +
+    '<html lang="zh-CN"><head>' +
+    '<meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1.0">' +
+    '<meta http-equiv="refresh" content="10">' +
+    '<title>系统升级中 — FMS</title>' +
+    '<style>' +
+    ':root{--bg:#0a0a0f;--card:#111118;--text:#e0e6f0;--muted:#8892a8;--accent:#00d4ff;--accent2:#7c3aed}' +
+    '@media(prefers-color-scheme:light){:root{--bg:#f4f6fb;--card:#ffffff;--text:#1a1d2e;--muted:#5a6070;--accent:#0284c7;--accent2:#6d28d9}}' +
+    '*{margin:0;padding:0;box-sizing:border-box}' +
+    'body{font-family:"Syne",-apple-system,sans-serif;background:var(--bg);color:var(--text);' +
+    'display:flex;align-items:center;justify-content:center;min-height:100vh}' +
+    '.card{background:var(--card);border-radius:20px;padding:48px 40px;text-align:center;' +
+    'box-shadow:0 24px 80px rgba(0,0,0,.35);max-width:480px;width:94vw}' +
+    '.spinner{width:60px;height:60px;border:3px solid var(--bg);border-top-color:var(--accent);' +
+    'border-right-color:var(--accent2);border-radius:50%;animation:s .8s linear infinite;margin:0 auto 24px}' +
+    '@keyframes s{to{transform:rotate(360deg)}}' +
+    'h1{font-size:22px;font-weight:800;margin-bottom:8px}' +
+    'p{color:var(--muted);font-size:14px;margin-bottom:4px}' +
+    '.progress{width:100%;height:4px;background:var(--bg);border-radius:2px;margin-top:20px;overflow:hidden}' +
+    '.progress-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));' +
+    'transition:width .5s ease;border-radius:2px}' +
+    '</style></head><body>' +
+    '<div class="card">' +
+    '<div class="spinner"></div>' +
+    '<h1>🔄 系统升级中</h1>' +
+    '<p>当前阶段: ' + (state.stepLabel || state.phase || '准备中') + '</p>' +
+    '<p>请稍候，系统将自动恢复...</p>' +
+    '<div class="progress"><div class="progress-bar" style="width:' + (state.progress || 0) + '%"></div></div>' +
+    '<p style="font-size:11px;margin-top:12px;">页面每 10 秒自动刷新</p>' +
+    '</div></body></html>';
+  res.status(503).setHeader('Content-Type', 'text/html; charset=utf-8').send(maintHtml);
+});
+
+// ==================== 活跃请求计数器 ====================
+// 跟踪所有非静态资源的请求，供升级时排空使用
+app.use(function(req, res, next) {
+  var state = global.upgradeState;
+  if (!state) return next();
+  // 跳过静态资源和轮询请求
+  if (req.path.startsWith('/files/') || req.path === '/favicon.ico' ||
+      req.path.endsWith('.js') || req.path.endsWith('.css') ||
+      req.path.endsWith('.png') || req.path.endsWith('.jpg') || req.path.endsWith('.svg') ||
+      req.path.endsWith('.woff2') || req.path.endsWith('.ico') ||
+      req.path === '/api/admin/upgrade/status') {
+    return next();
+  }
+  state.pendingCount++;
+  res.on('finish', function() {
+    if (state.pendingCount > 0) state.pendingCount--;
+  });
+  res.on('close', function() {
+    if (state.pendingCount > 0) state.pendingCount--;
+  });
+  next();
+});
+
 // ==================== 全局流量统计中间件 ====================
 // 必须在 Session 之后（获取 userId），在路由和频率限制之前
 // 包装 res.write/res.end 计数所有出站字节，实现实时计流量
@@ -921,6 +1027,44 @@ app.use(function(req, res) {
   }
 });
 
+// ==================== 优雅关闭 ====================
+var _httpServer = null;
+
+function gracefulShutdown(signal) {
+  log.info('[Server] 收到 ' + signal + ' 信号，开始优雅关闭...');
+
+  // 1. 先关闭 WebSocket（长连接阻止 server.close 完成）
+  try {
+    var ws = require('./lib/ws');
+    ws.closeAll();
+    log.info('[Server] WebSocket 已关闭');
+  } catch(e) {}
+
+  // 2. 停止接受新请求（设维护模式）
+  if (global.upgradeState) {
+    global.upgradeState.active = true;
+    global.upgradeState.phase = 'restarting';
+  }
+
+  // 3. 关闭 HTTP 服务器
+  if (_httpServer) {
+    _httpServer.close(function() {
+      log.info('[Server] HTTP 服务器已关闭，端口已释放');
+      process.exit(0);
+    });
+    // 3 秒超时强制退出（WebSocket 已关，普通请求很快就会结束）
+    setTimeout(function() {
+      log.info('[Server] 关闭超时，强制退出');
+      process.exit(0);
+    }, 3000);
+  } else {
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', function() { gracefulShutdown('SIGTERM'); });
+process.on('SIGINT', function() { gracefulShutdown('SIGINT'); });
+
 // 捕获未处理的 Promise rejection
 process.on('unhandledRejection', function(reason, promise) {
   log.error('[Process] 未处理的 Promise Rejection:', reason);
@@ -944,6 +1088,22 @@ async function startServer() {
 
     startReminderScheduler();
     startFileCleanupScheduler();
+
+    // 版本检查调度器（每日 01:00）
+    try {
+      require('./lib/upgrade').startVersionCheckScheduler();
+    } catch(e) {
+      log.warn('[Server] 版本检查调度器启动失败:', e.message);
+    }
+
+    // 启动时版本检查（10 秒超时，不阻塞启动）
+    setTimeout(function() {
+      try {
+        require('./lib/upgrade').startupVersionCheck();
+      } catch(e) {
+        log.warn('[Server] 启动版本检查失败:', e.message);
+      }
+    }, 3000);
 
     // 数据库备份调度器
     try {
@@ -991,6 +1151,7 @@ async function startServer() {
 
     // 创建 HTTP 服务器（与 WebSocket 共享）
     var server = http.createServer(app);
+    _httpServer = server; // 保存引用，供优雅关闭使用
     // 允许端口复用，避免重启时 EADDRINUSE
     server.on('error', function(err) {
       if (err.code === 'EADDRINUSE') {
@@ -1026,6 +1187,31 @@ async function startServer() {
     log.error('[Server] 启动失败:', err);
     process.exit(1);
   }
+}
+
+// ==================== Launcher IPC 处理 ====================
+// 如果通过 launcher.js 启动（IS_LAUNCHER_CHILD=1），设置 IPC 通信
+if (process.env.IS_LAUNCHER_CHILD === '1' && process.send) {
+  log.info('[Server] 由 Launcher 启动，IPC 通信已就绪');
+
+  process.on('message', function(msg) {
+    if (!msg || !msg.type) return;
+    log.info('[Server] 收到 Launcher 消息: ' + JSON.stringify(msg));
+
+    if (msg.type === 'prepare_shutdown') {
+      log.info('[Server] Launcher 要求准备关闭...');
+      // 设置维护模式，拒绝新请求
+      global.upgradeState = global.upgradeState || { active: false, phase: '', progress: 0, pendingCount: 0, logs: [] };
+      global.upgradeState.active = true;
+      global.upgradeState.phase = 'restarting';
+      global.upgradeState.stepLabel = '服务重启中...';
+    }
+  });
+
+  // 进程退出时通知 launcher
+  process.on('beforeExit', function() {
+    try { process.send({ type: 'worker_exiting' }); } catch (e) {}
+  });
 }
 
 startServer();

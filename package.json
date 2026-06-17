@@ -1,10 +1,10 @@
 {
   "name": "fileservice",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "文件管理服务",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node launcher.js",
     "dev": "node server.js",
     "postinstall": "node -e \"var fs=require('fs');var p=require('path');var src='node_modules/monaco-editor/min/vs';var dst='public/monaco/vs';if(!fs.existsSync(dst)&&fs.existsSync(src)){fs.mkdirSync('public/monaco',{recursive:true});fs.cpSync(src,dst,{recursive:true});console.log('[setup] Monaco Editor 已复制到 public/monaco/vs/');}\""
   },

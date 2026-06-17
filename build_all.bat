@@ -15,6 +15,7 @@ echo       完成
 echo.
 
 echo [2/5] 复制服务端核心文件...
+xcopy "%SRC_DIR%launcher.js" "%RELEASE_DIR%\" /Y >nul 2>&1
 xcopy "%SRC_DIR%server.js" "%RELEASE_DIR%\" /Y >nul 2>&1
 xcopy "%SRC_DIR%package.json" "%RELEASE_DIR%\" /Y >nul 2>&1
 xcopy "%SRC_DIR%config.js" "%RELEASE_DIR%\" /Y >nul 2>&1

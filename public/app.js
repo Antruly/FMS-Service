@@ -174,28 +174,29 @@
     if (lastCheck && Date.now() - parseInt(lastCheck) < 3600000) return; // 1小时内不重复检查
     localStorage.setItem('_fs_last_version_check', Date.now());
 
+    // 1. 检查 App 版本
     axios.get('/api/version/latest', { withCredentials: false }).then(function(r) {
       if (r.data.code !== 0 || !r.data.data) return;
       var latest = r.data.data;
       var currentVer = localStorage.getItem('_fs_app_version') || '0.0.0';
       if (compareVersions(latest.version, currentVer) > 0) {
-        // 显示更新提示条
-        var bar = document.createElement('div');
-        bar.id = 'version-update-bar';
-        bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:linear-gradient(135deg,#0f9b8e,#0d7d72);color:#fff;padding:8px 16px;text-align:center;font-size:13px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.3)';
-        bar.innerHTML = '&#128230; 新版本 v' + latest.version + ' 可用 (' + formatFileSize(latest.size || 0) + ') — 点击下载';
-        bar.addEventListener('click', function() {
-          if (latest.url) {
-            var a = document.createElement('a');
-            a.href = latest.url; a.download = ''; document.body.appendChild(a);
-            a.click(); document.body.removeChild(a);
-          }
-          bar.remove();
-        });
-        document.body.appendChild(bar);
-        setTimeout(function() { if (bar.parentNode) bar.remove(); }, 30000);
+        showVersionBar('App', latest);
       }
     }).catch(function() {});
+
+    // 2. 管理员额外检查后台版本
+    if (state.isAdmin) {
+      var lastBackendCheck = localStorage.getItem('_fs_last_backend_check');
+      if (lastBackendCheck && Date.now() - parseInt(lastBackendCheck) < 7200000) return;
+      localStorage.setItem('_fs_last_backend_check', Date.now());
+      axios.get('/api/version/backend/check', { withCredentials: true }).then(function(r) {
+        if (r.data.code !== 0 || !r.data.data) return;
+        var d = r.data.data;
+        if (d.hasUpdate && d.latest) {
+          showBackendUpdateModal(d);
+        }
+      }).catch(function() {});
+    }
   }
   function compareVersions(a, b) {
     var pa = (a || '0.0.0').split('.').map(Number);
@@ -205,6 +206,70 @@
       if ((pa[i] || 0) < (pb[i] || 0)) return -1;
     }
     return 0;
+  }
+  function showVersionBar(type, latest) {
+    var bar = document.createElement('div');
+    bar.id = 'version-update-bar';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:linear-gradient(135deg,#0f9b8e,#0d7d72);color:#fff;padding:8px 16px;text-align:center;font-size:13px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.3)';
+    bar.innerHTML = '&#128230; ' + type + ' ' + (type === 'App' ? '新版本' : '') + ' v' + latest.version + ' ' + (type === 'App' ? '可用 (' + formatFileSize(latest.size || 0) + ') — 点击下载' : '');
+    bar.addEventListener('click', function() {
+      if (latest.url) {
+        var a = document.createElement('a');
+        a.href = latest.url; a.download = ''; document.body.appendChild(a);
+        a.click(); document.body.removeChild(a);
+      }
+      bar.remove();
+    });
+    document.body.appendChild(bar);
+    setTimeout(function() { if (bar.parentNode) bar.remove(); }, 30000);
+  }
+
+  function showBackendUpdateModal(data) {
+    if (document.getElementById('backend-update-modal')) return;
+    var dismissed = localStorage.getItem('_fs_dismissed_backend_v');
+    if (dismissed === data.latest) return;
+
+    var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    var overlayBg = isLight ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.65)';
+    var modalBg = isLight ? '#fff' : '#111118';
+    var modalColor = isLight ? '#1a1d2e' : '#e0e6f0';
+    var muted = isLight ? '#5a6070' : '#8892a8';
+    var accent = isLight ? '#0284c7' : '#00d4ff';
+
+    var overlay = document.createElement('div');
+    overlay.id = 'backend-update-modal';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;background:'+overlayBg+';display:flex;align-items:center;justify-content:center';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:'+modalBg+';color:'+modalColor+';border-radius:16px;padding:32px 28px 24px;max-width:440px;width:92vw;box-shadow:0 24px 80px rgba(0,0,0,.4);text-align:center;font-family:"Syne",-apple-system,sans-serif';
+
+    card.innerHTML =
+      '<div style="font-size:48px;margin-bottom:12px">&#128260;</div>' +
+      '<h2 style="margin:0 0 8px;font-size:20px;font-weight:700;">后台新版本可用</h2>' +
+      '<p style="color:'+muted+';font-size:13px;margin:0 0 4px;">当前: <b>v'+(data.current||'?')+'</b> → 最新: <b style="color:'+accent+'">v'+data.latest+'</b></p>' +
+      '<p style="color:'+muted+';font-size:11px;margin:0 0 16px;">发布于: '+(data.publishedAt||'?').substring(0,10)+'</p>' +
+      (data.releaseNotes ? '<div style="max-height:120px;overflow-y:auto;text-align:left;font-size:12px;color:'+muted+';background:'+(isLight?'#f4f6fb':'#0a0a0f')+';border-radius:8px;padding:12px;margin-bottom:16px;white-space:pre-wrap">'+escapeHtml(data.releaseNotes.substring(0,500))+'</div>' : '') +
+      '<div style="display:flex;gap:10px">' +
+        '<button id="btn-upgrade-later" style="flex:1;padding:10px;border:1px solid '+(isLight?'#d8dce6':'#1e2230')+';border-radius:10px;background:transparent;color:'+muted+';font-size:13px;cursor:pointer;font-family:inherit;">稍后提醒</button>' +
+        '<button id="btn-upgrade-go" style="flex:1.5;padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,'+accent+',#7c3aed);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">前往升级</button>' +
+      '</div>';
+
+    card.querySelector('#btn-upgrade-later').addEventListener('click', function() {
+      localStorage.setItem('_fs_dismissed_backend_v', data.latest);
+      overlay.remove();
+    });
+    card.querySelector('#btn-upgrade-go').addEventListener('click', function() {
+      overlay.remove();
+      window.__fm.showView('admin-version');
+      setTimeout(function() {
+        var backendTab = document.getElementById('vm-tab-backend');
+        if (backendTab) backendTab.click();
+        setTimeout(function() { window.__fm.checkBackendUpdate && window.__fm.checkBackendUpdate(); }, 500);
+      }, 300);
+    });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
   }
 
   // 发送 WebSocket 消息
@@ -229,6 +294,50 @@
   function handleWebSocketMessage(msg) {
     if (msg.type === 'offline_task') {
       handleOfflineTaskUpdate(msg);
+    } else if (msg.type === 'download_progress') {
+      handleDownloadProgressMsg(msg.data);
+    }
+  }
+
+  // 处理 WebSocket 推送的下载进度
+  var _lastDownloadToast = {}; // 防止重复 toast
+  function handleDownloadProgressMsg(data) {
+    if (!data || !data.target) return;
+    var target = data.target;
+    var cache = target === 'backend' ? _vmBackendData : _vmAppData;
+    if (!cache) { if (target === 'backend') _vmBackendData = {}; else _vmAppData = {}; cache = target === 'backend' ? _vmBackendData : _vmAppData; }
+
+    var prevState = cache._download || {};
+    cache._download = {
+      downloading: data.downloading,
+      done: data.done,
+      progress: data.progress || 0,
+      version: data.version || '',
+      fileName: data.fileName || '',
+      filePath: data.filePath || '',
+      size: data.size || 0,
+      error: data.error || ''
+    };
+
+    if (target === 'backend') {
+      renderBackendPanel();
+    } else {
+      renderAppDownloadArea();
+      // App 下载完成后刷新版本列表
+      if (data.done && !prevState.done) {
+        setTimeout(function() { if (typeof loadVersionList === 'function') loadVersionList(); }, 500);
+      }
+    }
+
+    // Toast 通知（去重）
+    var toastKey = target + '_' + (data.done ? 'done' : data.error ? 'error' : '');
+    if (data.done && _lastDownloadToast[toastKey] !== data.version) {
+      _lastDownloadToast[toastKey] = data.version;
+      var label = target === 'backend' ? '后台' : 'App';
+      showToast(label + ' v' + data.version + ' 下载完成 (' + formatFileSize(data.size) + ')', 'OK');
+    } else if (data.error && _lastDownloadToast[toastKey] !== data.error) {
+      _lastDownloadToast[toastKey] = data.error;
+      showToast('下载失败: ' + data.error, 'WARN');
     }
   }
 
@@ -7297,41 +7406,506 @@
     }
   }
 
-  // ==================== 版本管理（管理员） ====================
+  // ==================== 版本管理（管理员）Tab 切换模式 ====================
+
+  var _vmTab = 'app'; // 'app' | 'backend'
+  var _vmBackendData = null; // 缓存的后台版本检查结果
+  var _vmAppData = null; // 缓存的 App GitHub 检查结果
+  var _vmUpgradePollTimer = null;
+
+  var _vmUpgradeConfig = null; // 升级配置缓存
+
+  function loadUpgradeConfig() {
+    axios.get('/api/admin/upgrade/config', { withCredentials: true }).then(function(r) {
+      if (r.data.code === 0 && r.data.data) {
+        _vmUpgradeConfig = r.data.data;
+        var cb1 = document.getElementById('vm-cfg-autodl');
+        var cb2 = document.getElementById('vm-cfg-autoup');
+        var tp = document.getElementById('vm-cfg-upgrade-time');
+        if (cb1) cb1.checked = !!_vmUpgradeConfig.autoDownload;
+        if (cb2) cb2.checked = !!_vmUpgradeConfig.autoUpgrade;
+        if (tp) tp.value = _vmUpgradeConfig.autoUpgradeTime || '03:00';
+        if (cb2) tp.disabled = !cb2.checked;
+      }
+    }).catch(function() {});
+  }
+
+  function saveUpgradeConfig() {
+    var cb1 = document.getElementById('vm-cfg-autodl');
+    var cb2 = document.getElementById('vm-cfg-autoup');
+    var tp = document.getElementById('vm-cfg-upgrade-time');
+    var data = {
+      autoDownload: cb1 ? cb1.checked : false,
+      autoUpgrade: cb2 ? cb2.checked : false,
+      autoUpgradeTime: tp ? tp.value : '03:00'
+    };
+    axios.put('/api/admin/upgrade/config', data, {
+      headers: { 'X-CSRF-Token': csrfToken || '', 'Content-Type': 'application/json' },
+      withCredentials: true
+    }).then(function(r) {
+      if (r.data.code === 0) {
+        _vmUpgradeConfig = r.data.data;
+        showToast('配置已保存', 'OK');
+      } else {
+        showToast('保存失败: ' + (r.data.message || '未知错误'), 'WARN');
+      }
+    }).catch(function() {
+      showToast('网络错误', 'WARN');
+    });
+  }
 
   function loadAdminVersions() {
     var container = $('#page-panel-body');
     if (!container) return;
-    container.innerHTML = '';
     var html =
       '<div class="af-body">' +
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">' +
           '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
           '<h3 style="color:var(--text-primary);margin:0;font-size:18px;">版本管理</h3>' +
-          '<span style="color:var(--text-secondary);font-size:12px;margin-left:auto;">上传 APK 供用户下载和更新</span>' +
         '</div>' +
-        '<div class="vm-upload-zone">' +
-          '<div class="vm-upload-icon">&#128230;</div>' +
-          '<p class="vm-upload-title">上传新版本 APK</p>' +
-          '<p class="vm-upload-hint">支持 .apk 文件，自动解析版本号</p>' +
-          '<div class="vm-upload-form">' +
-            '<label class="vm-file-label">' +
-              '<span id="version-file-name">选择文件...</span>' +
-              '<input type="file" id="version-file-input" accept=".apk" style="display:none" onchange="var n=this.files[0]?this.files[0].name:\'选择文件...\';document.getElementById(\'version-file-name\').textContent=n">' +
-            '</label>' +
-            '<input type="text" id="version-notes-input" class="vm-notes-input" placeholder="更新日志（可选）">' +
-            '<button onclick="window.__fm.uploadVersion()" class="vm-upload-btn">&#11014; 上传</button>' +
-          '</div>' +
-          '<p id="version-upload-status" class="vm-upload-status"></p>' +
+        '<div class="vm-tabs">' +
+          '<button class="vm-tab active" id="vm-tab-app" onclick="window.__fm.switchVmTab(\'app\')">📱 App 版本管理</button>' +
+          '<button class="vm-tab" id="vm-tab-backend" onclick="window.__fm.switchVmTab(\'backend\')">🖥 后台版本管理</button>' +
         '</div>' +
-        '<div id="version-list">' +
-          '<p style="color:var(--text-secondary);text-align:center;padding:20px;">加载中...</p>' +
+        '<div class="vm-panels">' +
+          '<div class="vm-panel active" id="vm-panel-app"></div>' +
+          '<div class="vm-panel" id="vm-panel-backend"></div>' +
         '</div>' +
       '</div>';
     container.innerHTML = html;
+    _vmTab = 'app';
+    renderAppPanel();
+    renderBackendPanel();
+  }
+
+  function switchVmTab(tab) {
+    _vmTab = tab;
+    var tabs = document.querySelectorAll('.vm-tab');
+    var panels = document.querySelectorAll('.vm-panel');
+    tabs.forEach(function(t) { t.classList.remove('active'); });
+    panels.forEach(function(p) { p.classList.remove('active'); });
+    var tabEl = document.getElementById('vm-tab-' + tab);
+    var panelEl = document.getElementById('vm-panel-' + tab);
+    if (tabEl) tabEl.classList.add('active');
+    if (panelEl) panelEl.classList.add('active');
+    if (tab === 'app') renderAppPanel();
+    if (tab === 'backend') renderBackendPanel();
+  }
+
+  // ===== App 版本面板 =====
+  function renderAppPanel() {
+    var panel = document.getElementById('vm-panel-app');
+    if (!panel) return;
+    panel.innerHTML =
+      '<div class="vm-upload-zone">' +
+        '<div class="vm-upload-icon">&#128230;</div>' +
+        '<p class="vm-upload-title">上传新版本 APK</p>' +
+        '<p class="vm-upload-hint">支持 .apk 文件，自动解析版本号</p>' +
+        '<div class="vm-upload-form">' +
+          '<label class="vm-file-label">' +
+            '<span id="version-file-name">选择文件...</span>' +
+            '<input type="file" id="version-file-input" accept=".apk" style="display:none" onchange="var n=this.files[0]?this.files[0].name:\'选择文件...\';document.getElementById(\'version-file-name\').textContent=n">' +
+          '</label>' +
+          '<input type="text" id="version-notes-input" class="vm-notes-input" placeholder="更新日志（可选）">' +
+          '<button onclick="window.__fm.uploadVersion()" class="vm-upload-btn">&#11014; 上传</button>' +
+        '</div>' +
+        '<p id="version-upload-status" class="vm-upload-status"></p>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px;">' +
+        '<span style="font-size:13px;font-weight:600;color:var(--text-primary);">已上传版本</span>' +
+        '<button onclick="window.__fm.checkAppGithub()" class="vm-gh-btn" id="vm-gh-app-btn">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>' +
+          ' 检查 GitHub 更新' +
+        '</button>' +
+        '<span id="vm-app-gh-status" style="font-size:11px;color:var(--text-muted);"></span>' +
+      '</div>' +
+      '<div id="version-list"><p style="color:var(--text-secondary);text-align:center;padding:20px;">加载中...</p></div>';
     loadVersionList();
   }
 
+  // ===== 后台版本面板 =====
+  function renderBackendPanel() {
+    var panel = document.getElementById('vm-panel-backend');
+    if (!panel) return;
+    var info = _vmBackendData;
+    var hasNew = info && info.hasUpdate;
+    var dlInfo = info && info._download;
+    var dlDone = dlInfo && dlInfo.done;
+    var dlDownloading = dlInfo && dlInfo.downloading;
+    var dlProgress = dlInfo ? (dlInfo.progress || 0) : 0;
+    var dlError = dlInfo && dlInfo.error;
+
+    var dlStatusHtml = '';
+    if (dlError) {
+      dlStatusHtml = '<div style="margin-top:8px;padding:10px 12px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.2);border-radius:8px;font-size:12px;color:#f85149;">' +
+        '❌ 下载失败: ' + escapeHtml(dlError) +
+        ' <button onclick="window.__fm.downloadBackendRelease()" style="margin-left:8px;padding:2px 10px;border:1px solid rgba(248,81,73,.3);border-radius:4px;background:transparent;color:#f85149;cursor:pointer;font-size:11px;">重试</button>' +
+        '</div>';
+    } else if (dlDownloading) {
+      dlStatusHtml = '<div style="margin-top:8px;padding:10px 12px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);border-radius:8px;font-size:12px;color:var(--accent);">' +
+        '📥 正在下载 v' + (dlInfo.version||info.latest) + '... ' + dlProgress + '%' +
+        '<div class="vm-progress-bar" style="margin-top:6px;"><div class="vm-progress-fill" style="width:' + dlProgress + '%"></div></div>' +
+        '</div>';
+    } else if (dlDone) {
+      dlStatusHtml = '<div style="margin-top:8px;padding:10px 12px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px;font-size:12px;color:#10b981;">' +
+        '✅ 已下载到本地: ' + escapeHtml(dlInfo.fileName||'') + ' (' + formatFileSize(dlInfo.size||0) + ')' +
+        '</div>';
+    }
+
+    panel.innerHTML =
+      '<div class="vm-info-card">' +
+        '<div class="vm-info-row"><span class="vm-info-label">当前服务器版本</span><span class="vm-info-value" id="vm-srv-ver">加载中...</span></div>' +
+        '<div class="vm-info-row"><span class="vm-info-label">Node.js 版本</span><span class="vm-info-value" id="vm-node-ver">-</span></div>' +
+        '<div class="vm-info-row"><span class="vm-info-label">最新 GitHub 版本</span><span class="vm-info-value" id="vm-latest-ver">' + (info ? 'v' + info.latest : '点击检查') + '</span></div>' +
+        (hasNew ? '<div style="margin-top:12px;padding:12px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);border-radius:8px;font-size:13px;color:var(--text-primary);"><b>🔔 新版本可用:</b> v' + info.latest + ' (发布于 ' + (info.publishedAt||'').substring(0,10) + ')</div>' : '') +
+        dlStatusHtml +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;">' +
+        '<button onclick="window.__fm.checkBackendUpdate()" class="vm-gh-btn" id="vm-gh-backend-btn">' +
+          '🔍 检查 GitHub 更新' +
+        '</button>' +
+        (hasNew && dlDone ? '<button onclick="window.__fm.startBackendUpgrade()" class="vm-upgrade-btn" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">🔄 升级到 v' + info.latest + '</button>' : '') +
+        (hasNew && !dlDone && dlDownloading ? '<span style="font-size:12px;color:var(--accent);padding:10px 0;">📥 下载中 ' + dlProgress + '%...</span>' : '') +
+        (hasNew && !dlDone && !dlDownloading ? '<button onclick="window.__fm.downloadBackendRelease()" class="vm-gh-btn" style="background:#238636;">📥 下载 v' + info.latest + '</button>' : '') +
+      '</div>' +
+      '</div>' +
+      '<div class="vm-config-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:12px;">' +
+        '<div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:12px;">⚙ 升级配置</div>' +
+        '<div style="display:flex;flex-direction:column;gap:10px;">' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary);">' +
+            '<input type="checkbox" id="vm-cfg-autodl" onchange="window.__fm.saveUpgradeConfig()" style="accent-color:var(--accent);">' +
+            '<span>检测到新版本后自动下载安装包</span>' +
+          '</label>' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-primary);">' +
+            '<input type="checkbox" id="vm-cfg-autoup" onchange="var t=document.getElementById(\'vm-cfg-upgrade-time\');if(t)t.disabled=!this.checked;window.__fm.saveUpgradeConfig();" style="accent-color:var(--accent);">' +
+            '<span>定时自动升级（每日）</span>' +
+            '<input type="time" id="vm-cfg-upgrade-time" onchange="window.__fm.saveUpgradeConfig()" disabled style="padding:6px 10px;background:var(--bg-input,#0d0d14);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:12px;font-family:inherit;margin-left:8px;">' +
+          '</label>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">' +
+          '系统将在每日 01:00 自动检查 GitHub 更新' +
+          (_vmUpgradeConfig && _vmUpgradeConfig.lastCheck ? '（上次检查: ' + _vmUpgradeConfig.lastCheck.substring(0,16).replace('T',' ') + '）' : '') +
+        '</div>' +
+      '</div>' +
+      '<div id="vm-upgrade-progress" style="display:none;margin:16px 0;"></div>' +
+      '<div class="vm-upload-zone" style="margin-top:16px;">' +
+        '<div class="vm-upload-icon">📦</div>' +
+        '<p class="vm-upload-title">手动上传升级包</p>' +
+        '<p class="vm-upload-hint">支持 .zip / .tar.gz，从 GitHub Release 下载的发布包</p>' +
+        '<div class="vm-upload-form">' +
+          '<label class="vm-file-label">' +
+            '<span id="upgrade-file-name">选择文件...</span>' +
+            '<input type="file" id="upgrade-file-input" accept=".zip,.tar.gz,.tgz" style="display:none" onchange="var n=this.files[0]?this.files[0].name:\'选择文件...\';document.getElementById(\'upgrade-file-name\').textContent=n">' +
+          '</label>' +
+          '<button onclick="window.__fm.uploadUpgradePackage()" class="vm-upload-btn">📤 上传并升级</button>' +
+        '</div>' +
+        '<p id="upgrade-upload-status" class="vm-upload-status"></p>' +
+      '</div>';
+
+    // 加载服务器版本 + 升级配置
+    axios.get('/api/version/server').then(function(r) {
+      if (r.data.code === 0) {
+        var el1 = document.getElementById('vm-srv-ver');
+        var el2 = document.getElementById('vm-node-ver');
+        if (el1) el1.textContent = 'v' + r.data.data.serverVersion;
+        if (el2) el2.textContent = r.data.data.nodeVersion;
+      }
+    }).catch(function() {});
+
+    loadUpgradeConfig();
+  }
+
+  // ===== GitHub 检查 =====
+  // ===== GitHub 检查 =====
+  // ===== GitHub 检查（仅检查，不自动下载） =====
+  function checkBackendUpdate() {
+    var btn = document.getElementById('vm-gh-backend-btn');
+    if (btn) { btn.textContent = '⏳ 检查中...'; btn.disabled = true; }
+
+    axios.get('/api/version/backend/check', { withCredentials: true }).then(function(r) {
+      if (btn) { btn.textContent = '🔍 检查 GitHub 更新'; btn.disabled = false; }
+      if (r.data.code !== 0 || !r.data.data) { showToast('检查失败', '⚠️'); return; }
+      _vmBackendData = r.data.data;
+      renderBackendPanel();
+      if (_vmBackendData.hasUpdate) {
+        showToast('发现新版本 v' + _vmBackendData.latest + '，请点击下载按钮获取安装包', '🔔');
+      } else if (!_vmBackendData.error) {
+        showToast('已是最新版本', '✅');
+      } else {
+        showToast('检查失败: ' + _vmBackendData.error, '⚠️');
+      }
+    }).catch(function() {
+      if (btn) { btn.textContent = '🔍 检查 GitHub 更新'; btn.disabled = false; }
+      showToast('网络错误', '⚠️');
+    });
+  }
+
+  function checkAppGithub() {
+    var btn = document.getElementById('vm-gh-app-btn');
+    var msgEl = document.getElementById('vm-app-gh-status');
+    if (btn) { btn.textContent = '⏳ 检查中...'; btn.disabled = true; }
+    if (msgEl) msgEl.textContent = '';
+
+    axios.get('/api/version/app/check', { withCredentials: true }).then(function(r) {
+      if (btn) { btn.textContent = '🔍 检查 GitHub 更新'; btn.disabled = false; }
+      if (r.data.code !== 0 || !r.data.data) return;
+      _vmAppData = r.data.data;
+      if (_vmAppData.hasUpdate) {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#f0c040;">🔔 GitHub 最新: v' + _vmAppData.latest + ' — 点击下方按钮下载</span>';
+        showToast('App 有新版本 v' + _vmAppData.latest + '，点击下载按钮获取 APK', '🔔');
+        renderAppDownloadArea();
+      } else if (!_vmAppData.error) {
+        if (msgEl) msgEl.textContent = '已是最新版本';
+        showToast('App 已是最新版本', '✅');
+      } else {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#f85149;">检查失败: ' + escapeHtml(_vmAppData.error) + '</span>';
+      }
+    }).catch(function() {
+      if (btn) { btn.textContent = '🔍 检查 GitHub 更新'; btn.disabled = false; }
+    });
+  }
+
+  // ===== 手动下载 =====
+  function downloadBackendRelease() {
+    if (!_vmBackendData || !_vmBackendData.downloadUrl) return;
+    var dl = _vmBackendData._download;
+    if (dl && dl.downloading) return;
+
+    // 立即显示"准备下载"状态
+    if (!_vmBackendData._download) _vmBackendData._download = {};
+    _vmBackendData._download.downloading = true;
+    _vmBackendData._download.progress = 0;
+    _vmBackendData._download.version = _vmBackendData.latest;
+    renderBackendPanel();
+
+    axios.post('/api/version/backend/download', { url: _vmBackendData.downloadUrl, version: _vmBackendData.latest },
+      { headers: { 'X-CSRF-Token': csrfToken || '', 'Content-Type': 'application/json' }, withCredentials: true }
+    ).then(function(r) {
+      if (r.data.code !== 0) {
+        _vmBackendData._download.downloading = false;
+        _vmBackendData._download.error = r.data.message;
+        renderBackendPanel();
+        showToast(r.data.message || '下载失败', 'WARN');
+        return;
+      }
+      // keep local downloading state, WebSocket updates progress
+      // WebSocket handles progress now
+      renderBackendPanel();
+    }).catch(function() {
+      _vmBackendData._download.downloading = false;
+      _vmBackendData._download.error = '网络错误';
+      renderBackendPanel();
+      showToast('下载失败', 'WARN');
+    });
+  }
+
+  function downloadAppRelease() {
+    if (!_vmAppData || !_vmAppData.downloadUrl) return;
+    var dl = _vmAppData._download || {};
+    if (dl.downloading) return;
+
+    // 立即显示"准备下载"状态
+    _vmAppData._download = _vmAppData._download || {};
+    _vmAppData._download.downloading = true;
+    _vmAppData._download.progress = 0;
+    _vmAppData._download.version = _vmAppData.latest;
+    renderAppDownloadArea();
+
+    axios.post('/api/version/app/download', { url: _vmAppData.downloadUrl, version: _vmAppData.latest },
+      { headers: { 'X-CSRF-Token': csrfToken || '', 'Content-Type': 'application/json' }, withCredentials: true }
+    ).then(function(r) {
+      if (r.data.code !== 0) {
+        _vmAppData._download.downloading = false;
+        _vmAppData._download.error = r.data.message;
+        renderAppDownloadArea();
+        showToast(r.data.message || '下载失败', 'WARN');
+        return;
+      }
+      // keep local downloading state, WebSocket updates progress
+      // WebSocket handles progress now
+      renderAppDownloadArea();
+    }).catch(function() {
+      _vmAppData._download.downloading = false;
+      _vmAppData._download.error = '网络错误';
+      renderAppDownloadArea();
+      showToast('下载失败', 'WARN');
+    });
+  }
+
+  function renderAppDownloadArea() {
+    var listEl = document.getElementById('version-list');
+    if (!listEl) return;
+    if (!_vmAppData || !_vmAppData.hasUpdate) return;
+    var dl = _vmAppData._download || {};
+    var html = '<div style="margin:12px 0;padding:14px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
+        '<span style="font-weight:600;color:var(--text-primary);font-size:13px;">📱 App v' + _vmAppData.latest + '</span>';
+    if (dl.downloading) {
+      html += '<div style="flex:1;min-width:200px;">' +
+        '<span style="font-size:12px;color:var(--accent);">📥 下载中 ' + (dl.progress||0) + '%</span>' +
+        '<div class="vm-progress-bar" style="margin-top:4px;"><div class="vm-progress-fill" style="width:' + (dl.progress||0) + '%"></div></div>' +
+        '</div>';
+    } else if (dl.done) {
+      html += '<span style="font-size:12px;color:#10b981;">✅ 已下载 (' + formatFileSize(dl.size||0) + ')</span>';
+    } else {
+      html += '<button onclick="window.__fm.downloadAppRelease()" class="vm-gh-btn" style="background:#238636;">📥 下载 APK</button>';
+    }
+    html += '</div></div>';
+    // 插入到版本列表前面
+    var existing = document.getElementById('vm-app-dl-area');
+    if (existing) existing.remove();
+    var div = document.createElement('div');
+    div.id = 'vm-app-dl-area';
+    div.innerHTML = html;
+    listEl.parentNode.insertBefore(div, listEl);
+  }
+
+  function startUpgradePolling() {
+    if (_vmUpgradePollTimer) clearInterval(_vmUpgradePollTimer);
+    _vmUpgradePollTimer = setInterval(pollUpgradeStatus, 2000);
+    pollUpgradeStatus();
+  }
+
+  function startBackendUpgrade() {
+    if (!_vmBackendData || !_vmBackendData.hasUpdate) {
+      showToast('没有可用的更新', 'WARN');
+      return;
+    }
+    // 检查本地缓存
+    var dl = _vmBackendData._download || {};
+    if (!dl.done || !dl.filePath) {
+      showToast('请先下载升级包再升级', 'WARN');
+      return;
+    }
+    if (!confirm('确定要升级后台到 v' + _vmBackendData.latest + ' 吗？\n\n升级期间所有用户将看到维护页面。\n升级完成后服务将自动重启。')) {
+      return;
+    }
+
+    var progressDiv = document.getElementById('vm-upgrade-progress');
+    if (progressDiv) {
+      progressDiv.style.display = 'block';
+      progressDiv.innerHTML = '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+          '<div id="vm-upgrade-spinner" style="width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:vmSpin .8s linear infinite;"></div>' +
+          '<span id="vm-upgrade-phase" style="font-weight:600;color:var(--text-primary);">正在准备升级...</span>' +
+        '</div>' +
+        '<div class="vm-progress-bar"><div id="vm-progress-fill" class="vm-progress-fill" style="width:0%"></div></div>' +
+        '<div id="vm-upgrade-logs" style="max-height:200px;overflow-y:auto;margin-top:12px;font-size:11px;font-family:\'Share Tech Mono\',monospace;color:var(--text-muted);background:var(--bg-page);border-radius:8px;padding:10px;"></div>' +
+      '</div>';
+    }
+
+    var dl = _vmBackendData._download || {};
+    axios.post('/api/admin/upgrade/start', {
+      version: _vmBackendData.latest,
+      backupDb: false,
+      manualZipPath: dl.done && dl.filePath ? dl.filePath : ''
+    }, { headers: { 'X-CSRF-Token': csrfToken || '', 'Content-Type': 'application/json' } }).then(function(r) {
+      if (r.data.code !== 0) {
+        showToast('启动升级失败: ' + (r.data.message || '未知错误'), 'WARN');
+        return;
+      }
+      startUpgradePolling();
+    }).catch(function() {
+      showToast('启动升级失败: 网络错误', 'WARN');
+    });
+  }
+
+
+  function pollUpgradeStatus() {
+    axios.get('/api/admin/upgrade/status', { withCredentials: true }).then(function(r) {
+      if (r.data.code !== 0 || !r.data.data) return;
+      var s = r.data.data;
+      if (!s.active && s.phase === 'done') {
+        if (_vmUpgradePollTimer) { clearInterval(_vmUpgradePollTimer); _vmUpgradePollTimer = null; }
+        var phaseEl = document.getElementById('vm-upgrade-phase');
+        if (phaseEl) phaseEl.innerHTML = '✅ 升级完成！页面即将刷新...';
+        var spinnerEl = document.getElementById('vm-upgrade-spinner');
+        if (spinnerEl) spinnerEl.style.display = 'none';
+        var fillEl = document.getElementById('vm-progress-fill');
+        if (fillEl) fillEl.style.width = '100%';
+        showToast('升级成功！服务已重启', '✅');
+        setTimeout(function() { window.location.reload(); }, 3000);
+        return;
+      }
+      if (!s.active && s.phase === 'error') {
+        if (_vmUpgradePollTimer) { clearInterval(_vmUpgradePollTimer); _vmUpgradePollTimer = null; }
+        var phaseEl2 = document.getElementById('vm-upgrade-phase');
+        if (phaseEl2) phaseEl2.innerHTML = '❌ 升级失败: ' + (s.error || '未知错误');
+        var spinnerEl2 = document.getElementById('vm-upgrade-spinner');
+        if (spinnerEl2) spinnerEl2.style.display = 'none';
+        showToast('升级失败: ' + (s.error || '未知错误'), '❌');
+        return;
+      }
+      // 更新进度
+      var phaseEl3 = document.getElementById('vm-upgrade-phase');
+      if (phaseEl3) phaseEl3.textContent = s.stepLabel || ('阶段: ' + s.phase);
+      var fillEl2 = document.getElementById('vm-progress-fill');
+      if (fillEl2) fillEl2.style.width = (s.progress || 0) + '%';
+      // 更新日志
+      var logsEl = document.getElementById('vm-upgrade-logs');
+      if (logsEl && s.logs) {
+        var lastLogs = s.logs.slice(-10);
+        logsEl.innerHTML = lastLogs.map(function(l) {
+          return '<div style="margin-bottom:2px;"><span style="color:var(--text-muted)">' + (l.time||'').substring(11,19) + '</span> ' + escapeHtml(l.msg) + '</div>';
+        }).join('');
+        logsEl.scrollTop = logsEl.scrollHeight;
+      }
+    }).catch(function() {});
+  }
+
+  function uploadUpgradePackage() {
+    var fileInput = document.getElementById('upgrade-file-input');
+    var statusEl = document.getElementById('upgrade-upload-status');
+    if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#f85149">请选择文件</span>';
+      return;
+    }
+    var file = fileInput.files[0];
+    if (statusEl) statusEl.innerHTML = '上传中...';
+    var form = new FormData();
+    form.append('file', file);
+    axios.post('/api/admin/upgrade/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data', 'X-CSRF-Token': csrfToken || '' },
+      withCredentials: true
+    }).then(function(r) {
+      if (r.data.code !== 0) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:#f85149">❌ ' + (r.data.message || '上传失败') + '</span>';
+        return;
+      }
+      var d = r.data.data;
+      if (statusEl) statusEl.innerHTML = '<span style="color:#2ea043">✅ 上传成功 (' + formatFileSize(d.size) + ')</span>';
+
+      if (confirm('升级包上传成功！\n\n是否立即开始升级？\n升级期间所有用户将看到维护页面。')) {
+        axios.post('/api/admin/upgrade/start', {
+          manualZipPath: d.path,
+          version: d.versionTo || '',
+          backupDb: false
+        }, { headers: { 'X-CSRF-Token': csrfToken || '' } }).then(function(r2) {
+          if (r2.data.code === 0) {
+            var progressDiv = document.getElementById('vm-upgrade-progress');
+            if (progressDiv) {
+              progressDiv.style.display = 'block';
+              progressDiv.innerHTML = '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;">' +
+                '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+                  '<div id="vm-upgrade-spinner" style="width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:vmSpin .8s linear infinite;"></div>' +
+                  '<span id="vm-upgrade-phase" style="font-weight:600;color:var(--text-primary);">正在准备升级...</span>' +
+                '</div>' +
+                '<div class="vm-progress-bar"><div id="vm-progress-fill" class="vm-progress-fill" style="width:0%"></div></div>' +
+                '<div id="vm-upgrade-logs" style="max-height:200px;overflow-y:auto;margin-top:12px;font-size:11px;font-family:\'Share Tech Mono\',monospace;color:var(--text-muted);background:var(--bg-page);border-radius:8px;padding:10px;"></div>' +
+              '</div>';
+            }
+            startUpgradePolling();
+          } else {
+            showToast('启动升级失败: ' + (r2.data.message || '未知错误'), '❌');
+          }
+        }).catch(function() { showToast('启动升级失败: 网络错误', '❌'); });
+      }
+    }).catch(function(err) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#f85149">❌ 上传失败: ' + (err.message || '网络错误') + '</span>';
+    });
+  }
+
+  // 保留原有的 uploadVersion / deleteVersion / loadVersionList
   function uploadVersion() {
     var fileInput = document.getElementById('version-file-input');
     var notesInput = document.getElementById('version-notes-input');
@@ -7407,6 +7981,15 @@
   // 暴露给全局
   window.__fm.uploadVersion = uploadVersion;
   window.__fm.deleteVersion = deleteVersion;
+  window.__fm.switchVmTab = switchVmTab;
+  window.__fm.checkBackendUpdate = checkBackendUpdate;
+  window.__fm.checkAppGithub = checkAppGithub;
+  window.__fm.startBackendUpgrade = startBackendUpgrade;
+  window.__fm.uploadUpgradePackage = uploadUpgradePackage;
+  window.__fm.downloadBackendRelease = downloadBackendRelease;
+  window.__fm.downloadAppRelease = downloadAppRelease;
+  window.__fm.loadUpgradeConfig = loadUpgradeConfig;
+  window.__fm.saveUpgradeConfig = saveUpgradeConfig;
 
   // ==================== 离线下载 ====================
 

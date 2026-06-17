@@ -6039,6 +6039,67 @@ noscript {
   .vm-btn-dl, .vm-btn-del { width: 100%; text-align: center; justify-content: center; }
 }
 
+/* ==================== 版本管理 Tab 样式 ==================== */
+.vm-tabs {
+  display: flex; gap: 4px; margin-bottom: 16px;
+  background: var(--bg-card-hover); border-radius: 10px; padding: 3px;
+}
+.vm-tab {
+  flex: 1; padding: 10px 16px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text-secondary); cursor: pointer;
+  font-size: 13px; font-weight: 500; font-family: inherit;
+  transition: all 0.2s; white-space: nowrap;
+}
+.vm-tab.active {
+  background: var(--bg-card); color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
+.vm-tab:hover:not(.active) { color: var(--text-primary); }
+.vm-panels { position: relative; }
+.vm-panel { display: none; }
+.vm-panel.active { display: block; }
+
+/* ===== 版本信息卡片 ===== */
+.vm-info-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px;
+}
+.vm-info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.vm-info-row:last-child { border-bottom: none; }
+.vm-info-label { color: var(--text-secondary); font-size: 13px; }
+.vm-info-value { color: var(--text-primary); font-size: 13px; font-weight: 600; font-family: 'Share Tech Mono', monospace; }
+
+/* ===== GitHub 按钮 ===== */
+.vm-gh-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; background: #24292e; color: #fff;
+  border: none; border-radius: 8px; cursor: pointer;
+  font-size: 12px; font-weight: 500; font-family: inherit;
+  transition: opacity 0.2s; white-space: nowrap;
+}
+.vm-gh-btn:hover { opacity: 0.85; }
+.vm-gh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ===== 升级/下载进度 ===== */
+.vm-progress-bar {
+  width: 100%; height: 8px; background: var(--bg-card-hover);
+  border-radius: 4px; overflow: hidden; position: relative;
+}
+.vm-progress-fill {
+  height: 100%; min-width: 2px;
+  background: linear-gradient(90deg, #0f9b8e, #00d4ff);
+  border-radius: 4px; transition: width 0.3s ease;
+}
+.vm-progress-text {
+  font-size: 12px; color: var(--accent); margin-top: 4px;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+@keyframes vmSpin { to { transform: rotate(360deg); } }
+
 /* ==================== 离线下载面板样式 (page-panel 内) ==================== */
 .offline-panel {
   padding-bottom: 24px;
