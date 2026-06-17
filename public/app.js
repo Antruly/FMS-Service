@@ -2852,17 +2852,16 @@
   function reloadWithEncoding(newEnc) {
     if (!_pv_textUrl) return;
     _pv_editing = false; updateMonacoButtons();
-    var url = '/api' + _pv_textUrl;
-    var sep = url.indexOf('?') === -1 ? '?' : '&';
-    url += sep + 'encoding=' + encodeURIComponent(newEnc);
     var overlay = document.getElementById('preview-overlay');
     var loadingEl = overlay ? overlay.querySelector('#pv-loading') : null;
     var encInfo = overlay ? overlay.querySelector('#pv-enc-info') : null;
     var contentContainer = overlay ? overlay.querySelector('#pv-content') : null;
+    var sep = _pv_textUrl.indexOf('?') === -1 ? '?' : '&';
+    var fetchUrl = _pv_textUrl + sep + 'encoding=' + encodeURIComponent(newEnc);
     if (loadingEl) loadingEl.style.display = '';
     _pv_encoding = newEnc || 'UTF-8';
-    axios.get(url).then(function(res) {
-      if (res.data.code !== 0) { showToast('编码切换失败'); if (loadingEl) loadingEl.style.display = 'none'; return; }
+    apiGet(fetchUrl).then(function(res) {
+      if (res.code !== 0) { showToast('编码切换失败'); if (loadingEl) loadingEl.style.display = 'none'; return; }
       var content = res.data.content;
       var enc = res.data.encoding || newEnc || 'UTF-8';
       var truncated = res.data.truncated;
