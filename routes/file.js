@@ -4911,7 +4911,7 @@ router.put('/files/text/:id', requireAuth, function(req, res) {
     }
   }
 
-  // 个人文件保存
+  // 个人文件保存（加密文件：先写临时文件 → 删除旧文件 → 重命名）
   var file = VirtualFile.findById(fileId);
   if (!file || file.user_id !== user.id) return deny404(res, '文件不存在');
   if (!checkPerm(user, file.dir_id, 'write')) return deny403(res, '无写入权限');
@@ -4920,6 +4920,8 @@ router.put('/files/text/:id', requireAuth, function(req, res) {
   var filePath;
   try { filePath = getDecryptedFilePath(file); } catch(e) { filePath = null; }
   if (!filePath) return deny404(res, '文件路径解析失败');
+
+  var tmpPath = filePath + '.tmp_' + Date.now();
 
   try {
     // 编码新内容
@@ -4931,24 +4933,31 @@ router.put('/files/text/:id', requireAuth, function(req, res) {
       plainBuf = iconv.encode(content, saveEncoding);
     }
 
-    // 判断加密版本并重新加密
+    // 判断加密版本 → 写出到临时文件
     if (file.enc_version === 1 || file.enc_version === ENC_V1_VERSION) {
-      // V1 加密：createV1EncryptStreamSync 直接写入文件
-      var encResult = createV1EncryptStreamSync(filePath, plainBuf);
+      var encResult = createV1EncryptStreamSync(tmpPath, plainBuf);
       if (!encResult.ok) throw new Error(encResult.error);
     } else {
-      // V0 加密
       var encResult2 = encryptFileToBuffer(plainBuf);
-      fs.writeFileSync(filePath, encResult2.encrypted);
+      fs.writeFileSync(tmpPath, encResult2.encrypted);
     }
 
-    // 更新文件大小
-    db.run('UPDATE virtual_files SET size = ? WHERE id = ?', [plainBuf.length, file.id]);
+    // 删除旧文件（永久删除，不进回收站）
+    try { fs.unlinkSync(filePath); } catch(e) { /* 旧文件可能已被清理 */ }
+
+    // 重命名临时文件为原文件名
+    fs.renameSync(tmpPath, filePath);
+
+    // 更新数据库文件大小
+    run('UPDATE virtual_files SET size = ? WHERE id = ?', [plainBuf.length, file.id]);
     file.size = plainBuf.length;
 
-    logTraffic(user.id, '', 'edit_save', file.id, file.name, plainBuf.length, encryptedBuf.length);
+    logTraffic(user.id, '', 'edit_save', file.id, file.name, plainBuf.length, plainBuf.length);
     return res.json({ code: 0, message: '保存成功', data: { size: plainBuf.length } });
   } catch(e) {
+    // 清理临时文件
+    try { fs.unlinkSync(tmpPath); } catch(_) {}
+    log.error('[text-save] 个人文件保存失败:', e.message);
     return res.status(500).json({ code: 500, message: '保存失败: ' + e.message });
   }
 });

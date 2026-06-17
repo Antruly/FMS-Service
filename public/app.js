@@ -2558,7 +2558,7 @@
           '<span id="pv-title" style="font-size:15px;font-weight:700;color:' + titleColor + ';font-family:\'Syne\',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color 0.3s ease">' + title + '</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0">' +
-          ((isEdit || type === 'text' || type === 'markdown') ? '<select id="pv-encoding-select" style="padding:5px 8px;background:' + btnBg + ';border:1px solid ' + btnBorder + ';border-radius:8px;color:' + btnColor + ';font-size:12px;font-family:\'Share Tech Mono\',monospace;cursor:pointer"><option value="">自动检测</option><option value="UTF-8">UTF-8</option><option value="GBK">GBK</option><option value="GB2312">GB2312</option><option value="BIG5">BIG5</option><option value="Shift_JIS">Shift_JIS</option><option value="EUC-KR">EUC-KR</option><option value="ASCII">ASCII</option><option value="Latin1">Latin1</option></select>' : '') +
+          ((isEdit || type === 'text' || type === 'markdown') ? '<select id="pv-encoding-select" style="padding:5px 8px;background:' + (isLight ? '#fff' : '#1e1e2e') + ';border:1px solid ' + (isLight ? 'rgba(0,0,0,0.15)' : 'rgba(0,212,255,0.3)') + ';border-radius:8px;color:' + (isLight ? '#333' : '#e0e6f0') + ';font-size:12px;font-family:\'Share Tech Mono\',monospace;cursor:pointer;transition:all 0.3s ease"><option value="">自动检测</option><option value="UTF-8">UTF-8</option><option value="GBK">GBK</option><option value="GB2312">GB2312</option><option value="BIG5">BIG5</option><option value="Shift_JIS">Shift_JIS</option><option value="EUC-KR">EUC-KR</option><option value="ASCII">ASCII</option><option value="Latin1">Latin1</option></select>' : '') +
           ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-edit-btn" style="display:none;padding:6px 16px;background:' + editBg + ';border:1px solid ' + editBorder + ';border-radius:8px;color:#00d4ff;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif">&#9998; 编辑</button>' : '') +
           ((isEdit || type === 'text' || type === 'markdown') ? '<button id="pv-save-btn" style="display:none;padding:6px 16px;background:linear-gradient(135deg,#00d4ff,#0099cc);border:none;border-radius:8px;color:#07090f;font-size:13px;font-weight:700;cursor:pointer;font-family:\'Syne\',sans-serif">&#128190; 保存</button>' : '') +
           '<button id="pv-dl-btn" style="padding:6px 16px;background:' + btnBg + ';border:1px solid ' + btnBorder + ';border-radius:8px;color:' + btnColor + ';font-size:13px;font-weight:600;cursor:pointer;font-family:\'Syne\',sans-serif;transition:all 0.3s ease">&#128229; 下载</button>' +
@@ -2942,6 +2942,13 @@
       var el = overlay.querySelector(sel);
       if (el) { el.style.background = btnBg; el.style.borderColor = btnBorder; el.style.color = btnColor; }
     });
+    // 编码选择器
+    var encSel = overlay.querySelector('#pv-encoding-select');
+    if (encSel) {
+      encSel.style.background = isLight ? '#fff' : '#1e1e2e';
+      encSel.style.borderColor = isLight ? 'rgba(0,0,0,0.15)' : 'rgba(0,212,255,0.3)';
+      encSel.style.color = isLight ? '#333' : '#e0e6f0';
+    }
     // 编辑按钮
     var editBtn = overlay.querySelector('#pv-edit-btn');
     if (editBtn) {
