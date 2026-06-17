@@ -379,6 +379,11 @@
     'application/javascript': '&#128221;',
     'application/zip': '&#128230;', 'application/x-rar-compressed': '&#128230;',
     'application/x-7z-compressed': '&#128230;',
+    'application/x-msdownload': '&#9881;', 'application/x-msdos-program': '&#9881;',
+    'application/x-exe': '&#9881;', 'application/x-elf': '&#9881;',
+    'application/octet-stream': '&#9881;', 'application/x-executable': '&#9881;',
+    'application/x-sh': '&#9881;', 'application/x-bat': '&#9881;',
+    'application/x-cmd': '&#9881;', 'application/x-com': '&#9881;',
     unknown: '&#128462;',
   };
 
@@ -389,12 +394,15 @@
     'audio/mpeg': 'type-audio', 'audio/wav': 'type-audio',
     'application/pdf': 'type-pdf',
     'application/zip': 'type-archive', 'application/x-rar-compressed': 'type-archive',
+    'application/x-7z-compressed': 'type-archive',
     'text/plain': 'type-text', 'application/json': 'type-text',
     'application/javascript': 'type-text',
     'application/msword': 'type-doc',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'type-doc',
     'application/vnd.ms-excel': 'type-doc',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'type-doc',
+    'application/x-msdownload': 'type-exe', 'application/x-msdos-program': 'type-exe',
+    'application/octet-stream': 'type-exe', 'application/x-executable': 'type-exe',
   };
 
   // ---------- DOM Helpers ----------
@@ -1128,14 +1136,47 @@
       showView('files');
       return;
     }
-    // 文件子类型: files/personal files/public files/recycle files/public-recycle
+    // 文件子类型: files/personal/5 files/public/encodedPath files/recycle files/public-recycle
     if (viewName === 'files') {
-      var subType = hash.split('/')[1] || 'personal';
+      var parts = hash.split('/');
+      var subType = parts[1] || 'personal';
       var validFileTypes = ['personal', 'public', 'recycle', 'public-recycle'];
-      if (validFileTypes.indexOf(subType) !== -1) {
-        setDirType(subType);
-      } else {
+      if (validFileTypes.indexOf(subType) === -1) {
         showView('files');
+        return;
+      }
+      if (subType === 'personal' && parts.length >= 3 && parts[2]) {
+        // 恢复个人子目录: #files/personal/5
+        var dirId = parseInt(parts[2], 10);
+        if (!isNaN(dirId) && dirId > 0) {
+          setDirType('personal', dirId);
+        } else {
+          setDirType('personal');
+        }
+      } else if (subType === 'public' && parts.length >= 3 && parts[2]) {
+        // 恢复公共子目录: #files/public/encodedPath
+        try {
+          var pubPath = decodeURIComponent(parts[2]);
+          setDirType('public', 0, pubPath);
+        } catch(e) {
+          setDirType('public');
+        }
+      } else if (subType === 'personal' || subType === 'public') {
+        // 没有子目录信息：尝试从 localStorage 恢复上次位置
+        var _restored = false;
+        try {
+          var _savedType = localStorage.getItem('_fs_dir_type');
+          if (_savedType === 'public' && subType === 'public') {
+            var _pubPath = localStorage.getItem('_fs_public_path') || '';
+            if (_pubPath) { setDirType('public', 0, _pubPath); _restored = true; }
+          } else if (_savedType === 'personal' && subType === 'personal') {
+            var _dirId = parseInt(localStorage.getItem('_fs_dir_id'), 10) || 0;
+            if (_dirId > 0) { setDirType('personal', _dirId); _restored = true; }
+          }
+        } catch(e) {}
+        if (!_restored) setDirType(subType);
+      } else {
+        setDirType(subType);
       }
       return;
     }
@@ -1162,9 +1203,16 @@
   // ==================== 视图切换 (使用 page-panel) ====================
 
   function showView(name) {
-    // 同步 URL hash（files 保留子类型如 #files/recycle）
+    // 同步 URL hash（files 保留子类型如 #files/recycle 或 #files/personal/5）
     if (name === 'files') {
-      var fileHash = state.dirType === 'personal' ? 'files' : 'files/' + state.dirType;
+      var fileHash;
+      if (state.dirType === 'personal' && state.currentDirId > 0) {
+        fileHash = 'files/personal/' + state.currentDirId;
+      } else if (state.dirType === 'public' && state.currentPublicPath) {
+        fileHash = 'files/public/' + encodeURIComponent(state.currentPublicPath);
+      } else {
+        fileHash = state.dirType === 'personal' ? 'files' : 'files/' + state.dirType;
+      }
       setHash(fileHash);
     } else {
       setHash(name);
@@ -1758,6 +1806,7 @@
         updateBreadcrumb();
         renderFiles();
         updateStats(data);
+        saveDirState();
         updateToolbarVisibility();
         updateUploadBtnVisibility();
       })
@@ -1766,6 +1815,29 @@
         showToast('加载失败', '&#9888;');
         console.error('Load error:', err);
       });
+  }
+
+  // 刷新当前目录（保持 dirType + currentDirId + currentPublicPath 不变）
+  function refreshCurrentDir() {
+    if (state.dirType === 'public') {
+      loadFiles(0); // loadFiles 内部读取 state.currentPublicPath
+    } else {
+      loadFiles(state.currentDirId);
+    }
+  }
+
+  // 持久化当前目录状态到 localStorage（用于刷新恢复）
+  function saveDirState() {
+    try {
+      localStorage.setItem('_fs_dir_type', state.dirType);
+      if (state.dirType === 'public') {
+        localStorage.setItem('_fs_public_path', state.currentPublicPath || '');
+        localStorage.removeItem('_fs_dir_id');
+      } else {
+        localStorage.setItem('_fs_dir_id', String(state.currentDirId || 0));
+        localStorage.removeItem('_fs_public_path');
+      }
+    } catch(e) {}
   }
 
   function updateStats(data) {
@@ -1793,9 +1865,13 @@
       try { decodedId = decodeURIComponent(dirId); } catch(e) { decodedId = dirId; }
       var current = state.currentPublicPath || '';
       state.currentPublicPath = current ? current + '/' + decodedId : decodedId;
+      // 同步更新 URL hash
+      setHash('files/public/' + encodeURIComponent(state.currentPublicPath));
       // currentDirId 始终保持 0，不传入字符串路径以免污染状态
       loadFiles(0);
     } else {
+      // 同步更新 URL hash
+      setHash('files/personal/' + dirId);
       loadFiles(dirId);
     }
   }
@@ -1807,16 +1883,20 @@
       var parts = current.split('/');
       parts.pop(); // 移除当前目录段
       state.currentPublicPath = parts.join('/');
+      // 同步更新 URL hash
+      setHash(state.currentPublicPath ? 'files/public/' + encodeURIComponent(state.currentPublicPath) : 'files/public');
       loadFiles(0);
     } else {
       // 个人目录：从 breadcrumb 链获取父目录 ID
       var bc = state._personalBreadcrumb || [];
       if (bc.length <= 1) {
         // 已经是根或只有一级，直接回到根
+        setHash('files');
         loadFiles(0);
       } else {
         // 回到倒数第二级
         var parentId = bc[bc.length - 2].id;
+        setHash('files/personal/' + parentId);
         loadFiles(parentId);
       }
     }
@@ -2365,7 +2445,18 @@
     closePreviewModal();
 
     var isEdit = isEditable(item.mime_type, item.name);
-    var streamUrl = '/api/files/stream/' + item.id;
+    // 公共文件使用 relPath 作为文件标识（含子目录路径），个人文件使用数字 ID
+    var isPublicItem = !!(item.isPublicFile || item.relPath);
+    var filePathId = isPublicItem ? encodeURIComponent(item.relPath || item.id) : item.id;
+    var streamUrl = isPublicItem
+      ? '/api/files/stream/0?public_path=' + encodeURIComponent(item.relPath || item.id)
+      : '/api/files/stream/' + filePathId;
+    var textUrl = isPublicItem
+      ? '/files/text/0?public_path=' + encodeURIComponent(item.relPath || item.id)
+      : '/files/text/' + filePathId;
+    var docxUrl = isPublicItem
+      ? '/files/docx/0?public_path=' + encodeURIComponent(item.relPath || item.id)
+      : '/files/docx/' + filePathId;
     var overlay = document.createElement('div');
     overlay.id = 'preview-overlay';
     overlay.style.cssText = [
@@ -2454,7 +2545,7 @@
       // 文本文件：通过后端接口获取内容
       var loadingEl = overlay.querySelector('#pv-loading');
       var ta = overlay.querySelector('#pv-textarea');
-      apiGet('/files/text/' + item.id).then(function(res) {
+      apiGet(textUrl).then(function(res) {
         if (res.code !== 0) {
           showToast('文件读取失败');
           closePreviewModal();
@@ -2473,7 +2564,7 @@
       var loadingEl = overlay.querySelector('#pv-loading');
       var ta = overlay.querySelector('#pv-textarea');
       var mdDiv = overlay.querySelector('#pv-markdown-content');
-      apiGet('/files/text/' + item.id).then(function(res) {
+      apiGet(textUrl).then(function(res) {
         if (res.code !== 0) {
           showToast('文件读取失败');
           closePreviewModal();
@@ -2503,7 +2594,7 @@
       // DOCX：调用后端 mammoth 转 HTML 后渲染
       var loadingEl = overlay.querySelector('#pv-loading');
       var docxDiv = overlay.querySelector('#pv-docx-content');
-      apiGet('/files/docx/' + item.id).then(function(res) {
+      apiGet(docxUrl).then(function(res) {
         if (res.code !== 0) {
           showToast('DOCX 文件转换失败，请下载后查看');
           closePreviewModal();
@@ -7226,6 +7317,8 @@
     if (n.endsWith('.zip') || n.endsWith('.rar') || n.endsWith('.7z') || n.endsWith('.tar') || n.endsWith('.gz')) return '&#128230;';
     if (n.endsWith('.doc') || n.endsWith('.docx')) return '&#128196;';
     if (n.endsWith('.xls') || n.endsWith('.xlsx')) return '&#128202;';
+    if (n.endsWith('.exe') || n.endsWith('.dll') || n.endsWith('.sys') || n.endsWith('.msi') || n.endsWith('.bat') || n.endsWith('.cmd') || n.endsWith('.sh')) return '&#9881;';
+    if (n.endsWith('.apk')) return '&#128241;';
     if (n.endsWith('.txt') || n.endsWith('.md') || n.endsWith('.json') || n.endsWith('.js') || n.endsWith('.css') || n.endsWith('.html')) return '&#128196;';
     return '&#128196;';
   }
@@ -9091,7 +9184,7 @@
         if (completed === files.length) {
           setTimeout(function() { hideUploadProgress(); }, 1500);
           showToast('已上传 ' + files.length + ' 个文件' + (errors > 0 ? '（' + errors + ' 个失败）' : ''), '&#128230;');
-          loadFiles(state.currentDirId);
+          refreshCurrentDir();
           loadProfile();
         }
       }
@@ -9109,7 +9202,7 @@
             if (completed === files.length) {
               setTimeout(function() { hideUploadProgress(); }, 1500);
               showToast('秒传完成！' + files.length + ' 个文件无需上传', '&#9889;');
-              loadFiles(state.currentDirId);
+              refreshCurrentDir();
               loadProfile();
             }
           } else {
@@ -9297,12 +9390,32 @@
           // 根据 hash 显示对应视图（不先加载文件列表）
           restoreFromHash(hash);
         } else {
-          // 默认文件视图：显示主内容区并加载文件
-          if (mainContent) mainContent.style.display = 'block';
-          if (pagePanel) pagePanel.classList.remove('show');
-          showFileToolbar(true);
-          updateNavHighlight('files', state.dirType);
-          loadFiles(0);
+          // 无有效 hash：尝试从 localStorage 恢复上次的目录位置
+          var _restored = false;
+          try {
+            var _savedType = localStorage.getItem('_fs_dir_type');
+            if (_savedType === 'public') {
+              var _savedPubPath = localStorage.getItem('_fs_public_path') || '';
+              if (_savedPubPath) {
+                setDirType('public', 0, _savedPubPath);
+                _restored = true;
+              }
+            } else if (_savedType === 'personal') {
+              var _savedDirId = parseInt(localStorage.getItem('_fs_dir_id'), 10) || 0;
+              if (_savedDirId > 0) {
+                setDirType('personal', _savedDirId);
+                _restored = true;
+              }
+            }
+          } catch(e) {}
+          if (!_restored) {
+            // 默认文件视图：显示主内容区并加载文件
+            if (mainContent) mainContent.style.display = 'block';
+            if (pagePanel) pagePanel.classList.remove('show');
+            showFileToolbar(true);
+            updateNavHighlight('files', state.dirType);
+            loadFiles(0);
+          }
         }
       });
     } catch (err) {
@@ -9350,6 +9463,8 @@
   window.__fm.updateRecycleBadge = function() { updateRecycleBadge(); };
   window.__fm.restoreItem = function(item) { restoreItem(item); };
   window.__fm.loadFiles = function(dirId) { loadFiles(dirId); };
+  window.__fm.refreshCurrentDir = function() { refreshCurrentDir(); };
+  window.__fm.refreshFileList = function() { refreshCurrentDir(); };
   window.__fm.navigateToDir = function(dirId, dirName) { navigateToDir(dirId, dirName); };
   window.__fm.getState = function() { return JSON.parse(JSON.stringify(state)); };
   window.__fm.validateFileName = function(name, maxLen) { return validateFileName(name, maxLen); };
@@ -10337,7 +10452,7 @@
       if (d.instant) {
         task.status = 'completed';
         fetchTransfers();
-        if (window.__fm && window.__fm.refreshFileList) window.__fm.refreshFileList();
+        refreshCurrentDir();
         showToast('秒传成功: ' + file.name, '⚡');
         return;
       }
@@ -10396,7 +10511,7 @@
         _recentTransfers.push(task);
         try { localStorage.removeItem('transfer_pending_' + task.transferId); } catch(e) {}
         fetchTransfers();
-        if (window.__fm && window.__fm.refreshFileList) window.__fm.refreshFileList();
+        refreshCurrentDir();
         showToast('上传完成: ' + file.name, '✅');
       }
     }).catch(function(err) {
@@ -10463,7 +10578,7 @@
           updateTransferBadge(_activeTransfers.length);
           if (res.data.code === 0) {
             showToast('上传成功: ' + file.name, '✅');
-            loadFiles();
+            refreshCurrentDir();
           } else {
             showToast('上传失败: ' + (res.data.message || file.name), '❌');
           }

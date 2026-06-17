@@ -347,6 +347,11 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
             <span>返回</span>
           </button>
+          <!-- Refresh Button -->
+          <button class="toolbar-btn" id="toolbar-refresh-btn" onclick="window.__fm && window.__fm.refreshCurrentDir()" title="刷新当前目录">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>刷新</span>
+          </button>
           <!-- Normal mode toolbar -->
           <div class="file-toolbar-left" id="toolbar-left-normal">
             <button class="toolbar-btn primary" id="toolbar-new-folder-btn" onclick="window.__fm && window.__fm.createNewFolder()" title="新建文件夹">
@@ -481,7 +486,7 @@
 <!-- ===================== SCRIPTS ===================== -->
 <!-- app.js 必须在 home.html 的脚本之前加载 -->
   <script src="./qrcode.min.js"></script>
-  <script src="./app.js?v=2026061706"></script>
+  <script src="./app.js?v=2026061707"></script>
 
 <!-- Auth check + 视图初始化 -->
 <script>

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.1.0 — Android Edge-to-Edge · Global Search · Resumable Transfer · Backup · Storage Balance</sub>
+  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.1.1 — Android Edge-to-Edge · Global Search · Resumable Transfer · Backup · Storage Balance</sub>
 </p>
 
 <p align="center">

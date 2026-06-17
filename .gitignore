@@ -8,15 +8,7 @@ data/
 
 # ==================== Uploaded files storage ====================
 # 所有加密存储目录
-files/download/
-files/userdata/
-files/tmp/
-files/app/
-files/path1/
-files/path2/
-files/path3/
-files/3path1/
-files/default-mirror/
+files/
 
 # ==================== Environment / Secrets ====================
 .env

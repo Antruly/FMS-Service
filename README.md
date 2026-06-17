@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>端到端加密的私有文件管理服务</strong><br><sub>v1.1.0 — Android 全面屏适配 · 全局搜索 · 断点续传 · 数据备份 · 存储均衡</sub>
+  <strong>端到端加密的私有文件管理服务</strong><br><sub>v1.1.1 — Android 全面屏适配 · 全局搜索 · 断点续传 · 数据备份 · 存储均衡</sub>
 </p>
 
 <p align="center">

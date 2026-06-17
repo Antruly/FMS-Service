@@ -4073,7 +4073,15 @@ async function handleStreamRequest(req, res, mode) {
   var isRecycleFile = false;
   var isPublicRecycleFile = false;
 
-  if (/^\d+$/.test(rawId)) {
+  // 公共文件：通过 public_path 查询参数指定相对路径（支持子目录）
+  if (req.query.public_path) {
+    isPublicFile = true;
+    filePath = path.join(Storage.PUBLIC_DIR, req.query.public_path);
+    // 安全检查：禁止 .. 跳出 PUBLIC_DIR
+    if (!filePath.startsWith(Storage.PUBLIC_DIR)) {
+      return deny404(res, '文件不存在');
+    }
+  } else if (/^\d+$/.test(rawId)) {
     var fileId = parseInt(rawId, 10);
     fileRecord = VirtualFile.findById(fileId);
     if (!fileRecord || fileRecord.user_id !== user.id) {
@@ -4654,79 +4662,167 @@ router.get('/files/video-preview/:id?', requireAuth, async function(req, res) {
 });
 
 // ==================== 文本预览 =====================
-// GET /api/files/text/:id
+// GET /api/files/text/:id?public_path=xxx
 router.get('/files/text/:id', requireAuth, function(req, res) {
   var fileId = parseInt(req.params.id, 10);
   var user = req.user;
+
+  var TEXT_SUPPORTED = ['txt','log','json','js','css','html','xml','md','csv','sh','py','java','c','cpp','h','php','rb','sql','yml','yaml','ini','conf','properties','env','htaccess'];
+
+  // 公共文件：通过 public_path 查询参数指定相对路径（支持子目录）
+  if (req.query.public_path) {
+    var pubPath = req.query.public_path;
+    var pubRoot = Storage.PUBLIC_DIR;
+    var pubFilePath = path.resolve(pubRoot, pubPath);
+    // 安全检查：禁止 .. 跳出 PUBLIC_DIR
+    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '文件不存在');
+    if (!fs.existsSync(pubFilePath)) return deny404(res, '文件不存在');
+
+    var pubExt = pubPath.toLowerCase().split('.').pop();
+    if (TEXT_SUPPORTED.indexOf(pubExt) === -1) {
+      return res.status(415).json({ code: 415, message: '不支持的文本格式' });
+    }
+
+    var fileSize = fs.statSync(pubFilePath).size;
+    var rawData = fs.readFileSync(pubFilePath);
+    var buf = rawData;
+    if (buf.length > 5 * 1024 * 1024) buf = buf.slice(0, 5 * 1024 * 1024);
+    logTraffic(user.id, '', 'preview', 0, pubPath, fileSize, buf.length);
+    return res.json({
+      code: 0,
+      data: {
+        filename: path.basename(pubPath),
+        mime_type: 'text/plain',
+        size: fileSize,
+        truncated: fileSize > 5 * 1024 * 1024,
+        content: buf.toString('utf8')
+      }
+    });
+  }
+
   var file = VirtualFile.findById(fileId);
 
-  if (!file || file.user_id !== user.id) return deny404(res, '文件不存在');
+  if (!file || file.user_id !== user.id) {
+    log.info('[text] 文件未找到或权限不足: fileId=' + fileId + ' file=' + !!file + ' userId=' + user.id);
+    return deny404(res, '文件不存在');
+  }
   if (!checkPerm(user, file.dir_id, 'read')) return deny403(res, '无权限');
 
   var ext = (file.name || '').toLowerCase().split('.').pop();
-  var TEXT_SUPPORTED = ['txt','log','json','js','css','html','xml','md','csv','sh','py','java','c','cpp','h','php','rb','sql','yml','yaml','ini','conf','properties','env','htaccess'];
   if (TEXT_SUPPORTED.indexOf(ext) === -1 && !(file.mime_type || '').startsWith('text/')) {
     return res.status(415).json({ code: 415, message: '不支持的文本格式' });
   }
 
-  var filePath = getDecryptedFilePath(file);
-  if (!filePath) return deny404(res, '文件不存在');
+  var filePath;
+  try { filePath = getDecryptedFilePath(file); } catch(e) { log.info('[text] getDecryptedFilePath 异常: ' + e.message); filePath = null; }
+  if (!filePath) {
+    log.info('[text] 文件路径解析失败: fileId=' + fileId + ' name=' + file.name);
+    return deny404(res, '文件不存在');
+  }
+  log.info('[text] 准备读取: fileId=' + fileId + ' name=' + file.name + ' path=' + filePath);
 
-  var fileSize = fs.statSync(filePath).size;
+  try {
+    var fileSize = fs.statSync(filePath).size;
+  } catch(e) {
+    log.info('[text] statSync 失败: path=' + filePath + ' err=' + e.message);
+    return deny404(res, '文件不存在或已被删除');
+  }
   var ENCRYPTED_MIN_SIZE = 88;
   var isUnencrypted = (fileSize < ENCRYPTED_MIN_SIZE);
 
   if (isUnencrypted) {
-    var rawData = fs.readFileSync(filePath);
-    var buf = rawData;
-    if (buf.length > 5 * 1024 * 1024) buf = buf.slice(0, 5 * 1024 * 1024);
-    logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
-    res.json({
-      code: 0,
-      data: {
-        filename: file.name,
-        mime_type: file.mime_type,
-        size: rawData.length,
-        truncated: rawData.length > 5 * 1024 * 1024,
-        content: buf.toString('utf8')
+    try {
+      var rawData = fs.readFileSync(filePath);
+      var buf = rawData;
+      if (buf.length > 5 * 1024 * 1024) buf = buf.slice(0, 5 * 1024 * 1024);
+      logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
+      return res.json({
+        code: 0,
+        data: {
+          filename: file.name,
+          mime_type: file.mime_type,
+          size: rawData.length,
+          truncated: rawData.length > 5 * 1024 * 1024,
+          content: buf.toString('utf8')
+        }
+      });
+    } catch(e) {
+      log.info('[text] 读取未加密文件失败: path=' + filePath + ' err=' + e.message);
+      return res.status(500).json({ code: 500, message: '文件读取失败: ' + e.message });
+    }
+  }
+
+  try {
+    var streamInfo = createDecryptStream(filePath);
+    var chunks = [];
+
+    streamInfo.readStream.on('data', function(chunk) { chunks.push(chunk); });
+    streamInfo.readStream.on('end', function() {
+      try {
+        var buf = Buffer.concat(chunks);
+        var size = buf.length;
+        if (size > 5 * 1024 * 1024) {
+          buf = buf.slice(0, 5 * 1024 * 1024);
+        }
+        var text = buf.toString('utf8');
+        logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
+        res.json({
+          code: 0,
+          data: {
+            filename: file.name,
+            mime_type: file.mime_type,
+            size: size,
+            truncated: size > 5 * 1024 * 1024,
+            content: text
+          }
+        });
+      } catch(e) {
+        if (!res.headersSent) res.status(500).json({ code: 500, message: '文件解码失败' });
       }
+    });
+    streamInfo.readStream.on('error', function() {
+      if (!res.headersSent) res.status(500).json({ code: 500, message: '文件读取失败' });
+    });
+  } catch(e) {
+    return res.status(500).json({ code: 500, message: '文件解密失败: ' + e.message });
+  }
+});
+
+// ==================== DOCX 转换为HTML====================
+// GET /api/files/docx/:id?public_path=xxx
+router.get('/files/docx/:id', requireAuth, function(req, res) {
+  var fileId = parseInt(req.params.id, 10);
+  var user = req.user;
+
+  // 公共文件：通过 public_path 查询参数指定相对路径
+  if (req.query.public_path) {
+    var pubPath = req.query.public_path;
+    var pubRoot = Storage.PUBLIC_DIR;
+    var pubFilePath = path.resolve(pubRoot, pubPath);
+    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '文件不存在');
+    if (!fs.existsSync(pubFilePath)) return deny404(res, '文件不存在');
+
+    var pubExt = pubPath.toLowerCase().split('.').pop();
+    if (pubExt !== 'docx') return res.status(415).json({ code: 415, message: '仅支持 docx 格式' });
+
+    var rawData = fs.readFileSync(pubFilePath);
+    mammoth.convertToHtml({ buffer: rawData }, {
+      styleMap: [
+        "p[style-name='Heading 1'] => h1:fresh",
+        "p[style-name='Heading 2'] => h2:fresh",
+        "p[style-name='Heading 3'] => h3:fresh",
+        "b => strong", "i => em", "u => u"
+      ]
+    }).then(function(result) {
+      logTraffic(user.id, '', 'preview', 0, pubPath, rawData.length, 0);
+      return res.json({ code: 0, data: { html: result.value, warnings: result.messages.map(function(m) { return m.message; }) } });
+    }).catch(function(err) {
+      log.error('[DOCX] 公共文件转换失败:', err.message);
+      return res.status(500).json({ code: 500, message: 'DOCX 转换失败' });
     });
     return;
   }
 
-  var streamInfo = createDecryptStream(filePath);
-  var chunks = [];
-
-  streamInfo.readStream.on('data', function(chunk) { chunks.push(chunk); });
-  streamInfo.readStream.on('end', function() {
-    var buf = Buffer.concat(chunks);
-    var size = buf.length;
-    if (size > 5 * 1024 * 1024) {
-      buf = buf.slice(0, 5 * 1024 * 1024);
-    }
-    var text = buf.toString('utf8');
-    logTraffic(user.id, '', 'preview', file.id, file.name, fileSize, buf.length);
-    res.json({
-      code: 0,
-      data: {
-        filename: file.name,
-        mime_type: file.mime_type,
-        size: size,
-        truncated: size > 5 * 1024 * 1024,
-        content: text
-      }
-    });
-  });
-  streamInfo.readStream.on('error', function() {
-    res.status(500).json({ code: 500, message: '文件读取失败' });
-  });
-});
-
-// ==================== DOCX 转换为HTML====================
-// GET /api/files/docx/:id
-router.get('/files/docx/:id', requireAuth, function(req, res) {
-  var fileId = parseInt(req.params.id, 10);
-  var user = req.user;
   var file = VirtualFile.findById(fileId);
 
   if (!file || file.user_id !== user.id) return deny404(res, '文件不存在');
