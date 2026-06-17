@@ -9675,7 +9675,9 @@
           closeUserMenu();
           return;
         }
-        if (inInput) return;
+        // Monaco 预览打开时，屏蔽应用级单键快捷键（避免编辑时误触切换皮肤/视图等）
+        var previewOpen = !!document.getElementById('preview-overlay');
+        if (inInput || previewOpen) return;
         if (e.key === 'Backspace' && state.currentView === 'files') {
           if (state.dirType === 'public' && state.currentPublicPath) {
             e.preventDefault();
