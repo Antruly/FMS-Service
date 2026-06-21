@@ -11022,10 +11022,15 @@
 
     var html = '';
     html += '<div class="transfer-filters">';
+    html += '<div class="transfer-filters-left">';
     var filters = [{id:'all',label:'全部'},{id:'uploading',label:'上传中'},{id:'completed',label:'已完成'},{id:'error',label:'失败'}];
     filters.forEach(function(f) {
       html += '<button class="transfer-filter-btn' + (_transferFilter === f.id ? ' active' : '') + '" data-filter="' + f.id + '" onclick="window.__fm._filterTransfers(this.getAttribute(\'data-filter\'))">' + f.label + '</button>';
     });
+    html += '</div>';
+    html += '<div class="transfer-filters-right">';
+    html += '<button class="transfer-clear-all-btn" onclick="window.__fm._clearHistory()" title="清空全部传输记录">🗑 一键清空</button>';
+    html += '</div>';
     html += '</div>';
 
     if (pendingCount > 0) {
@@ -11081,17 +11086,17 @@
     }
     actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._locateTransferDir(\'' + locDirType + '\',\'' + locDirPath + '\',' + locDirId + ')" title="跳转到文件所在目录">📍 定位</button>';
     if (item.status === 'error' || item.status === 'cancelled') {
-      actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._retryTransfer(\' + String(item.id) + \')">重试</button>';
+      actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._retryTransfer(\'' + String(item.id) + '\')">重试</button>';
     }
     // 续传按钮
     if ((item.status === 'error' || item.status === 'pending') && item.total_chunks > 1 && item.type === 'upload') {
       actionBtns += '<button class="transfer-action-btn resume" onclick="window.__fm._resumeSingleTransfer(\'' + escHtml(item.transfer_id || '') + '\',\'' + escHtml(item.file_name) + '\',' + (item.file_size || 0) + ')">🔄 续传</button>';
     }
     if (item.status === 'uploading' || item.status === 'pending') {
-      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._cancelTransfer(\' + String(item.id) + \')">取消</button>';
+      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._cancelTransfer(\'' + String(item.id) + '\')">取消</button>';
     }
     if (item.status === 'completed' || item.status === 'error' || item.status === 'cancelled') {
-      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._deleteTransfer(\' + String(item.id) + \')">删除</button>';
+      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._deleteTransfer(\'' + String(item.id) + '\')">删除</button>';
     }
 
     var progressHtml = '';
@@ -11136,12 +11141,12 @@
         for (var ai = 0; ai < active.length; ai++) {
           var at = active[ai];
           // 检查是否已在服务端列表中（通过 transferId 去重）
-          var dup = d.items.some(function(si) { return si.transfer_id === at.transferId || si.id === at.transferId; });
+          var dup = d.items.some(function(si) { return si.transfer_id === at.transferId; });
           if (!dup) {
             if (at.status === 'uploading' || at.status === 'pending') pending++;
             d.total = (d.total || 0) + 1;
             d.items.unshift({
-              id: at.transferId,
+              id: "u_local_" + at.transferId,
               transfer_id: at.transferId,
               file_name: at.fileName,
               file_size: at.fileSize,
@@ -11172,7 +11177,7 @@
             if (at.status === 'uploading' || at.status === 'pending') pd._pendingCount++;
             pd.total++;
             pd.items.push({
-              id: at.transferId, transfer_id: at.transferId,
+              id: "u_local_" + at.transferId, transfer_id: at.transferId,
               file_name: at.fileName, file_size: at.fileSize,
               type: at.direction || 'upload', status: at.status,
               progress: at.status === 'completed' ? 100 : (at.progress || 0),
@@ -11211,7 +11216,13 @@
   // Retry
   window.__fm._retryTransfer = function(id) {
     if (!confirm('确定要重试此传输吗？')) return;
-    var tid = id.replace('u_', '');
+    var sid = String(id);
+    // 本地传输不支持服务端重试，提示用户重新上传
+    if (sid.startsWith('u_local_')) {
+      showToast('本地传输无法重试，请重新上传文件', '⚠️');
+      return;
+    }
+    var tid = sid.replace(/^u_/, '');
     axios.post('/api/transfers/' + tid + '/retry').then(function(res) {
       if (res.data.code === 0) fetchTransfers();
     }).catch(function(err) {
@@ -11222,8 +11233,12 @@
   // Cancel
   window.__fm._cancelTransfer = function(id) {
     if (!confirm('确定要取消此上传吗？')) return;
-    var tid = id.replace('u_', '');
-    var active = _activeTransfers.find(function(t) { return String(t.taskId) === String(tid); });
+    // 提取 transfer_id: u_local_xxx → xxx, u_123 → 数据库 id
+    var isLocal = String(id).startsWith('u_local_');
+    var rawId = isLocal ? String(id).substring(8) : String(id).replace(/^u_/, '');
+    var active = _activeTransfers.find(function(t) {
+      return String(t.transferId) === String(rawId) || String(t.taskId) === String(rawId);
+    });
     if (active) {
       active.cancelled = true;
       _activeTransfers = _activeTransfers.filter(function(t) { return t !== active; });
@@ -11231,9 +11246,11 @@
         fetchTransfers();
       }).catch(function() { fetchTransfers(); });
     } else {
-      // Try to cancel via API
-      axios.post('/api/transfer/upload/cancel', { transfer_id: '' }).then(function() {
-        axios.delete('/api/transfers/' + id).then(function() { fetchTransfers(); });
+      // 服务端传输或已断开的本地传输：直接删除记录（后端会清 chunk + Redis）
+      axios.delete('/api/transfers/' + id, {
+        headers: { 'X-CSRF-Token': csrfToken || '' }
+      }).then(function() {
+        fetchTransfers();
       }).catch(function() { fetchTransfers(); });
     }
   };
@@ -11255,15 +11272,52 @@
   };
 
   window.__fm._clearHistory = function() {
-    if (!confirm('确定要清空所有传输历史记录吗？（进行中的任务不受影响）')) return;
-    axios.delete('/api/transfers/clear').then(function(res) {
+    // 统计进行中的传输（本地 + 服务端列表）
+    var activeLocal = (window.__fm && window.__fm._getActiveTransfers ? window.__fm._getActiveTransfers() : [])
+      .filter(function(t) { return t.status === 'uploading' || t.status === 'pending'; });
+    var activeCount = activeLocal.length;
+    // 尝试从已渲染的列表中统计
+    var items = document.querySelectorAll('#transfer-list .transfer-item');
+    items.forEach(function(el) {
+      var badge = el.querySelector('.transfer-status-badge');
+      if (badge && (badge.classList.contains('uploading') || badge.classList.contains('pending'))) {
+        activeCount++;
+      }
+    });
+    // 用 Set 去重（本地传输出现在列表中时只算一次）
+    // 简化处理：以上两者之和为上限
+
+    var force = activeCount > 0;
+    var msg = force
+      ? '检测到 ' + activeCount + ' 个进行中的传输任务。\n\n确定要取消全部上传并清空所有传输记录吗？\n\n（进行中的任务将被取消并删除，此操作不可恢复！）'
+      : '确定要清空所有传输历史记录吗？';
+
+    if (!confirm(msg)) return;
+
+    var url = '/api/transfers/clear' + (force ? '?force=1' : '');
+    axios.delete(url, {
+      headers: { 'X-CSRF-Token': csrfToken || '' }
+    }).then(function(res) {
       if (res.data.code === 0) {
+        // 清空本地活跃传输
+        _activeTransfers = [];
+        _recentTransfers = [];
+        try { localStorage.removeItem('transfer_pending_meta'); } catch(e) {}
+        // 清除各 task 的 localStorage
+        for (var i = 0; i < localStorage.length; i++) {
+          var key = localStorage.key(i);
+          if (key && key.startsWith('transfer_pending_')) {
+            try { localStorage.removeItem(key); } catch(e) {}
+          }
+        }
         var container = $('#page-panel-body');
         if (container) container._prevData = null;
         _transferPage = 0;
         _transferHasMore = false;
         fetchTransfers();
-        showToast('已清空历史记录', '✅');
+        updateTransferBadge(0);
+        if (window._floatBallRefresh) window._floatBallRefresh();
+        showToast('已清空全部传输记录', '✅');
       }
     }).catch(function() { showToast('清空失败', '❌'); });
   };
