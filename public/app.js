@@ -11081,17 +11081,17 @@
     }
     actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._locateTransferDir(\'' + locDirType + '\',\'' + locDirPath + '\',' + locDirId + ')" title="跳转到文件所在目录">📍 定位</button>';
     if (item.status === 'error' || item.status === 'cancelled') {
-      actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._retryTransfer(String(item.id))">重试</button>';
+      actionBtns += '<button class="transfer-action-btn" onclick="window.__fm._retryTransfer(\' + String(item.id) + \')">重试</button>';
     }
     // 续传按钮
     if ((item.status === 'error' || item.status === 'pending') && item.total_chunks > 1 && item.type === 'upload') {
       actionBtns += '<button class="transfer-action-btn resume" onclick="window.__fm._resumeSingleTransfer(\'' + escHtml(item.transfer_id || '') + '\',\'' + escHtml(item.file_name) + '\',' + (item.file_size || 0) + ')">🔄 续传</button>';
     }
     if (item.status === 'uploading' || item.status === 'pending') {
-      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._cancelTransfer(String(item.id))">取消</button>';
+      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._cancelTransfer(\' + String(item.id) + \')">取消</button>';
     }
     if (item.status === 'completed' || item.status === 'error' || item.status === 'cancelled') {
-      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._deleteTransfer(String(item.id))">删除</button>';
+      actionBtns += '<button class="transfer-action-btn danger" onclick="window.__fm._deleteTransfer(\' + String(item.id) + \')">删除</button>';
     }
 
     var progressHtml = '';
