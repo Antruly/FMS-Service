@@ -611,22 +611,27 @@ router.delete('/transfers/:id', requireAuth, function(req, res) {
     var task = db.TransferTask.findById(taskId);
     if (!task || task.user_id !== req.user.id) return res.json({ code: 2, message: '任务不存在', data: null });
 
-    // 清理 chunks
-    var chunks = db.TransferChunk.findByTask(taskId);
-    chunks.forEach(function(c) { try { fs.unlinkSync(c.chunk_path); } catch(e) {} });
-    db.TransferChunk.deleteByTask(taskId);
-
     try {
-      var TransferSession = require('../lib/redis').TransferSession;
-      TransferSession.deleteUpload(task.transfer_id);
-    } catch(e) {}
+      // 清理 chunks
+      var chunks = db.TransferChunk.findByTask(taskId);
+      chunks.forEach(function(c) { try { fs.unlinkSync(c.chunk_path); } catch(e) {} });
+      db.TransferChunk.deleteByTask(taskId);
 
-    // 清理 chunk 目录
-    var chunkDir = path.join(path.dirname(require.resolve('../lib/db')), '..', 'data', 'chunks', task.transfer_id);
-    try { fs.rmSync(chunkDir, { recursive: true, force: true }); } catch(e) {}
+      try {
+        var TransferSession = require('../lib/redis').TransferSession;
+        TransferSession.deleteUpload(task.transfer_id);
+      } catch(e) {}
 
-    db.TransferTask.delete(taskId);
-    return res.json({ code: 0, message: '已删除' });
+      // 清理 chunk 目录
+      var dataDir = path.join(__dirname, '..', 'data', 'chunks', task.transfer_id);
+      try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch(e) {}
+
+      db.TransferTask.delete(taskId);
+      return res.json({ code: 0, message: '已删除' });
+    } catch(e) {
+      log.error('[Transfer] 删除传输记录失败: ' + e.message);
+      return res.json({ code: 1, message: '删除失败: ' + e.message, data: null });
+    }
   }
 
   if (rawId.startsWith('d_')) {

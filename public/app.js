@@ -11241,8 +11241,12 @@
   // Delete
   window.__fm._deleteTransfer = function(id) {
     if (!confirm('确定要删除此传输记录吗？')) return;
-    axios.delete('/api/transfers/' + id).then(function(res) {
+    axios.delete('/api/transfers/' + id, {
+      headers: { 'X-CSRF-Token': csrfToken || '' }
+    }).then(function(res) {
       if (res.data.code === 0) fetchTransfers();
+    }).catch(function(err) {
+      showToast('删除失败: ' + (err.response && err.response.data && err.response.data.message || err.message), '⚠️');
     });
   };
 
