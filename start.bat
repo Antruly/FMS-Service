@@ -1,2 +1,2 @@
-#set SSL_ENABLED=false
+REM set SSL_ENABLED=false
 node launcher.js
