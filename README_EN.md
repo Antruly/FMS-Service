@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.2.1 — Android Edge-to-Edge · Global Search · Resumable Transfer · Backup · Storage Balance</sub>
+  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.2.2 — Security hardening: QR-login takeover, path traversal, share authorization</sub>
 </p>
 
 <p align="center">

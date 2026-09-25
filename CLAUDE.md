@@ -40,6 +40,7 @@
 
 - 日常提交：`type: 简短描述`（如 `fix: 修复上传报错`、`feat: 新增全局搜索`）
 - 构建提交：`build: vX.Y.Z — 更新内容`（APK 构建时）
+- **AI 提交时禁止添加 AI 为共同贡献者**：提交信息中不得包含 `Co-authored-by: Claude`、`Co-authored-by: AI` 等将 AI 标注为共同作者的 trailer。提交者身份统一使用 `FileService Dev`（已配置的 git user）
 
 ## APK 构建规范
 

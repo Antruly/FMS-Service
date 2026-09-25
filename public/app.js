@@ -10064,12 +10064,51 @@
 
   function handleUploadBatch(files) {
     if (!files || files.length === 0) return;
+
+    // 上传前检查存储空间（Bug 3）
+    var isPublic = state.dirType === 'public';
+    if (!isPublic && state.user && state.user.quota_bytes > 0) {
+      var totalSize = 0;
+      for (var fi = 0; fi < files.length; fi++) { totalSize += files[fi].size; }
+      var available = Math.max(0, state.user.quota_bytes - (state.user.used_bytes || 0));
+      if (totalSize > available) {
+        showToast('存储空间不足！需要 ' + formatFileSize(totalSize) + '，可用 ' + formatFileSize(available), '&#9888;');
+        return;
+      }
+    }
+
     _uploadFileList = files;
     showUploadProgress(files.length);
 
+    // 聚合进度追踪（Bug 2）：跟踪总字节数和各文件已上传字节
+    var totalBytes = 0;
+    var uploadedBytes = []; // per-file uploaded bytes
+    for (var bi = 0; bi < files.length; bi++) {
+      totalBytes += files[bi].size;
+      uploadedBytes.push(0);
+    }
+    var completed = 0, errors = 0;
+
+    function calcOverallPct() {
+      if (totalBytes === 0) return Math.round((completed / files.length) * 100);
+      var sum = 0;
+      for (var si = 0; si < uploadedBytes.length; si++) { sum += uploadedBytes[si]; }
+      return Math.min(100, Math.round((sum / totalBytes) * 100));
+    }
+
+    function checkAllDone() {
+      updateUploadProgressOverall(calcOverallPct());
+      updateUploadStatus((completed === files.length ? '上传完成！' : '上传中 ' + completed + '/' + files.length));
+      if (completed === files.length) {
+        setTimeout(function() { hideUploadProgress(); }, 1500);
+        showToast('已上传 ' + files.length + ' 个文件' + (errors > 0 ? '（' + errors + ' 个失败）' : ''), '&#128230;');
+        refreshCurrentDir();
+        loadProfile();
+      }
+    }
+
     // 处理每个文件（支持秒传预检）
     files.forEach(function(file, i) {
-      var isPublic = state.dirType === 'public';
       var dirId = isPublic ? '' : (state.currentDirId || 0);
       var postData = new FormData();
       postData.append('file', file);
@@ -10080,17 +10119,16 @@
       }
       var uploadUrl = isPublic ? '/api/public-files/upload' : '/api/files/upload';
 
-      // 个人文件：先做秒传预检
       function doUpload() {
         updateUploadItemStatus(i, 'uploading');
-        updateUploadProgressOverall(0);
         axios.post(uploadUrl, postData, {
           headers: { 'Content-Type': 'multipart/form-data' },
           onUploadProgress: function(progressEvent) {
-            var pct = progressEvent.total > 0 ? Math.round((progressEvent.loaded / progressEvent.total) * 100) : 0;
-            updateUploadProgressOverall(pct);
+            uploadedBytes[i] = progressEvent.loaded || 0;
+            updateUploadProgressOverall(calcOverallPct());
           }
         }).then(function(res) {
+          uploadedBytes[i] = file.size; // 标记为全部上传
           completed++;
           if (res.data.code === 0) {
             updateUploadItemStatus(i, 'done', res.data.data && res.data.data.is_dedup ? '秒传' : '');
@@ -10107,34 +10145,18 @@
         });
       }
 
-      var completed = 0, errors = 0;
-      function checkAllDone() {
-        updateUploadProgressOverall(Math.round((completed / files.length) * 100));
-        updateUploadStatus((completed === files.length ? '上传完成！' : '上传中 ' + completed + '/' + files.length));
-        if (completed === files.length) {
-          setTimeout(function() { hideUploadProgress(); }, 1500);
-          showToast('已上传 ' + files.length + ' 个文件' + (errors > 0 ? '（' + errors + ' 个失败）' : ''), '&#128230;');
-          refreshCurrentDir();
-          loadProfile();
-        }
-      }
-
       if (!isPublic && file.size > 0) {
         // 个人文件：秒传预检
         updateUploadItemStatus(i, 'checking');
         checkInstantUpload(file, dirId).then(function(result) {
           if (result && result.instant) {
             // 秒传成功！
+            uploadedBytes[i] = file.size;
             completed++;
             updateUploadItemStatus(i, 'done', '秒传');
-            updateUploadProgressOverall(Math.round((completed / files.length) * 100));
+            updateUploadProgressOverall(calcOverallPct());
             updateUploadStatus('秒传 ' + completed + '/' + files.length + ' (文件已存在，无需上传)');
-            if (completed === files.length) {
-              setTimeout(function() { hideUploadProgress(); }, 1500);
-              showToast('秒传完成！' + files.length + ' 个文件无需上传', '&#9889;');
-              refreshCurrentDir();
-              loadProfile();
-            }
+            checkAllDone();
           } else {
             doUpload();
           }
@@ -10657,9 +10679,10 @@
         </select></div>\
       <div style="margin-bottom:16px">\
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">\
-          <input type="checkbox" id="webdavRequireAuth" style="accent-color:var(--accent);width:16px;height:16px">\
+          <input type="checkbox" id="webdavRequireAuth" checked style="accent-color:var(--accent);width:16px;height:16px">\
           <span style="font-size:13px;color:var(--text-secondary)">需要登录认证（使用您的账号密码）</span>\
-        </label></div>\
+        </label>\
+        <p style="font-size:11px;color:var(--text3);margin:6px 0 0 24px">取消勾选将创建无需认证的链接，任何拿到链接的人都能读写该目录</p></div>\
       <div id="webdavError" style="color:var(--error);font-size:13px;margin-bottom:12px;display:none"></div>\
       <div style="display:flex;gap:12px;justify-content:flex-end">\
         <button id="webdavCancel" class="modal-btn modal-btn-secondary">取消</button>\
@@ -12038,15 +12061,17 @@
       };
     } else {
       // 没有原生支持，使用 AJAX
-      axios.post('/api/auth/qr-login/authorize', { token: token })
+      // 用 apiPost 而非裸 axios.post：授权接口现在要求 CSRF 令牌，
+      // 而令牌缺失时 apiPost 会先取一次（新装 App 首次扫码的场景）
+      apiPost('/auth/qr-login/authorize', { token: token })
         .then(function(res) {
-          if (res.data.code === 0) {
+          if (res.code === 0) {
             showToast('登录成功！', '&#10004;');
             setTimeout(function() {
               window.location.href = '/home.html';
             }, 1500);
           } else {
-            showToast(res.data.message || '登录失败', '&#9888;');
+            showToast(res.message || '登录失败', '&#9888;');
           }
         })
         .catch(function() {
