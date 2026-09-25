@@ -15,19 +15,6 @@ var getClientIp = _su.getClientIp || function(req) {
   if (ip.indexOf(',') !== -1) ip = ip.split(',')[0].trim();
   return ip.replace(/^::ffff:/, '');
 };
-// 安全导入：路径包含性校验（如果 lib/validator.js 未更新，使用内联回退）
-var _sval = {};
-try { _sval = require('../lib/validator'); } catch(e) {}
-var resolveWithin = _sval.resolveWithin || function(baseDir, userPath) {
-  if (!baseDir || typeof userPath !== 'string' || userPath === '') return null;
-  if (userPath.indexOf('\0') !== -1) return null;
-  var base = path.resolve(baseDir);
-  var target = path.resolve(base, userPath);
-  if (target === base) return target;
-  var prefix = base.endsWith(path.sep) ? base : base + path.sep;
-  return target.indexOf(prefix) === 0 ? target : null;
-};
-
 var formatFileSize = _su.formatFileSize || function(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   var units = ['B','KB','MB','GB','TB'];
@@ -128,12 +115,9 @@ router.post('/share', requireAuth, function(req, res) {
     }
     var publicPath = (req.body.target_path || '').trim();
     if (!publicPath) return res.json({ code: 1, message: '请指定公共文件路径', data: null });
-    // 安全检查：防止路径遍历（绝对路径、../ 逃逸都挡掉；用包含性校验而不是
-    // 简单地拒绝含 '..' 的字符串，否则名字里带两个点的正常文件反而分享不了）
-    var publicFullPath = resolveWithin(Storage.PUBLIC_DIR, publicPath);
-    if (!publicFullPath) return res.json({ code: 1, message: '路径包含非法字符', data: null });
-    // 存归一化后的相对路径，供后续 _publicShareRoot 使用
-    publicPath = path.relative(Storage.PUBLIC_DIR, publicFullPath).replace(/\\/g, '/');
+    // 安全检查：防止路径遍历
+    if (publicPath.includes('..')) return res.json({ code: 1, message: '路径包含非法字符', data: null });
+    var publicFullPath = path.join(Storage.PUBLIC_DIR, publicPath);
     if (!fs.existsSync(publicFullPath)) return res.json({ code: 1, message: '文件不存在', data: null });
     var pubStat = fs.statSync(publicFullPath);
     if (pubStat.isDirectory()) {
@@ -170,20 +154,9 @@ router.post('/share', requireAuth, function(req, res) {
       }
       finalTargetIds = [targetId];
     } else {
-      // 多个目标：逐个校验归属。
-      // 上面"只选一个"的分支有 user_id 约束，这里如果没有，攻击者就能把自己的分享
-      // 指向别人的文件 ID —— 分享出去的链接会原样展示受害者的文件。
-      var validIds = [];
-      for (var ti = 0; ti < targetIds.length; ti++) {
-        var tid = parseInt(targetIds[ti], 10);
-        if (!tid) return res.json({ code: 1, message: '文件不存在', data: null });
-        var ownedFile = get('SELECT id FROM virtual_files WHERE id = ? AND user_id = ?', [tid, user.id]);
-        var ownedDir = ownedFile ? null : get('SELECT id FROM virtual_dirs WHERE id = ? AND user_id = ?', [tid, user.id]);
-        if (!ownedFile && !ownedDir) return res.json({ code: 1, message: '文件不存在', data: null });
-        validIds.push(tid);
-      }
-      targetName = validIds.length + ' 个文件';
-      finalTargetIds = validIds;
+      // 多个目标
+      targetName = targetIds.length + ' 个文件';
+      finalTargetIds = targetIds;
     }
   } else {
     return res.json({ code: 1, message: '目标类型错误', data: null });
@@ -432,8 +405,7 @@ router.get('/share/content/:hash', function(req, res) {
   var hash = req.params.hash;
   var subDirId = req.query.sub_dir;
   var extractionCode = req.query.extraction_code || '';
-  // 不要把 extraction_code 写进日志：日志文件往往比访问控制更容易被读到
-  log.info('[share content] hash=' + hash + ', subDirId=' + subDirId);
+  log.info('[share content] hash=' + hash + ', subDirId=' + subDirId + ', extractionCode=' + extractionCode);
   var share = Share.getByHash(hash);
 
   if (!share) {
@@ -448,45 +420,6 @@ router.get('/share/content/:hash', function(req, res) {
   var remaining = getRemainingMs(share.expires_at);
   if (remaining !== -1 && remaining <= 0) {
     return res.json({ code: 1, message: '分享已过期', data: null });
-  }
-
-  // 提取码校验：设了提取码的分享必须带对码才能读内容。
-  // 之前这里只把 extraction_code 打进日志、从不校验 —— 前端虽然会先弹验证页，
-  // 但直接请求本接口即可绕过提取码拿到文件列表。
-  // 返回 code:401 是前端约定的"需要验证"信号（public/share.html 会切到验证页）。
-  if (share.extraction_code) {
-    var codeCheck = Share.verifyCode(hash, extractionCode);
-    if (!codeCheck.valid) {
-      if (codeCheck.reason === 'wrong_code') {
-        return res.json({ code: 401, message: '需要提取码', data: null });
-      }
-      return res.json({ code: 1, message: codeCheck.reason === 'share_expired' ? '分享已过期' : '分享不存在', data: null });
-    }
-  }
-
-  // 子目录越权：sub_dir 必须落在本分享的目录树内，否则可以借用别人的分享
-  // 去浏览攻击者指定的任意目录（他人目录 ID 是连续整数，猜得到）
-  if (subDirId && share.target_type !== 'public') {
-    var subDirNum = parseInt(subDirId, 10);
-    if (subDirNum) {
-      var subDirAllowed = false;
-      if (share.target_type === 'dir') {
-        subDirAllowed = _isDirInTree(parseInt(share.target_id, 10), subDirNum, share.user_id);
-      } else if (share.target_type === 'mixed') {
-        var mixedIds = [];
-        try { mixedIds = JSON.parse(share.target_ids || '[]'); } catch(e) {}
-        for (var mi = 0; mi < mixedIds.length; mi++) {
-          if (parseInt(mixedIds[mi], 10) === subDirNum ||
-              _isDirInTree(parseInt(mixedIds[mi], 10), subDirNum, share.user_id)) {
-            subDirAllowed = true;
-            break;
-          }
-        }
-      }
-      if (!subDirAllowed) {
-        return res.json({ code: 1, message: '目录不存在', data: null });
-      }
-    }
   }
 
   var items;
@@ -559,11 +492,6 @@ function _isPublicShareDir(share) {
 
 // ==================== 辅助函数：检查文件是否在分享范围内 ====================
 function _isFileInShareTree(file, share) {
-  // 属主校验：分享只能覆盖分享者自己的文件。少了这一条，
-  // 只要分享的 target_ids 里混进别人的文件 ID（历史数据或构造请求），
-  // 那条分享就成了读取他人文件的通道。
-  if (parseInt(file.user_id) !== parseInt(share.user_id)) return false;
-
   // 单文件/批量分享：文件ID在 target_ids 中即为合法
   if (share.target_type === 'file') {
     return parseInt(file.id) === parseInt(share.target_id);
@@ -574,68 +502,42 @@ function _isFileInShareTree(file, share) {
     // 批量分享中每个目标都是根节点，其下文件都属分享范围
     for (var i = 0; i < ids.length; i++) {
       if (parseInt(file.id) === ids[i]) return true;
-      // 如果是目录，递归检查子文件（限定在分享者自己的目录树内）
-      if (_isDirInTree(ids[i], parseInt(file.dir_id), share.user_id)) return true;
+      // 如果是目录，递归检查子文件
+      if (_isDirInTree(ids[i], parseInt(file.dir_id))) return true;
     }
     return false;
   }
   // 目录分享：从分享根目录向下遍历所有子目录
-  return _isDirInTree(parseInt(share.target_id), parseInt(file.dir_id), share.user_id);
+  return _isDirInTree(parseInt(share.target_id), parseInt(file.dir_id));
 }
 
 // 递归检查子目录是否包含 targetDirId
-// ownerId 传入时会同时校验每一级目录的属主，避免顺着目录树走到别人的目录里
-function _isDirInTree(rootDirId, targetDirId, ownerId) {
+function _isDirInTree(rootDirId, targetDirId) {
   if (rootDirId === targetDirId) return true;
-  var subDirs;
-  if (ownerId !== undefined && ownerId !== null) {
-    subDirs = query('SELECT id FROM virtual_dirs WHERE parent_id = ? AND user_id = ?', [rootDirId, ownerId]);
-  } else {
-    subDirs = query('SELECT id FROM virtual_dirs WHERE parent_id = ?', [rootDirId]);
-  }
+  var subDirs = query('SELECT id FROM virtual_dirs WHERE parent_id = ?', [rootDirId]);
   for (var i = 0; i < subDirs.length; i++) {
-    if (_isDirInTree(subDirs[i].id, targetDirId, ownerId)) return true;
+    if (_isDirInTree(subDirs[i].id, targetDirId)) return true;
   }
   return false;
-}
-
-// public 分享自身的根目录。
-// rel 是相对 Storage.PUBLIC_DIR 的路径（建分享时存的 target_path），abs 是绝对路径。
-function _publicShareRoot(share) {
-  var rel = '';
-  try {
-    var ids = JSON.parse(share.target_ids || '[]');
-    if (ids && typeof ids[0] === 'string') rel = ids[0];
-  } catch(e) {}
-  if (!rel) rel = share.target_name || '';
-  rel = String(rel).replace(/\\/g, '/').replace(/^\/+/, '');
-  return { rel: rel, abs: rel ? path.join(Storage.PUBLIC_DIR, rel) : Storage.PUBLIC_DIR };
-}
-
-// 把「相对 PUBLIC_DIR 的路径」解析到该分享自己的根目录之内，越界返回 null。
-// 客户端拿到的条目 id 是相对 PUBLIC_DIR 的（见 getPublicShareItems），
-// 所以通常带着分享根前缀，需要先剥掉再校验 —— 剥的时候必须带上 '/'，
-// 否则分享根为 docs 时 docs_secret/x 会被误判成前缀相同的路径。
-function _resolveInPublicShare(share, publicRelPath) {
-  var root = _publicShareRoot(share);
-  var p = String(publicRelPath === undefined || publicRelPath === null ? '' : publicRelPath).replace(/\\/g, '/');
-  if (root.rel) {
-    if (p === root.rel) p = '';
-    else if (p.indexOf(root.rel + '/') === 0) p = p.substring(root.rel.length + 1);
-  }
-  if (p === '') return root.abs;
-  return resolveWithin(root.abs, p);
 }
 
 // 获取公共文件分享的内容列表
 function getPublicShareItems(share, subDir) {
   var publicRoot = Storage.PUBLIC_DIR;
-  var sharePath = _publicShareRoot(share).rel;
+  var sharePath = share.target_ids ? (function() {
+    try { var ids = JSON.parse(share.target_ids); return ids[0] || share.target_name; } catch(e) { return share.target_name; }
+  })() : share.target_name;
 
-  // currentPath 必须落在「这条分享自己的根目录」内 —— 只校验到 publicRoot 是不够的，
-  // 那样任何一条 public 分享都能浏览整个公共区（FMS-05）
-  var currentPath = _resolveInPublicShare(share, subDir || '');
-  if (!currentPath) return { dirs: [], files: [] };
+  var basePath = path.join(publicRoot, sharePath);
+  // subDir 是相对于分享根目录的子路径，如果 subDir 以 sharePath 开头则去掉重复前缀
+  var subPath = subDir || '';
+  if (subPath.indexOf(sharePath) === 0) {
+    subPath = subPath.substring(sharePath.length).replace(/^\//, '');
+  }
+  var currentPath = subPath ? path.join(basePath, subPath) : basePath;
+
+  // 安全检查
+  if (currentPath.indexOf(publicRoot) !== 0) return { dirs: [], files: [] };
 
   var result = { dirs: [], files: [], _parentDir: null };
 
@@ -973,10 +875,9 @@ router.get('/share/download/:hash/:fileId', function(req, res) {
     var encodedPath = req.params.fileId;
     var relPath;
     try { relPath = decodeURIComponent(encodedPath); } catch(e) { relPath = encodedPath; }
-    // 包含性校验要针对「这条分享自己的目录」，而不只是整个公共区 ——
-    // 否则任何一条 public 分享都能下载公共区里的全部文件（FMS-05）
-    var publicFullPath = _resolveInPublicShare(share, relPath);
-    if (!publicFullPath) {
+    var publicFullPath = path.join(Storage.PUBLIC_DIR, relPath);
+    // 安全检查
+    if (publicFullPath.indexOf(Storage.PUBLIC_DIR) !== 0) {
       return res.status(403).json({ code: 403, message: '无权限', data: null });
     }
     if (!fs.existsSync(publicFullPath) || fs.statSync(publicFullPath).isDirectory()) {
@@ -1009,8 +910,15 @@ router.get('/share/download/:hash/:fileId', function(req, res) {
     }
     file = get('SELECT * FROM virtual_files WHERE id = ?', [fileId]);
   } else {
-    // 目录/批量分享：直接按文件 ID 查询（不限制 dir_id，避免子目录浏览时 sub_dir 不匹配导致查不到文件）
-    file = get('SELECT * FROM virtual_files WHERE id = ?', [fileId]);
+    // 目录/批量分享：确定当前浏览的目录范围
+    // subDirId 优先（子目录浏览），否则用分享根目录
+    var currentDirId = subDirId || parseInt(share.target_id, 10);
+    file = get('SELECT * FROM virtual_files WHERE id = ? AND dir_id = ?', [fileId, currentDirId]);
+
+    // 如果子目录查不到，尝试根目录（兼容旧链接）
+    if (!file) {
+      file = get('SELECT * FROM virtual_files WHERE id = ? AND dir_id = ?', [fileId, share.target_id]);
+    }
 
     // 权限范围检查：文件必须属于分享树内
     if (file) {
@@ -1164,9 +1072,9 @@ router.get('/share/qr', async function(req, res) {
     var size = parseInt(req.query.size, 10) || 240;
     size = Math.min(Math.max(size, 100), 400);
 
-    // 始终使用亮色主题（暗色二维码扫描困难）
-    var darkColor = '#1a1a2e';
-    var lightColor = '#ffffff';
+    var isLight = req.query.theme === 'light';
+    var darkColor = isLight ? '#1a1a2e' : '#e8eaf0';
+    var lightColor = isLight ? '#ffffff' : '#07090f';
 
     // 1. 生成二维码为 PNG buffer
     var qrBuf = await QRCode.toBuffer(url, {

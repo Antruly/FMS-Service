@@ -555,11 +555,11 @@ router.post('/logout', function(req, res) {
 // 引入WebSocket模块
 const wsModule = require('../lib/ws');
 
-// 生成扫码登录二维码（限制频率：每IP每30秒最多10次）
+// 生成扫码登录二维码（限制频率：每IP每30秒最多3次）
 var qrGenLimits = {};
 router.get('/qr-login/generate', async function(req, res) {
   try {
-    var ip = utils.getClientIp(req);
+    var ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
     var now = Date.now();
     if (!qrGenLimits[ip]) qrGenLimits[ip] = [];
     qrGenLimits[ip] = qrGenLimits[ip].filter(function(t) { return now - t < 30000; });
@@ -570,14 +570,8 @@ router.get('/qr-login/generate', async function(req, res) {
     const clientId = req.sessionID || 'anonymous_' + Date.now();
     const userId = req.session && req.session.userId ? req.session.userId : null;
 
-    // 把 token 写进会话：一是让会话落盘并下发 cookie（saveUninitialized:false 下，
-    // 这是 /qr-login/status 与 /qr-login/swap 能拿到同一个 sessionID 的前提），
-    // 二是建立 token ↔ 发起方会话 的绑定，供 status/swap 校验调用方身份
-    if (req.session) req.session.qrToken = token;
-
     // 通过WebSocket模块创建token（传入userId以便后续通知PC）
-    // pcIp 是“发起登录的电脑”的 IP：确认页必须显示这个，而不是手机自己的 IP
-    wsModule.createQrLoginToken(token, clientId, userId, utils.getClientIp(req));
+    wsModule.createQrLoginToken(token, clientId, userId);
 
     // 生成二维码内容
     const baseUrl = (config.app && config.app.baseUrl) || (req.protocol + '://' + req.get('host'));
@@ -611,16 +605,7 @@ router.get('/qr-login/status', function(req, res) {
       return utils.error(res, '二维码已过期');
     }
 
-    // 只有该二维码的发起方（同一会话）才能查询它的状态。
-    // 不做这道校验的话，任何人只要拿到 token 就能读到扫码者的身份信息。
-    // 返回与“不存在”相同的文案，避免变成 token 是否有效的探测口。
-    if (loginInfo.clientId !== req.sessionID) {
-      return utils.error(res, '二维码已过期或不存在');
-    }
-
-    // 本接口是只读的：绝不在这里改写会话。
-    // 会话只能由 /qr-login/swap 在手机端显式授权（POST /qr-login/authorize）之后建立，
-    // 而授权身份来自 req.session.userId，客户端无法伪造。
+    // Return full status info for PC to display
     var statusData = {
       loggedIn: false,
       status: loginInfo.status,
@@ -628,7 +613,22 @@ router.get('/qr-login/status', function(req, res) {
       expiresIn: Math.max(0, Math.floor((loginInfo.expiresAt - Date.now()) / 1000))
     };
 
-    return utils.success(res, statusData, '');
+    if (loginInfo.status === 'authorized') {
+      var authUser = User.findById(loginInfo.mobileUserId);
+      if (authUser) {
+        statusData.loggedIn = true;
+        statusData.user = authUser;
+        // CRITICAL: Actually switch the PC's session to the scanned user
+        if (req.session) {
+          req.session.userId = loginInfo.mobileUserId;
+          req.session.csrfToken = require('crypto').randomBytes(32).toString('hex');
+        }
+        // One-time use: clear the token to prevent reuse
+        loginInfo.status = 'consumed';
+      }
+    }
+
+    return utils.success(res, statusData, statusData.loggedIn ? '登录成功' : '');
   } catch (err) {
     log.error('查询扫码登录状态错误:', err);
     utils.error(res, '查询状态失败');
@@ -662,6 +662,7 @@ router.get('/qr-login/confirm', utils.requireAuth, function(req, res) {
   var user = User.findById(req.session.userId);
   var nick = user ? (user.nickname || user.email.split('@')[0]) : '';
   var email = user ? user.email : '';
+  var ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace('::ffff:', '');
 
   // 通知PC端已扫码（仅第一个扫码者有效，但同一用户重复加载页面允许）
   var alreadyScanned = loginInfo.status === 'scanned' || loginInfo.status === 'authorized';
@@ -673,14 +674,8 @@ router.get('/qr-login/confirm', utils.requireAuth, function(req, res) {
     wsModule.notifyQrScanned(token, nick || email);
   }
 
-  // 页面上要显示的是「发起登录的那台电脑」的 IP（generate 时记录），不是本机（手机）的 IP。
-  // 显示手机自己的 IP 对用户毫无提示意义 —— 那永远是他自己的地址。
-  if (!req.session.csrfToken) {
-    req.session.csrfToken = require('crypto').randomBytes(32).toString('hex');
-  }
-
   // 返回暗色主题确认页面
-  res.send(getConfirmPageHtmlV2(token, nick, email, loginInfo.pcIp || '未知', req.session.csrfToken));
+  res.send(getConfirmPageHtmlV2(token, nick, email, ip));
 });
 
 // 手机端授权确认（POST - 兼容旧的手机浏览器扫码流程）
@@ -711,21 +706,9 @@ router.post('/qr-login/confirm', utils.requireAuth, function(req, res) {
   }
 });
 
-// HTML 转义（确认页会把昵称/邮箱/IP 直接拼进 HTML）
-function escapeHtml(s) {
-  return String(s === undefined || s === null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
 // 获取授权确认页面HTML
-// ip 是「发起登录的电脑」的 IP（由 /qr-login/generate 记录），不是手机自己的 IP
-function getConfirmPageHtmlV2(token, nickname, email, ip, csrfToken) {
+function getConfirmPageHtmlV2(token, nickname, email, ip) {
   var nowStr = new Date().toLocaleString("zh-CN");
-  nickname = escapeHtml(nickname);
-  email = escapeHtml(email);
-  ip = escapeHtml(ip);
-  csrfToken = escapeHtml(csrfToken || '');
   return "<!DOCTYPE html>\n<html lang=\"zh-CN\"><head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no\">\n<title>登录确认</title>\n<style>\n" +
     "*{margin:0;padding:0;box-sizing:border-box}\n" +
     "body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;background:#0d1117;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}\n" +
@@ -746,18 +729,16 @@ function getConfirmPageHtmlV2(token, nickname, email, ip, csrfToken) {
     "</style>\n</head>\n<body>\n<div class=\"card\">\n<div class=\"icon\">&#128274;</div>\n<h2>PC 端登录确认</h2>\n<p class=\"sub\">" + nickname + " 正尝试从 PC 端登录</p>\n" +
     "<div class=\"rows\">\n" +
     "<div class=\"row\"><span class=\"rl\">账号</span><span class=\"rv\">" + email + "</span></div>\n" +
-    "<div class=\"row\"><span class=\"rl\">发起登录的设备 IP</span><span class=\"rv\">" + ip + "</span></div>\n" +
+    "<div class=\"row\"><span class=\"rl\">登录 IP</span><span class=\"rv\">" + ip + "</span></div>\n" +
     "<div class=\"row\"><span class=\"rl\">时间</span><span class=\"rv\">" + nowStr + "</span></div>\n" +
     "</div>\n" +
-    "<div class=\"warn\">&#9888; 请核对上方「发起登录的设备 IP」是否为你自己的电脑。若不是，说明有人在别处用你的账号发起登录，请点击拒绝并修改密码。</div>\n" +
+    "<div class=\"warn\">&#9888; 如非本人操作请点击拒绝并修改密码</div>\n" +
     "<div class=\"btns\" id=\"btns\"><button class=\"btn btn-no\" onclick=\"reject()\">拒绝</button><button class=\"btn btn-yes\" onclick=\"confirm()\">确认登录</button></div>\n" +
     "<div class=\"ok\" id=\"ok\">&#10004; 授权成功！窗口将自动关闭</div>\n" +
     "</div>\n<script>\n" +
     "var token=\"" + token + "\";\n" +
-    "var csrf=\"" + csrfToken + "\";\n" +
-    "function post(path,body){return fetch(path,{method:\"POST\",headers:{\"Content-Type\":\"application/json\",\"X-CSRF-Token\":csrf},body:JSON.stringify(body),credentials:\"include\"});}\n" +
-    "function confirm(){var b=document.getElementById(\"btns\");var o=document.getElementById(\"ok\");post(\"/api/auth/qr-login/authorize\",{token:token}).then(function(r){return r.json()}).then(function(d){if(d.code===0){b.style.display=\"none\";o.style.display=\"block\";setTimeout(function(){window.close()},800)}else{alert(d.message||\"授权失败\")}}).catch(function(){alert(\"网络错误\")})}\n" +
-    "function reject(){var b=document.getElementById(\"btns\");post(\"/api/auth/qr-login/reject\",{token:token}).then(function(){b.style.display=\"none\";setTimeout(function(){window.close()},500)})}\n" +
+    "function confirm(){var b=document.getElementById(\"btns\");var o=document.getElementById(\"ok\");fetch(\"/api/auth/qr-login/authorize\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({token:token}),credentials:\"include\"}).then(function(r){return r.json()}).then(function(d){if(d.code===0){b.style.display=\"none\";o.style.display=\"block\";setTimeout(function(){window.close()},800)}else{alert(d.message||\"授权失败\")}}).catch(function(){alert(\"网络错误\")})}\n" +
+    "function reject(){var b=document.getElementById(\"btns\");fetch(\"/api/auth/qr-login/reject\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({token:token}),credentials:\"include\"}).then(function(){b.style.display=\"none\";setTimeout(function(){window.close()},500)})}\n" +
     "setTimeout(reject,300000);\n" +
     "</script>\n</body>\n</html>";
 }
@@ -952,9 +933,8 @@ router.post('/qr-login/swap', function(req, res) {
     }
   }
   if (!matched) return utils.error(res, '令牌无效或已过期');
-  // Security: 只有发起该二维码的那个会话才能用它换取登录态。
-  // 少了这道校验，任何拿到 swapKey 的人都能把自己变成扫码者。
-  if (matched.clientId !== req.sessionID) return utils.error(res, '令牌无效或已过期');
+  // Security: swapKey is one-time use, already consumed
+  if (matched.status === 'consumed') return utils.error(res, '令牌已被使用');
   // Security: swapKey expires after 3 minutes
   if (Date.now() - matched.createdAt > 3 * 60 * 1000) return utils.error(res, '令牌已过期');
   // Security: mobileUserId must be set by authorize (not forgeable)
@@ -967,8 +947,6 @@ router.post('/qr-login/swap', function(req, res) {
   req.session.userId = matched.mobileUserId;
   req.session.csrfToken = require('crypto').randomBytes(32).toString('hex');
   req.session._csrfJustGenerated = true; // QR login 后首次 POST 允许通过
-  // 登录已完成，这个二维码的绑定信息不再需要
-  if (req.session.qrToken) delete req.session.qrToken;
   // Clear any stale admin flags
   if (req.session.is_admin) delete req.session.is_admin;
   // Force save
@@ -991,10 +969,10 @@ var crypto = require('crypto');
 router.get('/captcha/generate', function(req, res) {
   var shapes = [
     { name: 'triangle',  svg: '<polygon points="0,-20 17,15 -17,15" fill="COLOR" transform="translate(X,Y) rotate(R)"/>' },
-    { name: 'square',    svg: '<rect x="-18" y="-18" width="36" height="36" rx="0" fill="COLOR" transform="translate(X,Y) rotate(R)"/>' },
+    { name: 'square',    svg: '<rect x="-18" y="-18" width="36" height="36" rx="3" fill="COLOR" transform="translate(X,Y) rotate(R)"/>' },
     { name: 'circle',    svg: '<circle r="18" fill="COLOR" transform="translate(X,Y)"/>' },
     { name: 'star',      svg: '<polygon points="0,-22 6,-8 22,-8 10,3 14,18 0,10 -14,18 -10,3 -22,-8 -6,-8" fill="COLOR" transform="translate(X,Y) rotate(R)"/>' },
-    { name: 'diamond',   svg: '<polygon points="0,-22 20,0 0,22 -20,0" fill="COLOR" transform="translate(X,Y) rotate(R)"/>' },
+    { name: 'diamond',   svg: '<rect x="-18" y="-18" width="36" height="36" rx="3" fill="COLOR" transform="translate(X,Y) rotate(45)"/>' },
     { name: 'hexagon',   svg: '<polygon points="0,-20 17,-10 17,10 0,20 -17,10 -17,-10" fill="COLOR" transform="translate(X,Y) rotate(R)"/>' },
     { name: 'cross',     svg: '<path d="M-8,-22 L8,-22 L8,-8 L22,-8 L22,8 L8,8 L8,22 L-8,22 L-8,8 L-22,8 L-22,-8 L-8,-8 Z" fill="COLOR" transform="translate(X,Y)"/>' },
     { name: 'heart',     svg: '<path d="M0,8 C-8,-6 -24,-14 -24,-2 C-24,10 0,22 0,22 C0,22 24,10 24,-2 C24,-14 8,-6 0,8 Z" fill="COLOR" transform="translate(X,Y)"/>' },

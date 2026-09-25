@@ -693,56 +693,33 @@ function personalPutFile(resolved, subPath, res, req) {
   }
   if (!fileName) { res.status(400).end('Filename required'); return; }
 
-  // 检查 Overwrite 头：WebDAV 规范要求 Overwrite: F 时若文件已存在则返回 412
-  var overwrite = req.headers.overwrite;
-  if (overwrite === 'F') {
-    var existCheck = VirtualFile.listByDir(resolved.userId, dirId).find(function(f) { return f.name === fileName; });
-    if (existCheck && existCheck.size > 0) {
-      res.status(412).end('Precondition Failed');
-      return;
-    }
-  }
-
   log.debug('[WebDAV-PUT] upload target: fileName=' + fileName + ' dirId=' + dirId + ' userId=' + resolved.userId + ' subPath=' + (subPath||'(root)'));
 
   // 流式写入临时文件 + 增量计算 SHA256（避免 finish 后全量 fs.readFileSync）
   var tmpPath = path.join(tmpDir, 'webdav_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'));
   var ws = fs.createWriteStream(tmpPath);
   var putError = null;
-  var timedOut = false;
   var hash = crypto.createHash('sha256');
   var totalBytes = 0;
   req.on('data', function(chunk) { totalBytes += chunk.length; hash.update(chunk); });
-
-  // 请求超时保护：5分钟无数据则断开，避免连接挂起导致服务卡死
-  var timeout = setTimeout(function() {
-    timedOut = true;
-    putError = new Error('Upload timeout');
-    try { fs.unlinkSync(tmpPath); } catch(e) {}
-    req.destroy();
-    if (!res.headersSent) res.status(408).end('Upload timeout');
-  }, 300000);
-
-  ws.on('error', function(e) { clearTimeout(timeout); putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
-  req.on('error', function(e) { clearTimeout(timeout); putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
+  ws.on('error', function(e) { putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
+  req.on('error', function(e) { putError = e; try { fs.unlinkSync(tmpPath); } catch(e2) {} if (!res.headersSent) res.status(500).end(e.message); });
   req.pipe(ws);
 
   ws.on('finish', function() {
-    clearTimeout(timeout);
-    if (putError || timedOut) return;
+    if (putError) return;
     var mimeType = require('mime-types').lookup(fileName) || 'application/octet-stream';
     var fileHash = hash.digest('hex');
     try {
-      // 检查同名文件，记录旧文件信息（延迟删除：先写新文件成功后再删旧文件，避免写入失败时数据丢失）
+      // 检查同名文件
       var existing = VirtualFile.listByDir(resolved.userId, dirId).find(function(f) { return f.name === fileName; });
-      var oldFileId = null, oldFileSize = 0, oldFilePath = '';
       if (existing) {
         if (existing.size === 0) {
-          oldFilePath = existing.storage_path;
-          oldFileId = existing.id; // 标记删除
+          try { fs.unlinkSync(existing.storage_path); } catch(e) {}
+          require('../lib/db').run('DELETE FROM virtual_files WHERE id = ?', [existing.id]);
         } else {
-          oldFileId = existing.id;
-          oldFileSize = existing.size;
+          require('../lib/db').RecycleBin.moveFile(existing.id, resolved.userId);
+          require('../lib/db').User.updateUsedBytes(resolved.userId, -existing.size);
         }
       }
 
@@ -758,16 +735,6 @@ function personalPutFile(resolved, subPath, res, req) {
         var vfId2 = VirtualFile.createWithEncVersion(resolved.userId, dirId, fileName, totalBytes, mimeType, '', '', 1);
         if (vfId2) require('../lib/db').run('UPDATE virtual_files SET storage_id=? WHERE id=?', [existingFS.id, vfId2]);
         require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
-        // 新文件引用成功，安全删除旧文件
-        if (oldFileId) {
-          if (oldFileSize === 0) {
-            try { fs.unlinkSync(oldFilePath); } catch(e) {}
-            require('../lib/db').run('DELETE FROM virtual_files WHERE id = ?', [oldFileId]);
-          } else {
-            require('../lib/db').RecycleBin.moveFile(oldFileId, resolved.userId);
-            require('../lib/db').User.updateUsedBytes(resolved.userId, -oldFileSize);
-          }
-        }
         cacheInvalidate(resolved.userId, dirId);
         logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
         recordUploadTraffic(resolved.link, fileName, totalBytes, req);
@@ -795,16 +762,6 @@ function personalPutFile(resolved, subPath, res, req) {
       if (vfId) require('../lib/db').run('UPDATE virtual_files SET storage_id=? WHERE id=?', [storageId, vfId]);
 
       require('../lib/db').User.updateUsedBytes(resolved.userId, totalBytes);
-      // 新文件写入成功，安全删除旧文件
-      if (oldFileId) {
-        if (oldFileSize === 0) {
-          try { fs.unlinkSync(oldFilePath); } catch(e) {}
-          require('../lib/db').run('DELETE FROM virtual_files WHERE id = ?', [oldFileId]);
-        } else {
-          require('../lib/db').RecycleBin.moveFile(oldFileId, resolved.userId);
-          require('../lib/db').User.updateUsedBytes(resolved.userId, -oldFileSize);
-        }
-      }
       cacheInvalidate(resolved.userId, dirId);
       logWebDAV(req, resolved.link, 'upload', fileName, totalBytes, true);
       recordUploadTraffic(resolved.link, fileName, totalBytes, req);
@@ -1028,23 +985,6 @@ function personalCopy(resolved, subPath, destSubPath, req, res) {
     var df = dsd.find(function(d) { return d.name === destParts[j]; });
     if (!df) { res.status(409).end('Destination parent not found'); return; }
     destDirId = df.id;
-  }
-
-  // 检查目标位置是否已有同名文件
-  var destFiles = VirtualFile.listByDir(resolved.userId, destDirId);
-  var destConflict = destFiles.find(function(f) { return f.name === destName; });
-  var overwrite = req.headers.overwrite;
-  if (destConflict && overwrite === 'F') {
-    res.status(412).end('Destination exists');
-    return;
-  }
-  if (destConflict && destConflict.size > 0) {
-    // 覆盖前将旧文件移入回收站
-    require('../lib/db').RecycleBin.moveFile(destConflict.id, resolved.userId);
-    require('../lib/db').User.updateUsedBytes(resolved.userId, -destConflict.size);
-  } else if (destConflict && destConflict.size === 0) {
-    try { fs.unlinkSync(destConflict.storage_path); } catch(e) {}
-    require('../lib/db').run('DELETE FROM virtual_files WHERE id = ?', [destConflict.id]);
   }
 
   // 查找源文件
@@ -1530,10 +1470,7 @@ function copyRecursive(src, dest) {
 }
 
 // ==================== WebDAV Link 管理 API ====================
-// 本文件的接口都要用 req.user（下面多处用 req.user.id），所以用这个自带的中间件。
-// 原来写的是 require('./auth').requireAuth || 回退 —— 但 routes/auth.js 导出的是 Router，
-// .requireAuth 恒为 undefined，回退永远生效；留着那个引用只会让人误以为走的是另一条路径。
-var requireAuth = function(req, res, next) {
+var requireAuth = require('./auth').requireAuth || function(req, res, next) {
   if (!req.session || !req.session.userId) return res.status(401).json({ code: 401, message: '请先登录' });
   var User = require('../lib/db').User;
   req.user = User.findById(req.session.userId);
@@ -1609,11 +1546,7 @@ router.post('/api/webdav/links', requireAuth, function(req, res) {
   var targetPath = String(req.body.target_path || '').trim();
   var targetName = String(req.body.target_name || '').trim();
   var isDirectory = req.body.is_directory ? true : false;
-  // 新建链接默认要求认证（WebDAV 客户端用 Basic 认证）。
-  // 只有客户端显式传 require_auth:false 才建匿名链接 —— 原来默认 false，
-  // 等于"忘了传就生成一个任何人扫码即可读写文件的链接"。
-  // 注意：DB 里 require_auth 列的默认值不动，已存在的链接继续按旧值工作。
-  var needAuth = req.body.require_auth === undefined ? true : !!req.body.require_auth;
+  var requireAuth = req.body.require_auth ? true : false;
   var targetType = req.body.target_type || 'public';
   var expiresDays = parseInt(req.body.expires_days, 10) || 180;
   if (expiresDays > 365) expiresDays = 365;
@@ -1637,7 +1570,7 @@ router.post('/api/webdav/links', requireAuth, function(req, res) {
     isDirectory = isDirectory || stat.isDirectory();
   }
 
-  var result = WebDAVLink.create(req.user.id, targetPath, targetName, isDirectory, expiresDays, needAuth, targetType);
+  var result = WebDAVLink.create(req.user.id, targetPath, targetName, isDirectory, expiresDays, requireAuth, targetType);
 
   res.json({
     code: 0, message: '创建成功',

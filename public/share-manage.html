@@ -834,7 +834,7 @@ function showQr(id) {
 
   // 生成二维码（后台生成带Logo）
   var theme = document.documentElement.getAttribute('data-theme') || 'dark';
-  fetch('/api/qr?text=' + encodeURIComponent(url) + '&size=200&theme=light')
+  fetch('/api/qr?text=' + encodeURIComponent(url) + '&size=200&theme=' + theme)
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.code === 0 && d.data) document.getElementById('qrImg').src = d.data;

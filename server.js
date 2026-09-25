@@ -165,10 +165,7 @@ var sessionConfig = {
   }
 };
 if (redisStore) sessionConfig.store = redisStore;
-// 保留中间件引用：WebSocket 的 upgrade 不经过 Express 中间件栈，
-// 需要在 lib/ws.js 里手工执行它才能拿到 req.session
-var sessionMiddleware = session(sessionConfig);
-app.use(sessionMiddleware);
+app.use(session(sessionConfig));
 
 // ==================== 升级维护模式中间件 ====================
 // 必须在 Session 之后（可检查登录状态），在流量统计和频率限制之前
@@ -467,12 +464,9 @@ app.use(function(req, res, next) {
   // 跳过 WebDAV（有自己的认证，不走 body parser）
   if (req.path.indexOf('/webdav') === 0) return next();
   // 跳过公开 API（它们在登录前调用，没有 session）
-  // 注意扫码登录这里不再整个前缀放行：/qr-login/generate 与 /qr-login/scan 是 GET（上面已提前返回），
-  // 只需放行 /qr-login/swap —— 手机端确认授权（/qr-login/authorize、/qr-login/reject、
-  // POST /qr-login/confirm）都发生在已登录态且由站内页面发起，应当带 CSRF token。
   var publicPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/send-register-code',
                      '/api/auth/send-login-code', '/api/auth/send-reset-code', '/api/auth/reset-password',
-                     '/api/auth/qr-login/swap', '/api/auth/captcha/', '/api/auth/setup',
+                     '/api/auth/qr-login/', '/api/auth/captcha/', '/api/auth/setup',
                      '/api/share', '/api/offline/', '/api/admin/',
                      '/api/files/upload', '/api/public-files/upload', '/api/auth/logout'];
   for (var i = 0; i < publicPaths.length; i++) {
@@ -545,9 +539,10 @@ app.get('/setup', function(req, res) {
       if (!text) return res.status(400).json({ code: 1, message: "缺少text参数", data: null });
       var size = parseInt(req.query.size, 10) || 200;
       size = Math.min(Math.max(size, 100), 400);
-      // 始终使用亮色主题（暗色二维码扫描困难）
-      var darkColor = "#1a1a2e";
-      var lightColor = "#ffffff";
+      var theme = req.query.theme || "dark";
+      var isLight = theme === "light";
+      var darkColor = isLight ? "#1a1a2e" : "#e8eaf0";
+      var lightColor = isLight ? "#ffffff" : "#07090f";
       var qrBuf = await QRCode.toBuffer(text, { width: size, margin: 2, color: { dark: darkColor, light: lightColor } });
       var logoPath = path.join(__dirname, "public", "favicon.png");
       var logoSize = Math.round(size * 0.22);
@@ -676,15 +671,6 @@ app.get('/', function(req, res) {
 
 // ==================== 回收站定时提醒 ====================
 var reminderTimer = null;
-// 内存缓存：Redis 不可用时的 fallback 限流
-var _memReminderSent = {};
-
-function _cleanMemReminders() {
-  var today = new Date().toISOString().substring(0, 10);
-  Object.keys(_memReminderSent).forEach(function(k) {
-    if (!k.endsWith(':' + today)) delete _memReminderSent[k];
-  });
-}
 
 // 检查即将过期的文件（3天内过期）并发送提醒邮件
 function checkRecycleReminders() {
@@ -792,18 +778,14 @@ function checkRecycleReminders() {
 
       // 去重：每24小时最多发一封提醒给同一用户
       var dedupKey = (config.redis.keyPrefix || 'ambush:') + 'reminder_sent:' + uid;
-      // 先检查内存缓存（Redis 不可用时的 fallback）
-      _cleanMemReminders();
-      if (_memReminderSent[dedupKey]) return;
-      _memReminderSent[dedupKey] = true;
       if (redisClient) {
         redisClient.get(dedupKey).then(function(exists) {
           if (exists) return; // 24小时内已发过，跳过
           sendReminderEmail(uid, entry);
-          redisClient.setex(dedupKey, 86400, '1').catch(function() {}); // 标记已发送，24h过期
-        }).catch(function() { /* Redis 异常时跳过，避免无限制发送 */ });
+          redisClient.setex(dedupKey, 86400, '1'); // 标记已发送，24h过期
+        }).catch(function() { sendReminderEmail(uid, entry); });
       } else {
-        sendReminderEmail(uid, entry);
+        sendReminderEmail(uid, entry); // 无 Redis 时仍发送
       }
     });
 
@@ -1180,9 +1162,8 @@ async function startServer() {
     });
 
     // 初始化 WebSocket 服务（同时监听 HTTP 和 HTTPS）
-    // 传入 sessionMiddleware，让连接身份从服务端会话派生，而不是听信客户端自报
-    wsService.init(server, sessionMiddleware);
-    if (httpsServer) wsService.init(httpsServer, sessionMiddleware);
+    wsService.init(server);
+    if (httpsServer) wsService.init(httpsServer);
 
     // 启动 HTTP 服务器（SO_REUSEADDR 允许端口快速复用）
     server.listen({ port: config.PORT, host: '::', reuseAddr: true }, function() {

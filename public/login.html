@@ -1613,7 +1613,7 @@ body.login-page #mobile-floating-ball-corner { display: none !important; }
   function generateQrCode(container, text) {
     container.innerHTML = '';
     var theme = document.documentElement.getAttribute('data-theme') || 'dark';
-    fetch('/api/qr?text=' + encodeURIComponent(text) + '&size=200&theme=light')
+    fetch('/api/qr?text=' + encodeURIComponent(text) + '&size=200&theme=' + theme)
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.code === 0 && d.data) {
@@ -1854,28 +1854,6 @@ body.login-page #mobile-floating-ball-corner { display: none !important; }
   document.getElementById('btn-captcha-refresh').addEventListener('click', loadCaptcha);
   document.getElementById('captcha-overlay').addEventListener('click', function(e) { if (e.target === this) closeCaptchaModal(); });
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && document.getElementById('captcha-overlay').style.display === 'flex') closeCaptchaModal(); });
-
-  // Enter 键触发登录/注册
-  document.addEventListener('keydown', function(e) {
-    if (e.key !== 'Enter') return;
-    // 验证码弹窗打开时不处理
-    if (document.getElementById('captcha-overlay').style.display === 'flex') return;
-    // 根据当前显示的 tab 触发对应按钮
-    var loginForm = document.getElementById('login-form');
-    var registerForm = document.getElementById('register-form');
-    var isLogin = loginForm.classList.contains('active');
-    if (isLogin) {
-      var pwdMode = document.getElementById('login-mode-password');
-      var codeMode = document.getElementById('login-mode-code');
-      if (pwdMode.style.display !== 'none') {
-        document.getElementById('btn-password-login').click();
-      } else if (codeMode.style.display !== 'none') {
-        document.getElementById('btn-code-login').click();
-      }
-    } else if (registerForm.classList.contains('active')) {
-      document.getElementById('btn-register').click();
-    }
-  });
 
   // 恢复上次保存的用户名
   var savedUsername = localStorage.getItem('lastUsername');
@@ -2185,7 +2163,7 @@ body.login-page #mobile-floating-ball-corner { display: none !important; }
         linkEl.textContent = '📥 v'+d.data.version+' ('+Math.round(d.data.size/1024/1024)+'MB)';
         function gen() {
           var theme = document.documentElement.getAttribute('data-theme') || 'dark';
-          fetch('/api/qr?text=' + encodeURIComponent(fullUrl) + '&size=200&theme=light')
+          fetch('/api/qr?text=' + encodeURIComponent(fullUrl) + '&size=200&theme=' + theme)
             .then(function(r) { return r.json(); })
             .then(function(d) {
               if (d.code === 0 && d.data) {

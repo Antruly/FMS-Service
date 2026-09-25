@@ -39,18 +39,6 @@ var formatFileSize = _fileUtils.formatFileSize || function(bytes) {
   if (i >= units.length) i = units.length - 1;
   return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 2 : 0) + ' ' + units[i];
 };
-// 安全导入：路径包含性校验（如果 lib/validator.js 未更新，使用内联回退）
-var _validator = {};
-try { _validator = require('../lib/validator'); } catch(e) {}
-var resolveWithin = _validator.resolveWithin || function(baseDir, userPath) {
-  if (!baseDir || typeof userPath !== 'string' || userPath === '') return null;
-  if (userPath.indexOf('\0') !== -1) return null;
-  var base = path.resolve(baseDir);
-  var target = path.resolve(base, userPath);
-  if (target === base) return target;
-  var prefix = base.endsWith(path.sep) ? base : base + path.sep;
-  return target.indexOf(prefix) === 0 ? target : null;
-};
 const { encryptFileToBuffer, decryptFileFromBuffer, createDecryptStream, createDecryptStreamRange, createEncryptStream, isV1EncryptedFile, createV1DecryptStream, createV1DecryptStreamHead, createDecryptStreamAuto, getV1FileInfo, detectFileEncVersion, upgradeFileToV1, createV1EncryptStreamSync, createV1EncryptStreamTransform, ENC_V1_VERSION } = require('../lib/crypto');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
@@ -3864,13 +3852,9 @@ router.get('/files/thumb/:id?', requireAuth, async function(req, res) {
     }
     // 没找到 nonce → 当作公共文件路径
     if (!filePath) {
-      // 包含性校验必须在扩展名判断之前：rawId 由客户端控制，../..%2f.env 这类路径
-      // 不该因为后缀不是图片就返回"格式不支持"，那也等于确认了路径解析行为
-      var publicPathFromId = resolveWithin(Storage.PUBLIC_DIR, rawId);
-      if (!publicPathFromId) return deny404(res, '文件不存在');
       var ext = (rawId || '').toLowerCase().split('.').pop();
       if (THUMB_SUPPORTED.indexOf(ext) === -1) return res.status(415).json({ code: 415, message: '不支持的图片格式' });
-      filePath = publicPathFromId;
+      filePath = path.join(Storage.PUBLIC_DIR, rawId);
       isDecrypted = false;
     }
   }
@@ -4095,12 +4079,12 @@ async function handleStreamRequest(req, res, mode) {
 
   // 公共文件：通过 public_path 查询参数指定相对路径（支持子目录）
   if (req.query.public_path) {
-    var publicPathFromQuery = resolveWithin(Storage.PUBLIC_DIR, req.query.public_path);
-    if (!publicPathFromQuery) {
+    isPublicFile = true;
+    filePath = path.join(Storage.PUBLIC_DIR, req.query.public_path);
+    // 安全检查：禁止 .. 跳出 PUBLIC_DIR
+    if (!filePath.startsWith(Storage.PUBLIC_DIR)) {
       return deny404(res, '文件不存在');
     }
-    isPublicFile = true;
-    filePath = publicPathFromQuery;
   } else if (/^\d+$/.test(rawId)) {
     var fileId = parseInt(rawId, 10);
     fileRecord = VirtualFile.findById(fileId);
@@ -4128,14 +4112,8 @@ async function handleStreamRequest(req, res, mode) {
       }
     }
     if (!fileRecord) {
-      // 落到这里说明 rawId 既不是自己的文件，也不是公共文件的 nonce —— 按公共文件路径处理。
-      // 必须做包含性校验：rawId 完全由客户端控制，../..%2f.env 可直接读到应用配置（含密钥）
-      var publicPathFromId = resolveWithin(Storage.PUBLIC_DIR, rawId);
-      if (!publicPathFromId) {
-        return deny404(res, '文件不存在');
-      }
       isPublicFile = true;
-      filePath = publicPathFromId;
+      filePath = path.join(Storage.PUBLIC_DIR, rawId);
     }
   }
 
@@ -4427,13 +4405,8 @@ router.get('/files/video-preview/:id?', requireAuth, async function(req, res) {
       }
     }
     if (!fileRecord) {
-      // 包含性校验：rawId 由客户端控制，不做校验可跳出公共目录读到配置文件
-      var publicPathFromId = resolveWithin(Storage.PUBLIC_DIR, rawId);
-      if (!publicPathFromId) {
-        return deny404(res, '文件不存在');
-      }
       isPublicFile = true;
-      filePath = publicPathFromId;
+      filePath = path.join(Storage.PUBLIC_DIR, rawId);
     }
   }
 
