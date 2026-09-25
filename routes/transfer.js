@@ -591,15 +591,63 @@ router.post('/transfers/:id/retry', requireAuth, function(req, res) {
 
 // ==================== DELETE /api/transfers/clear — 清空历史记录 ====================
 // 必须在 /:id 之前定义，否则 "clear" 会被 :id 参数捕获
+// ?force=1 时同时取消并删除进行中的传输
 router.delete('/transfers/clear', requireAuth, function(req, res) {
   var user = req.user;
-  // 删除已完成/失败/取消的传输记录
-  var cleared = db.TransferTask.cleanup(0); // days=0: clear all completed/error/cancelled now
-  // 同时清理下载日志
-  try {
-    db.run("DELETE FROM download_logs WHERE user_id = ? AND status != 'started'", [user.id]);
-  } catch(e) {}
-  res.json({ code: 0, message: '已清空 ' + cleared + ' 条历史记录', data: { cleared: cleared } });
+  var force = req.query.force === '1';
+  var totalCleared = 0;
+
+  // force 模式：取消所有进行中的上传任务
+  if (force) {
+    var activeTasks = db.TransferTask.listByUser(user.id, 'uploading', 1000, 0)
+      .concat(db.TransferTask.listByUser(user.id, 'pending', 1000, 0));
+    activeTasks.forEach(function(t) {
+      try {
+        // 清理 Redis session
+        var TransferSession = require('../lib/redis').TransferSession;
+        TransferSession.deleteUpload(t.transfer_id);
+      } catch(e) {}
+      try {
+        // 清理 chunk 目录
+        var chunkDir = path.join(__dirname, '..', 'data', 'chunks', String(t.transfer_id));
+        fs.rmSync(chunkDir, { recursive: true, force: true });
+      } catch(e) {}
+      // 删除 chunks 记录 + 任务记录
+      try { db.TransferChunk.deleteByTask(t.id); } catch(e) {}
+      try { db.TransferTask.delete(t.id); } catch(e) {}
+    });
+    totalCleared += activeTasks.length;
+    // force 模式：清理所有下载日志（包括进行中的）
+    try {
+      var dlResult = db.run("DELETE FROM download_logs WHERE user_id = ?", [user.id]);
+      totalCleared += (dlResult && dlResult.changes) || 0;
+    } catch(e) {}
+  }
+
+  // 删除已完成/失败/取消的传输记录（全部，不限天数）
+  // 不能直接用 cleanup(0) — 0 是 falsy，内部 days||7 会退化到 7 天
+  var completedTasks = db.TransferTask.listByUser(user.id, 'completed', 10000, 0)
+    .concat(db.TransferTask.listByUser(user.id, 'error', 10000, 0))
+    .concat(db.TransferTask.listByUser(user.id, 'cancelled', 10000, 0));
+  completedTasks.forEach(function(t) {
+    try {
+      var chunkDir = path.join(__dirname, '..', 'data', 'chunks', String(t.transfer_id));
+      fs.rmSync(chunkDir, { recursive: true, force: true });
+    } catch(e) {}
+    try { db.TransferChunk.deleteByTask(t.id); } catch(e) {}
+    try { db.TransferTask.delete(t.id); } catch(e) {}
+  });
+  totalCleared += completedTasks.length;
+
+  // 非 force 模式：只清理非活跃下载日志
+  if (!force) {
+    try {
+      var dlResult = db.run("DELETE FROM download_logs WHERE user_id = ? AND status != 'started'", [user.id]);
+      totalCleared += (dlResult && dlResult.changes) || 0;
+    } catch(e) {}
+  }
+
+  res.json({ code: 0, message: '已清空 ' + totalCleared + ' 条记录', data: { cleared: totalCleared } });
 });
 
 // ==================== DELETE /api/transfers/:id — 删除传输记录 ====================
@@ -607,6 +655,20 @@ router.delete('/transfers/:id', requireAuth, function(req, res) {
   var rawId = String(req.params.id);
   // 格式: "u_123" (upload) 或 "d_123" (download)
   if (rawId.startsWith('u_')) {
+    // 支持 u_123 (服务端) 和 u_local_xxx (客户端本地) 两种格式
+    var isLocal = rawId.startsWith('u_local_');
+    if (isLocal) {
+      // 本地传输：清理 Redis session
+      var transferId = rawId.substring(8); // 去掉 'u_local_'
+      try {
+        var TransferSession = require('../lib/redis').TransferSession;
+        TransferSession.deleteUpload(transferId);
+      } catch(e) {}
+      // 清理可能的 chunk 目录
+      var localChunkDir = path.join(__dirname, '..', 'data', 'chunks', transferId);
+      try { fs.rmSync(localChunkDir, { recursive: true, force: true }); } catch(e) {}
+      return res.json({ code: 0, message: '已删除' });
+    }
     var taskId = parseInt(rawId.substring(2), 10) || 0;
     var task = db.TransferTask.findById(taskId);
     if (!task || task.user_id !== req.user.id) return res.json({ code: 2, message: '任务不存在', data: null });

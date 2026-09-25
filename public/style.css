@@ -7423,7 +7423,10 @@ noscript {
 /* ==================== Transfer List — 传输列表 ==================== */
 .transfer-filters {
   display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+  justify-content: space-between; align-items: center;
 }
+.transfer-filters-left { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.transfer-filters-right { display: flex; gap: 8px; align-items: center; }
 .transfer-filter-btn {
   padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border);
   background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px;
@@ -7432,6 +7435,14 @@ noscript {
 .transfer-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
 .transfer-filter-btn.active {
   background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.transfer-clear-all-btn {
+  padding: 6px 16px; border-radius: 20px; border: 1px solid #e74c3c;
+  background: transparent; color: #e74c3c; font-size: 12px;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
+.transfer-clear-all-btn:hover {
+  background: #e74c3c; color: #fff;
 }
 .transfer-list { display: flex; flex-direction: column; gap: 8px; }
 .transfer-item {
