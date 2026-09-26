@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>端到端加密的私有文件管理服务</strong><br><sub>v1.2.2 — 安全加固：扫码登录接管 / 路径穿越 / 分享越权修复</sub>
+  <strong>端到端加密的私有文件管理服务</strong><br><sub>v1.2.3 — 安全加固：App 日志鉴权 / 升级包 zip-slip / 离线下载 SSRF / 日志注入 / 随机源</sub>
 </p>
 
 <p align="center">

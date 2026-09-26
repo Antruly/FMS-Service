@@ -18,7 +18,7 @@
 const { test, expect } = require('@playwright/test');
 const { ApiHelper } = require('../helpers/api-helper');
 
-const BASE_URL = 'http://127.0.0.1:88';
+const BASE_URL = process.env.FMS_BASE_URL || 'http://127.0.0.1:88';
 
 // ==================== 测试套件 1: 登录 API ====================
 test.describe('认证 - 登录', () => {

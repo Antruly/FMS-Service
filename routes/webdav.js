@@ -9,6 +9,9 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+// 路径包含性校验（path.sep 感知）。原先各处的 `str.indexOf(base) === 0` 前缀比较
+// 会让兄弟目录（如 base_dir_evil）绕过，统一收敛到这里。
+var resolveWithin = require('../lib/validator').resolveWithin;
 
 // ==================== 原始 HTTP 数据拦截（诊断用，自动写入文件） ====================
 var RAW_LOG_ENABLED = (process.env.WEBDAV_RAW_LOG || '0') === '1';
@@ -275,9 +278,11 @@ function resolvePublicWebDAV(link, subPath, req, res) {
     if (!authOk) return null;
   }
   var Storage = require('../lib/db').Storage;
-  var baseDir = path.join(Storage.PUBLIC_DIR, link.target_path);
-  var fullPath = subPath ? path.join(baseDir, subPath) : baseDir;
-  if (fullPath.indexOf(Storage.PUBLIC_DIR) !== 0) { res.status(403).end('Forbidden'); return null; }
+  // target_path 为空代表"公开根目录"：旧的 path.join(PUBLIC_DIR, '') / (…, '/') 都等于 PUBLIC_DIR，
+  // 而 resolveWithin 对空串返回 null，所以这里必须特判回退，否则根目录分享的 WebDAV 直接 403。
+  var baseDir = link.target_path ? resolveWithin(Storage.PUBLIC_DIR, link.target_path) : Storage.PUBLIC_DIR;
+  var fullPath = baseDir ? (subPath ? resolveWithin(baseDir, subPath) : baseDir) : null;
+  if (!fullPath) { res.status(403).end('Forbidden'); return null; }
   require('../lib/db').WebDAVLink.touchAccess(link.id);
   return { link: link, fullPath: fullPath, baseDir: baseDir, isPersonal: false };
 }
@@ -1417,10 +1422,12 @@ router.all('/webdav/:token/*', function(req, res, next) {
   log.debug('[MOVE-PUBLIC] ===== 公共目录 MOVE 开始 =====');
   log.debug('[MOVE-PUBLIC] baseDir: ' + resolved.baseDir);
   log.debug('[MOVE-PUBLIC] fullPath (源): ' + resolved.fullPath);
-  var destPath = path.join(resolved.baseDir, decodeURIComponent(destMatch[1]));
+  var destRaw = decodeURIComponent(destMatch[1]);
+  // 空目标路径沿用旧语义（等于 baseDir 自身），非空才做包含性校验
+  var destPath = destRaw ? resolveWithin(resolved.baseDir, destRaw) : resolved.baseDir;
   log.debug('[MOVE-PUBLIC] destPath (目标): ' + destPath);
 
-  if (destPath.indexOf(resolved.baseDir) !== 0) { log.debug('[MOVE-PUBLIC] 路径穿越拦截'); res.status(403).end('Forbidden'); return; }
+  if (!destPath) { log.debug('[MOVE-PUBLIC] 路径穿越拦截'); res.status(403).end('Forbidden'); return; }
   if (!fs.existsSync(resolved.fullPath)) { log.debug('[MOVE-PUBLIC] 源不存在: ' + resolved.fullPath); res.status(404).end('Not found'); return; }
   log.debug('[MOVE-PUBLIC] 源文件存在: ' + resolved.fullPath + ' (size=' + fs.statSync(resolved.fullPath).size + ')');
 
@@ -1487,9 +1494,9 @@ function handleCopy(req, res) {
   // 目标路径直接构建（可能尚不存在）
   var baseDir = resolved.baseDir;
   var fullPath = resolved.fullPath;
-  var destPath = destSubPath ? path.join(baseDir, destSubPath) : baseDir;
+  var destPath = destSubPath ? resolveWithin(baseDir, destSubPath) : baseDir;
   // 安全检查
-  if (destPath.indexOf(baseDir) !== 0) { res.status(403).end('Forbidden'); return; }
+  if (!destPath) { res.status(403).end('Forbidden'); return; }
 
   if (resolved.isPersonal) { personalCopy(resolved, subPath, destSubPath, req, res); return; }
 

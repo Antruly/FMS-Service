@@ -53,6 +53,9 @@ function readCookie(envKey, stateFile) {
 
 const COOKIE_A = readCookie('FMS_SEC_COOKIE_A', path.join(__dirname, '..', '.auth', 'sec-a.json'));
 const COOKIE_B = readCookie('FMS_SEC_COOKIE_B', path.join(__dirname, '..', '.auth', 'sec-b.json'));
+// 管理员会话：FMS-10 的写入上限（靠 /api/admin/app-logs 数行）与 FMS-14 的 order
+// 注入（/api/logs/actions 是 requireAdmin）都需要它。没有就 skip，不假装通过。
+const COOKIE_ADMIN = readCookie('FMS_SEC_COOKIE_ADMIN', path.join(__dirname, '..', '.auth', 'sec-admin.json'));
 
 function cookieToStorageState(cookieHeader) {
   const eq = cookieHeader.indexOf('=');
@@ -89,8 +92,8 @@ async function call(ctx, method, url, data, opts) {
 }
 
 // ==================== 夹具：两个账号各自的目录树 ====================
-let A, B;
-const cleanup = { dirs: [], shares: [] };
+let A, B, ADMIN;
+const cleanup = { dirs: [], shares: [], offline: [], webdav: [], publicFiles: [] };
 
 /** 取某个账号的第 n 个夹具目录 id */
 function dirOf(who, n) {
@@ -99,6 +102,7 @@ function dirOf(who, n) {
 }
 
 test.beforeAll(async () => {
+  if (COOKIE_ADMIN) ADMIN = await apiAs(COOKIE_ADMIN);
   if (!COOKIE_A || !COOKIE_B) return;
   A = await apiAs(COOKIE_A);
   B = await apiAs(COOKIE_B);
@@ -114,6 +118,14 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  for (const o of cleanup.offline) {
+    try { await call(o.ctx, 'DELETE', '/api/offline/' + o.id); } catch (e) {}
+  }
+  for (const w of cleanup.webdav) {
+    try {
+      await w.ctx.delete('/api/webdav/links/' + w.token, { headers: { 'X-CSRF-Token': w.ctx._csrf } });
+    } catch (e) {}
+  }
   for (const s of cleanup.shares) {
     try { await call(s.ctx, 'DELETE', '/api/share/' + s.id); } catch (e) {}
   }
@@ -122,6 +134,7 @@ test.afterAll(async () => {
   }
   if (A) await A.dispose();
   if (B) await B.dispose();
+  if (ADMIN) await ADMIN.dispose();
 });
 
 // ==================== FMS-01/02：扫码登录接管 / WS 身份伪造 ====================
@@ -360,5 +373,373 @@ test.describe('FMS-09 扫码确认页', () => {
 
     const noCsrf = await call(A, 'POST', '/api/auth/qr-login/authorize', { token: gen.data.token }, { noCsrf: true });
     expect(noCsrf.status, '无 CSRF 令牌的 authorize 被放行了').toBe(403);
+  });
+});
+
+// ============================================================================
+// 第二批（1.2.3）：FMS-10/11/12/13/14/15/17 + FMS-03 同族路径校验收敛
+// ============================================================================
+
+// ==================== FMS-17：免鉴权泄露服务器绝对路径 ====================
+test.describe('FMS-17 调试路由不得泄露服务器绝对路径', () => {
+  test('已删除的 /api/admin/version/test 匿名访问返回 404', async () => {
+    const anon = await request.newContext({ baseURL: BASE_URL });
+    const r = await anon.get('/api/admin/version/test');
+    expect(r.status(), '调试路由仍然存在').toBe(404);
+    const text = await r.text();
+    expect(text, '响应里出现了绝对路径').not.toMatch(/[A-Za-z]:[\\/]/);
+    await anon.dispose();
+  });
+});
+
+// ==================== FMS-10：匿名 App 日志上报 ====================
+test.describe('FMS-10 匿名 App 日志上报必须被拒绝', () => {
+  test('匿名单条上报被拒', async () => {
+    const anon = await request.newContext({ baseURL: BASE_URL });
+    const r = await anon.post('/api/auth/app-log', {
+      data: { level: 'info', tag: 'sec', message: 'anon-single-' + Date.now() },
+    });
+    const b = await r.json();
+    expect(b.code, '匿名日志上报竟然被接受了').toBe(401);
+    await anon.dispose();
+  });
+
+  test('匿名批量上报被拒', async () => {
+    const anon = await request.newContext({ baseURL: BASE_URL });
+    const r = await anon.post('/api/auth/app-log', {
+      data: { logs: [{ level: 'error', tag: 'sec', message: 'anon-batch-' + Date.now() }] },
+    });
+    const b = await r.json();
+    expect(b.code, '匿名批量上报竟然被接受了').toBe(401);
+    await anon.dispose();
+  });
+});
+
+// ==================== FMS-10 上限（需管理员会话） ====================
+test.describe('FMS-10 单次上报的写入上限', () => {
+  test.skip(!COOKIE_ADMIN, '未提供 FMS_SEC_COOKIE_ADMIN / tests/.auth/sec-admin.json');
+
+  test('一次塞 600 条只会落 50 条，且如实告知被截断', async () => {
+    const tag = 'sec-cap-' + Date.now().toString(36);
+    const logs = [];
+    for (let i = 0; i < 600; i++) logs.push({ level: 'info', tag: tag, message: 'cap-' + i });
+
+    const r = await call(ADMIN, 'POST', '/api/auth/app-log', { logs });
+    expect(r.body.code, '超量上报应当返回截断提示 code=1').toBe(1);
+    expect(r.body.data.written, '实际写入量不是上限 50').toBe(50);
+
+    // 用管理端接口反查落库行数（tag 唯一，只可能是这次写的）
+    // 注意：auth 路由挂在 /api/auth 下，所以这条是 /api/auth/admin/app-logs
+    const listed = await call(ADMIN, 'GET', '/api/auth/admin/app-logs?limit=200&offset=0');
+    const mine = (listed.body.data.logs || []).filter((l) => l.tag === tag);
+    expect(mine.length, '实际落库行数超过上限: ' + mine.length).toBeLessThanOrEqual(50);
+    expect(mine.length, '一条都没落库').toBeGreaterThan(0);
+  });
+
+  test('超长 message / 非法 level / 非法 device-id 都被规范化', async () => {
+    const r = await call(ADMIN, 'POST', '/api/auth/app-log', {
+      level: 'NOT-A-LEVEL',
+      tag: 'x'.repeat(500),
+      message: 'y'.repeat(10000),
+      metadata: { nested: true },
+    });
+    expect(r.body.code, '合法请求被拒了: ' + r.body.message).toBe(0);
+    expect(r.body.data.written, '对象型 metadata 让整行写失败了').toBe(1);
+  });
+});
+
+// ==================== FMS-11：升级包解包 zip-slip ====================
+test.describe('FMS-11 升级包解包不得写出目标目录', () => {
+  test('含 ../../ 等越界条目的 zip 解包后不产生目录外文件', async () => {
+    // eslint-disable-next-line global-require
+    const AdmZip = require('adm-zip');
+    const os = require('os');
+    // extractRelease 原先没有导出，这次为可测性补上了导出（lib/upgrade.js）
+    // eslint-disable-next-line global-require
+    const upgrade = require('../../lib/upgrade');
+
+    const base = path.join(os.tmpdir(), 'fms-zipslip-spec-' + Date.now());
+    const extractDir = path.join(base, 'extract');
+    fs.mkdirSync(extractDir, { recursive: true });
+
+    const markRel = 'pwned-spec-' + Date.now() + '.txt';
+    const zipPath = path.join(base, 'evil.zip');
+    const zip = new AdmZip();
+    zip.addFile('good.txt', Buffer.from('legit'));
+    // 第一个条目必须是普通名（否则顶层目录剥离逻辑会介入）。adm-zip 的 addFile 会把
+    // ../../ 净化掉（utils.zipnamefix），所以要在 writeZip 之前直接改写 entryName。
+    const evil = [
+      { name: '../../' + markRel, data: 'escaped' },
+      { name: '../evil_dir/', data: '' },
+      { name: '/abs-' + markRel, data: 'abs' },
+      { name: 'sub/ok.txt', data: 'nested-ok' },
+    ];
+    evil.forEach((e) => zip.addFile(e.name, Buffer.from(e.data)));
+    const entries = zip.getEntries();
+    for (let i = 1; i < entries.length; i++) entries[i].entryName = evil[i - 1].name;
+    zip.writeZip(zipPath);
+
+    try {
+      await upgrade.extractRelease(zipPath, extractDir);
+
+      // 合法条目必须还在（否则是"修坏了"而不是"修好了"）
+      expect(fs.existsSync(path.join(extractDir, 'good.txt')), '合法顶层文件没解出来').toBe(true);
+      expect(fs.existsSync(path.join(extractDir, 'sub', 'ok.txt')), '合法嵌套文件没解出来').toBe(true);
+
+      // extractDir 之外不得有新文件
+      expect(fs.existsSync(path.join(base, '..', markRel)), '越界条目写出了目标目录: ' + markRel).toBe(false);
+      expect(fs.existsSync(path.join('/abs-' + markRel)), '绝对路径条目被写出了').toBe(false);
+      expect(fs.existsSync(path.join(extractDir, 'evil_dir')), '越界目录条目被创建了').toBe(false);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
+// ==================== FMS-15：分享码 / WebDAV token 的随机源 ====================
+// 说明：黑盒无法证明"用的是 CSPRNG"，这里只能钉死形状（长度/字符集）防回归，
+// 真正的证明在代码审查（lib/db.js 的 randomString + crypto.randomBytes）。
+const SHARE_CHARS_RE = /^[A-HJ-NP-Za-km-z2-9]+$/;   // 与 lib/db.js 的 SHARE_CHARS 同集（去 I/O/l/0/1）
+
+test.describe('FMS-15 分享码与 WebDAV token 的形状', () => {
+  test.skip(!COOKIE_A, '未提供 FMS_SEC_COOKIE_A / tests/.auth/sec-a.json');
+
+  test('分享码 8 位、提取码 4 位，且都落在 55 字符集内', async () => {
+    if (!dirOf('A')) test.skip(true, '夹具不足');
+    const r = await call(A, 'POST', '/api/share', {
+      target_type: 'dir', target_id: dirOf('A'), expires_days: 1, password: true,
+    });
+    expect(r.body.code, '建分享失败: ' + r.body.message).toBe(0);
+    cleanup.shares.push({ ctx: A, id: r.body.data.id });
+
+    const hash = r.body.data.hash;
+    expect(hash, '分享码长度不是 8: ' + hash).toHaveLength(8);
+    expect(hash, '分享码字符越界: ' + hash).toMatch(SHARE_CHARS_RE);
+
+    const code = r.body.data.extraction_code;
+    if (code) {
+      expect(code, '提取码长度不是 4: ' + code).toHaveLength(4);
+      expect(code, '提取码字符越界: ' + code).toMatch(SHARE_CHARS_RE);
+    }
+  });
+
+  test('WebDAV token 为 32 位且落在同一字符集内', async () => {
+    if (!dirOf('A')) test.skip(true, '夹具不足');
+    const r = await call(A, 'POST', '/api/webdav/links', {
+      target_path: String(dirOf('A')), target_name: 'sec', target_type: 'personal', expires_days: 1,
+    });
+    expect(r.body.code, '建 WebDAV 链接失败: ' + r.body.message).toBe(0);
+    cleanup.webdav.push({ ctx: A, token: r.body.data.token });
+    expect(r.body.data.token, 'token 长度不是 32').toHaveLength(32);
+    expect(r.body.data.token, 'token 字符越界').toMatch(SHARE_CHARS_RE);
+  });
+});
+
+// ==================== FMS-14：操作日志 order 参数注入 ====================
+test.describe('FMS-14 操作日志的 order 参数不得拼进 SQL', () => {
+  test.skip(!COOKIE_ADMIN, '未提供 FMS_SEC_COOKIE_ADMIN / tests/.auth/sec-admin.json');
+
+  test('order 传注入载荷时降级为 DESC，不报 500', async () => {
+    // 必须和 DESC 基线逐行比对，不能只断言"200 + 是数组"。
+    // 原因：旧代码把 order 裸拼进 SQL，载荷会让语句变成语法错误，而 lib/db.js 的 query()
+    // 把异常吞掉返回 []（实测旧服务：基线 DESC 返回 [94,93,92,91,90]，注入载荷返回 0 行）。
+    // 只断言 not-500 的话，'静默空数组' 这种失败形态照样通过，用例就不成立了。
+    // 改成比对基线后：静默空数组 ≠ 非空基线 → 旧代码必挂；新代码降级为 DESC → 与基线全等。
+    const base = await call(ADMIN, 'GET', '/api/logs/actions?limit=5&order=DESC');
+    expect(base.body.code, 'DESC 基线都取不到，用例前提不成立: ' + base.body.message).toBe(0);
+    const baseRows = base.body.data.data;
+    expect(Array.isArray(baseRows)).toBe(true);
+    expect(baseRows.length, '库里没有操作日志，比对基线无意义').toBeGreaterThan(0);
+    const baseIds = baseRows.map((x) => x.id);
+
+    const payloads = [
+      'id DESC#',             // 注释截断
+      'id; DROP TABLE users', // 堆叠语句
+      '(SELECT 1)',           // 子查询
+      'RANDOM()',             // 非白名单函数
+    ];
+    for (const p of payloads) {
+      const r = await call(ADMIN, 'GET', '/api/logs/actions?limit=5&order=' + encodeURIComponent(p));
+      expect(r.status, '注入载荷把接口打成了 ' + r.status + ': ' + p).toBe(200);
+      expect(r.body.code, '注入载荷导致失败: ' + p + ' → ' + r.body.message).toBe(0);
+      // 该接口的行数组在 data.data（不是 data.logs）
+      expect(Array.isArray(r.body.data.data), '返回结构被破坏: ' + p).toBe(true);
+      expect(r.body.data.data.map((x) => x.id),
+        '注入载荷改变了结果集（载荷真的进了 SQL）: ' + p).toEqual(baseIds);
+    }
+  });
+
+  test('正常 order=ASC 仍然生效（白名单没把合法值也挡掉）', async () => {
+    const asc = await call(ADMIN, 'GET', '/api/logs/actions?limit=2&order=ASC');
+    expect(asc.body.code, '合法的 order=ASC 被误伤: ' + asc.body.message).toBe(0);
+    expect(Array.isArray(asc.body.data.data)).toBe(true);
+  });
+});
+
+// ==================== FMS-12/13：离线下载 SSRF ====================
+// 这些用例把服务端指向环回地址。注意服务自身就跑在 127.0.0.1:88，
+// 所以夹具端口刻意避开 88，用的是 18898（未放行）与 18899（允许清单内）。
+const LOOPBACK_BLOCKED_PORT = 18898;
+const LOOPBACK_ALLOWED_PORT = 18899;
+const BLOCKED_HINT = '不允许访问';
+
+/** 建任务 → 启动 → 轮询到终态；创建阶段就被拒时返回 { createRejected: true } */
+async function runOffline(ctx, url, maxWaitMs) {
+  const created = await call(ctx, 'POST', '/api/offline/create', { url });
+  if (created.body.code !== 0) return { createRejected: true, create: created };
+  const id = created.body.data.id;
+  cleanup.offline.push({ ctx: ctx, id: id });
+  await call(ctx, 'POST', '/api/offline/' + id + '/start');
+  const deadline = Date.now() + (maxWaitMs || 15000);
+  let detail = null;
+  while (Date.now() < deadline) {
+    const r = await call(ctx, 'GET', '/api/offline/' + id);
+    detail = r.body.data;
+    if (detail && ['failed', 'completed', 'cancelled'].indexOf(detail.status) >= 0) break;
+    await new Promise((res) => setTimeout(res, 400));
+  }
+  return { createRejected: false, id: id, task: detail };
+}
+
+test.describe('FMS-12 离线下载不得访问内网 / 环回 / 保留地址', () => {
+  test.skip(!COOKIE_A, '未提供 FMS_SEC_COOKIE_A / tests/.auth/sec-a.json');
+
+  test('IP 字面量形态的内网目标在创建阶段就被拒', async () => {
+    const targets = [
+      'http://127.0.0.1:' + LOOPBACK_BLOCKED_PORT + '/api/version/latest',
+      'http://10.0.0.1/x',
+      'http://192.168.1.1/x',
+      'http://172.16.0.1/x',
+      'http://169.254.169.254/latest/meta-data/',                     // 云元数据
+      'http://[::1]:' + LOOPBACK_BLOCKED_PORT + '/',
+      'http://[::ffff:7f00:1]:' + LOOPBACK_BLOCKED_PORT + '/',         // IPv4-mapped 十六进制形态
+      'http://0.0.0.0/x',
+    ];
+    for (const u of targets) {
+      const r = await call(A, 'POST', '/api/offline/create', { url: u });
+      expect(r.body.code, '内网目标未被拦截: ' + u).not.toBe(0);
+      expect(r.body.message, '拦截文案不对: ' + u).toContain(BLOCKED_HINT);
+    }
+  });
+
+  test('域名解析到环回时在连接期被拒（证明 lookup 钩子生效）', async () => {
+    // localhost 不是 IP 字面量 → 创建阶段不做 DNS、放行；拦截必须发生在连接期。
+    // 这条同时覆盖"IP 字面量会绕过 lookup 钩子"的反面：字面量走上一条预检，域名走 lookup。
+    const r = await runOffline(A, 'http://localhost:' + LOOPBACK_BLOCKED_PORT + '/api/version/latest');
+    expect(r.createRejected, 'localhost 在创建阶段就被拒了（预检不该做 DNS）').toBe(false);
+    expect(r.task, '任务没有到终态').toBeTruthy();
+    expect(r.task.status, '解析到环回却没被拦: ' + JSON.stringify(r.task)).toBe('failed');
+    expect(r.task.error || '', '失败原因不是拦截文案: ' + r.task.error).toContain(BLOCKED_HINT);
+  });
+});
+
+test.describe('FMS-13 重定向的每一跳都必须重新校验', () => {
+  test.skip(!COOKIE_A, '未提供 FMS_SEC_COOKIE_A / tests/.auth/sec-a.json');
+  test.skip(!process.env.FMS_SEC_OFFLINE_ALLOWED_HOST,
+    '需要服务端以 OFFLINE_DOWNLOAD_ALLOWED_HOSTS=127.0.0.1:' + LOOPBACK_ALLOWED_PORT + ' 启动');
+
+  test('第一跳在允许清单内、第二跳落到清单外 → 被拒', async () => {
+    // eslint-disable-next-line global-require
+    const http = require('http');
+    const srv = http.createServer((rq, rs) => {
+      if (rq.url === '/redirect') {
+        rs.writeHead(302, { Location: 'http://127.0.0.1:' + LOOPBACK_BLOCKED_PORT + '/api/version/latest' });
+        return rs.end();
+      }
+      rs.writeHead(200, { 'Content-Type': 'text/plain' });
+      return rs.end('ok-' + Date.now());
+    });
+    await new Promise((res) => srv.listen(LOOPBACK_ALLOWED_PORT, '127.0.0.1', res));
+    try {
+      const r = await runOffline(A, 'http://127.0.0.1:' + LOOPBACK_ALLOWED_PORT + '/redirect');
+      expect(r.createRejected, '允许清单内的目标在创建阶段就被拒了').toBe(false);
+      expect(r.task, '任务没有到终态').toBeTruthy();
+      expect(r.task.status, '重定向第二跳没被拦: ' + JSON.stringify(r.task)).toBe('failed');
+      expect(r.task.error || '', '失败原因不是拦截文案: ' + r.task.error).toContain(BLOCKED_HINT);
+    } finally {
+      await new Promise((res) => srv.close(res));
+    }
+  });
+
+  test('允许清单内的目标本身可以下载成功（证明是按规则拦，不是一刀切）', async () => {
+    // eslint-disable-next-line global-require
+    const http = require('http');
+    const srv = http.createServer((rq, rs) => {
+      rs.writeHead(200, { 'Content-Type': 'text/plain' });
+      rs.end('allowlisted-ok');
+    });
+    await new Promise((res) => srv.listen(LOOPBACK_ALLOWED_PORT, '127.0.0.1', res));
+    try {
+      const r = await runOffline(A, 'http://127.0.0.1:' + LOOPBACK_ALLOWED_PORT + '/ok.txt');
+      expect(r.task, '任务没有到终态').toBeTruthy();
+      expect(r.task.status, '允许清单内的目标被误伤: ' + JSON.stringify(r.task)).toBe('completed');
+      if (r.task.file_id) cleanup.publicFiles.push({ ctx: A, id: r.task.file_id });
+    } finally {
+      await new Promise((res) => srv.close(res));
+    }
+  });
+});
+
+// ==================== FMS-03 同族：路径包含性（前缀兄弟目录） ====================
+test.describe('路径包含性不得被前缀兄弟目录绕过', () => {
+  test('WebDAV MOVE 的 Destination 指向兄弟目录 → 403', async () => {
+    if (!COOKIE_A) test.skip(true, '未提供 FMS_SEC_COOKIE_A');
+    // 造一个公共目录链接，baseDir = files/download/<target>。
+    // Destination 用 `<baseDir 的上一级>/<target>_evil/x`：
+    // 旧写法 destPath.indexOf(baseDir) === 0 会放行（字符串前缀相同），新写法拒绝。
+    const target = 'tmp';   // files/download 下已存在
+    const created = await call(A, 'POST', '/api/webdav/links', {
+      target_path: target, target_name: 'sec', target_type: 'public',
+      expires_days: 1, require_auth: false,
+    });
+    expect(created.body.code, '建公共 WebDAV 链接失败: ' + created.body.message).toBe(0);
+    const token = created.body.data.token;
+    cleanup.webdav.push({ ctx: A, token: token });
+
+    // 源文件刻意不存在：即使校验被改回去，MOVE 也会先 404，
+    // 不会真的把任何东西搬出夹具范围（用例本身不具破坏性）。
+    // 因此断言 403 才能把"修好了"和"改回去了"区分开。
+    const mv = await A.fetch('/webdav/' + token + '/no-such-source.txt', {
+      method: 'MOVE',
+      headers: { Destination: BASE_URL + '/webdav/' + token + '/../' + target + '_evil/pwn.txt' },
+    });
+    expect(mv.status(), '兄弟目录目标没有被拒绝（旧写法会放行 → 404）').toBe(403);
+  });
+
+  test('合法子路径仍能正常浏览（公共 WebDAV 根 PROPFIND 不为 403）', async () => {
+    if (!COOKIE_A) test.skip(true, '未提供 FMS_SEC_COOKIE_A');
+    const created = await call(A, 'POST', '/api/webdav/links', {
+      target_path: 'tmp', target_name: 'sec', target_type: 'public',
+      expires_days: 1, require_auth: false,
+    });
+    expect(created.body.code, '建公共 WebDAV 链接失败: ' + created.body.message).toBe(0);
+    const token = created.body.data.token;
+    cleanup.webdav.push({ ctx: A, token: token });
+
+    const anon = await request.newContext({ baseURL: BASE_URL });
+    // subPath 为空 → 走 baseDir 分支，不能被 resolveWithin 的空串返回 null 误伤
+    const r = await anon.fetch('/webdav/' + token + '/', { method: 'PROPFIND', headers: { Depth: '1' } });
+    expect(r.status(), '根目录 PROPFIND 被误伤成 403').not.toBe(403);
+    await anon.dispose();
+  });
+
+  test('resolveWithin 的判定与真实包含性一致（含兄弟目录）', () => {
+    // eslint-disable-next-line global-require
+    const resolveWithin = require('../../lib/validator').resolveWithin;
+    const root = path.resolve(__dirname, '..', '..', 'files', 'download');
+    const sep = path.sep;
+
+    // 兄弟目录：字符串前缀相同，但真实不在 root 内 → 必须拒绝
+    expect(resolveWithin(root, '..' + sep + 'download_evil' + sep + 'x'), '兄弟目录被放行了').toBeNull();
+    expect(resolveWithin(root, '..' + sep + '..' + sep + 'x'), '上跳两级被放行了').toBeNull();
+    expect(resolveWithin(root, '.' + sep + '..' + sep + 'x'), '绕一圈的上跳被放行了').toBeNull();
+    // 绝对路径与 NUL 一律拒绝
+    expect(resolveWithin(root, path.resolve(sep, 'etc', 'passwd'))).toBeNull();
+    expect(resolveWithin(root, 'a' + String.fromCharCode(0) + 'b')).toBeNull();
+    expect(resolveWithin(root, '')).toBeNull();
+    // 正常子路径照常放行
+    expect(resolveWithin(root, 'sub' + sep + 'ok.txt')).toBe(path.join(root, 'sub', 'ok.txt'));
+    expect(resolveWithin(root, 'sub' + sep + '..' + sep + 'ok.txt')).toBe(path.join(root, 'ok.txt'));
+    expect(resolveWithin(root, '.')).toBe(root);
   });
 });

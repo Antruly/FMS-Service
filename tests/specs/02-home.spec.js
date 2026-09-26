@@ -17,7 +17,7 @@
 const { test, expect } = require('@playwright/test');
 const { ApiHelper } = require('../helpers/api-helper');
 
-const BASE_URL = 'http://127.0.0.1:88';
+const BASE_URL = process.env.FMS_BASE_URL || 'http://127.0.0.1:88';
 
 /**
  * Parse Set-Cookie header string and set cookies in browser context.

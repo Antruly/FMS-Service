@@ -15,7 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-const BASE_URL = 'http://127.0.0.1:88';
+const BASE_URL = process.env.FMS_BASE_URL || 'http://127.0.0.1:88';
 const TEST_USER = 'test_e2e@fileservice.test';
 const TEST_PASS = 'Test123456';
 
@@ -29,7 +29,7 @@ async function login(page) {
   await page.waitForTimeout(2000);
   // 检查是否登录成功（跳转到主页）
   const url = page.url();
-  return url.includes('home.html') || url.includes('127.0.0.1:88/') && !url.includes('login');
+  return url.includes('home.html') || url.includes(BASE_URL + '/') && !url.includes('login');
 }
 
 test.describe('存储V2 - 秒传预检 API', () => {
@@ -166,16 +166,17 @@ test.describe('设备管理', () => {
 
 test.describe('App 日志', () => {
 
-  test('TC-SV16: 日志上报 API 可访问（无需登录）', async ({ request }) => {
+  // FMS-10：这条路径原先匿名可写且无上限，等于让任何人往数据库里灌日志。
+  // 已改为必须登录 —— 匿名请求现在拿 code 401（服务端封装统一走 HTTP 200 + code 字段）。
+  test('TC-SV16: 匿名日志上报必须被拒绝', async ({ request }) => {
     const res = await request.post(BASE_URL + '/api/auth/app-log', {
       data: { level: 'info', tag: 'test', message: 'playwright test log' }
     });
-    expect(res.status()).toBe(200);
     const data = await res.json();
-    expect(data.code).toBe(0);
+    expect(data.code, '匿名日志上报竟然被接受了').toBe(401);
   });
 
-  test('TC-SV17: 日志上报支持批量', async ({ request }) => {
+  test('TC-SV17: 匿名批量上报同样必须被拒绝', async ({ request }) => {
     const res = await request.post(BASE_URL + '/api/auth/app-log', {
       data: {
         logs: [
@@ -184,9 +185,8 @@ test.describe('App 日志', () => {
         ]
       }
     });
-    expect(res.status()).toBe(200);
     const data = await res.json();
-    expect(data.code).toBe(0);
+    expect(data.code, '匿名批量上报竟然被接受了').toBe(401);
   });
 
   test('TC-SV18: 管理员查看日志 API 可访问', async ({ request }) => {

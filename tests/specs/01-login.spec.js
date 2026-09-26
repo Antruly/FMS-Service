@@ -17,7 +17,7 @@
  */
 const { test, expect } = require('@playwright/test');
 
-const BASE_URL = 'http://127.0.0.1:88';
+const BASE_URL = process.env.FMS_BASE_URL || 'http://127.0.0.1:88';
 
 // ==================== 测试套件 1: 页面渲染 ====================
 test.describe('登录页面 - 页面渲染', () => {
@@ -334,7 +334,7 @@ test.describe('登录页面 - 安全特性', () => {
 
   test('TC28: API 响应应包含 X-CSRF-Token 头', async ({ request }) => {
     // Note: This is tested at the API level
-    const response = await request.post('http://127.0.0.1:88/api/auth/login', {
+    const response = await request.post(BASE_URL + '/api/auth/login', {
       data: { email: 'test@test.com', password: 'test123' },
     });
     // May or may not have CSRF token depending on auth state

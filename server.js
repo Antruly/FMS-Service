@@ -473,6 +473,9 @@ app.use(function(req, res, next) {
   var publicPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/send-register-code',
                      '/api/auth/send-login-code', '/api/auth/send-reset-code', '/api/auth/reset-password',
                      '/api/auth/qr-login/swap', '/api/auth/captcha/', '/api/auth/setup',
+                     // App 日志上报：移动端在登录后持续上报，App 侧不会先取 CSRF token，
+                     // 不放行的话这条路径登录后反而会 403（该接口自身已要求登录）
+                     '/api/auth/app-log',
                      '/api/share', '/api/offline/', '/api/admin/',
                      '/api/files/upload', '/api/public-files/upload', '/api/auth/logout'];
   for (var i = 0; i < publicPaths.length; i++) {

@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-const BASE = 'http://127.0.0.1:88';
+const BASE = process.env.FMS_BASE_URL || 'http://127.0.0.1:88';
 const TEST_USER = 'test_e2e@fileservice.test';
 const TEST_PASS = 'Test123456';
 
@@ -336,17 +336,19 @@ test.describe('5-版本检查', () => {
 // ==================== 6. App 日志系统 ====================
 test.describe('6-App 日志系统', () => {
 
-  test('TC-F23: 单条日志上报', async ({ request }) => {
+  // FMS-10：这三条原先走的是无会话的 apiPost，等于在验证"匿名可写"。
+  // 修复后匿名一律拿 code 401；已登录态下的单条/批量/空日志覆盖移到
+  // 11-security-regression.spec.js（那里能拿到预置会话）。
+  test('TC-F23: 匿名单条日志上报被拒绝', async ({ request }) => {
     const res = await apiPost(request, '/api/auth/app-log', {
       level: 'info',
       tag: 'test',
       message: 'E2E test log message ' + Date.now()
     });
-    expect(res.status).toBe(200);
-    expect(res.data.code).toBe(0);
+    expect(res.data.code, '匿名日志上报竟然被接受了').toBe(401);
   });
 
-  test('TC-F24: 批量日志上报', async ({ request }) => {
+  test('TC-F24: 匿名批量日志上报被拒绝', async ({ request }) => {
     const res = await apiPost(request, '/api/auth/app-log', {
       logs: [
         { level: 'debug', tag: 'test', message: 'batch log 1' },
@@ -354,15 +356,14 @@ test.describe('6-App 日志系统', () => {
         { level: 'error', tag: 'test', message: 'batch log 3', metadata: 'error context' }
       ]
     });
-    expect(res.status).toBe(200);
-    expect(res.data.code).toBe(0);
+    expect(res.data.code, '匿名批量日志上报竟然被接受了').toBe(401);
   });
 
-  test('TC-F25: 空日志不报错', async ({ request }) => {
+  test('TC-F25: 匿名空日志同样被拒绝', async ({ request }) => {
     const res = await apiPost(request, '/api/auth/app-log', {
       level: 'info', tag: 'test', message: ''
     });
-    expect(res.status).toBe(200);
+    expect(res.data.code, '匿名空日志上报竟然被接受了').toBe(401);
   });
 });
 

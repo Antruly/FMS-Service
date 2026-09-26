@@ -1087,38 +1087,99 @@ router.post('/captcha/verify', function(req, res) {
 });
 
 // ==================== App 日志上报 ====================
-// POST /api/auth/app-log  移动端日志上报
-router.post('/app-log', function(req, res) {
-  var deviceId = (req.headers['x-device-id'] || '').substring(0, 64);
-  var userId = req.session && req.session.userId ? req.session.userId : 0;
-  var logs = req.body.logs || [];
-  var level = req.body.level || 'info';
-  var tag = req.body.tag || 'app';
-  var message = req.body.message || '';
-  var metadata = req.body.metadata || '';
+// POST /api/auth/app-log  移动端日志上报（需登录）
+// 安全上限：lib/db.js 的 db.run 是同步 sql.js（每行还额外 saveDatabase + last_insert_rowid），
+// 实测 2 万行 ≈ 2 秒纯同步阻塞。没有条数上限时，一个 10MB 请求（body 上限见 server.js）
+// 可以塞进几十万行，等于让整个 HTTP 服务冻结几十秒。所以这里必须自己钉死单请求写入量。
+var APP_LOG_MAX_BATCH = 50;        // 单请求最多条数
+var APP_LOG_MAX_MESSAGE = 2048;    // 单条 message 最大字符数
+var APP_LOG_MAX_METADATA = 8192;   // 单条 metadata 最大字符数
+var APP_LOG_MAX_TAG = 64;          // 单条 tag 最大字符数
+var APP_LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'];
+// device_id 是客户端自报值，做格式规范化而不做必填（必填没有安全收益，
+// 却会打断既有调用方）。不合规的值归一化为空串，避免任意字符串长期留存
+var APP_LOG_DEVICE_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 
+function appLogStr(v, max) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') { try { v = JSON.stringify(v); } catch (e) { v = ''; } }
+  else if (typeof v !== 'string') v = String(v);
+  return v.length > max ? v.slice(0, max) : v;
+}
+function appLogLevel(v) {
+  var s = (typeof v === 'string' ? v : '').toLowerCase();
+  return APP_LOG_LEVELS.indexOf(s) >= 0 ? s : 'info';
+}
+function appLogDevice(v) {
+  var s = (typeof v === 'string' ? v : '').trim();
+  return APP_LOG_DEVICE_RE.test(s) ? s : '';
+}
+
+router.post('/app-log', utils.requireAuth, function(req, res) {
+  var body = (req.body && typeof req.body === 'object') ? req.body : {};
+  var deviceId = appLogDevice(req.headers['x-device-id'] || '');
+  var userId = req.session.userId;    // 已鉴权，不再退化成 0
+
+  // 归一化成统一的记录列表，同时施加条数上限
+  var entries = [];
+  var truncated = false;
+  if (Array.isArray(body.logs) && body.logs.length > 0) {
+    if (body.logs.length > APP_LOG_MAX_BATCH) truncated = true;
+    var n = Math.min(body.logs.length, APP_LOG_MAX_BATCH);
+    for (var i = 0; i < n; i++) {
+      var l = body.logs[i];
+      if (!l || typeof l !== 'object') continue;
+      entries.push({
+        level: appLogLevel(l.level),
+        tag: appLogStr(l.tag || 'app', APP_LOG_MAX_TAG),
+        message: appLogStr(l.message, APP_LOG_MAX_MESSAGE),
+        // 强制字符串化：对象型 metadata 直接传给 sql.js 会抛异常、整行静默丢失
+        metadata: appLogStr(l.metadata, APP_LOG_MAX_METADATA)
+      });
+    }
+  } else if (body.message) {
+    entries.push({
+      level: appLogLevel(body.level),
+      tag: appLogStr(body.tag || 'app', APP_LOG_MAX_TAG),
+      message: appLogStr(body.message, APP_LOG_MAX_MESSAGE),
+      metadata: appLogStr(body.metadata, APP_LOG_MAX_METADATA)
+    });
+  }
+
+  var written = 0, failed = 0;
   try {
     var db = require('../lib/db');
-    // 支持批量日志
-    if (Array.isArray(logs) && logs.length > 0) {
-      logs.forEach(function(log) {
-        db.run('INSERT INTO app_logs (user_id, device_id, level, tag, message, metadata) VALUES (?, ?, ?, ?, ?, ?)',
-          [userId, deviceId, log.level || 'info', log.tag || 'app', log.message || '', log.metadata || '']);
-      });
-    } else if (message) {
-      db.run('INSERT INTO app_logs (user_id, device_id, level, tag, message, metadata) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, deviceId, level, tag, message, typeof metadata === 'object' ? JSON.stringify(metadata) : metadata]);
+    for (var k = 0; k < entries.length; k++) {
+      var e = entries[k];
+      var r = db.run('INSERT INTO app_logs (user_id, device_id, level, tag, message, metadata) VALUES (?, ?, ?, ?, ?, ?)',
+        [userId, deviceId, e.level, e.tag, e.message, e.metadata]);
+      if (r && r.changes > 0) written++; else failed++;
     }
-  } catch(e) {
-    // 静默失败，不影响用户体验
+  } catch(err) {
+    failed++;
+    log.warn('[AppLog] 写入异常: ' + ((err && err.message) || err));
   }
-  res.json({ code: 0, message: 'ok' });
+
+  // 不再一律 code:0 —— 全失败要能被看见。空请求仍返回 code:0（保持既有语义）
+  if (entries.length > 0 && written === 0) {
+    return res.status(500).json({ code: 500, message: '日志写入失败', data: null });
+  }
+  if (truncated) {
+    return res.json({ code: 1, message: '单次上报超过 ' + APP_LOG_MAX_BATCH + ' 条，已截断',
+                      data: { written: written, failed: failed } });
+  }
+  res.json({ code: 0, message: 'ok', data: { written: written, failed: failed } });
 });
 
 // GET /api/admin/app-logs  查看App日志（管理员）
 router.get('/admin/app-logs', utils.requireAuth, function(req, res) {
-  var user = req.user;
-  if (!user.is_admin) return res.status(403).json({ code: 403, message: '需要管理员权限' });
+  // 原先这里读 req.user —— 那个字段只有各路由文件自己的 requireAdmin 才会赋值，
+  // auth.js 没有这个中间件，所以本接口一直是 500（TypeError: undefined.is_admin），
+  // App 日志在管理端根本读不出来。改为直接从会话查库，并补齐管理员判定。
+  var user = User.findById(req.session.userId);
+  if (!user) return utils.error(res, '请先登录', 401);
+  if (!user.is_active) return utils.error(res, '账号已被禁用', 403);
+  if (!user.is_admin) return utils.error(res, '权限不足，仅管理员可访问', 403);
   var limit = parseInt(req.query.limit, 10) || 50;
   var offset = parseInt(req.query.offset, 10) || 0;
   var userId = parseInt(req.query.user_id, 10) || 0;
