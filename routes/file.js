@@ -51,6 +51,25 @@ var resolveWithin = _validator.resolveWithin || function(baseDir, userPath) {
   var prefix = base.endsWith(path.sep) ? base : base + path.sep;
   return target.indexOf(prefix) === 0 ? target : null;
 };
+// 公共目录下的相对路径解析。
+// 原先各处是 `path.resolve(publicRoot, rel)` + `startsWith(publicRoot)`，缺 path.sep，
+// 兄弟目录（public_evil）能绕过。这里统一走 resolveWithin，并保留旧语义：
+//   - 空值 → publicRoot 自身（旧写法 path.resolve(root,'') === root，是放行的）
+//   - 绝对路径 /foo → 拒绝（旧写法也拒绝，因为解析结果不带 root 前缀）
+function resolveInPublic(relPath) {
+  var s = (relPath === null || relPath === undefined) ? '' : String(relPath);
+  if (s === '') return Storage.PUBLIC_DIR;
+  return resolveWithin(Storage.PUBLIC_DIR, s);
+}
+
+// 安全导入：离线下载地址校验（SSRF 防护）
+// 刻意不给内联回退 —— 校验模块缺失时必须失败关闭（见 offlineGuardMissing），
+// 一个回退实现会让防护在"部分升级"的部署上原地失效
+var isBlockedIpLiteral = _validator.isBlockedIpLiteral || null;
+var createGuardedLookup = _validator.createGuardedLookup || null;
+var parseHostAllowlist = _validator.parseHostAllowlist || null;
+var isHostAllowlisted = _validator.isHostAllowlisted || null;
+var BLOCKED_TARGET_MESSAGE = _validator.BLOCKED_TARGET_MESSAGE || '目标地址不允许访问';
 const { encryptFileToBuffer, decryptFileFromBuffer, createDecryptStream, createDecryptStreamRange, createEncryptStream, isV1EncryptedFile, createV1DecryptStream, createV1DecryptStreamHead, createDecryptStreamAuto, getV1FileInfo, detectFileEncVersion, upgradeFileToV1, createV1EncryptStreamSync, createV1EncryptStreamTransform, ENC_V1_VERSION } = require('../lib/crypto');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
@@ -2000,8 +2019,8 @@ router.get('/public-files/list', requireAuth, function(req, res) {
 
   // 安全检查：禁止 .. 跳出 publicRoot
   try {
-    targetDir = path.resolve(publicRoot, relPath);
-    if (!targetDir.startsWith(publicRoot)) {
+    targetDir = resolveInPublic(relPath);
+    if (!targetDir) {
       return res.json({ code: 1, message: '非法路径', data: { dirs: [], files: [] } });
     }
   } catch (e) {
@@ -2080,8 +2099,8 @@ router.post('/public-files/upload', requireAdmin, function(req, res) {
     var publicRoot = Storage.PUBLIC_DIR;
     var targetDir;
     try {
-      targetDir = path.resolve(publicRoot, relPath);
-      if (!targetDir.startsWith(publicRoot)) {
+      targetDir = resolveInPublic(relPath);
+      if (!targetDir) {
         return res.json({ code: 1, message: '非法路径', data: null });
       }
     } catch (e) {
@@ -2133,8 +2152,8 @@ router.get('/public-files/download', requireAuth, function(req, res) {
   var filePath;
 
   try {
-    filePath = path.resolve(publicRoot, relPath);
-    if (!filePath.startsWith(publicRoot)) {
+    filePath = resolveInPublic(relPath);
+    if (!filePath) {
       return deny403(res, '非法路径');
     }
   } catch (e) {
@@ -2172,15 +2191,16 @@ router.post('/public-files/rename', requireAdmin, function(req, res) {
   var oldPath, newPath, parentDir;
 
   try {
-    oldPath = path.resolve(publicRoot, relPath);
+    oldPath = resolveInPublic(relPath);
     var parentRel = '';
     var slashIdx = relPath.lastIndexOf('/');
     if (slashIdx >= 0) {
       parentRel = relPath.substring(0, slashIdx);
     }
-    parentDir = parentRel ? path.resolve(publicRoot, parentRel) : publicRoot;
-    newPath = path.join(parentDir, newName);
-    if (!oldPath.startsWith(publicRoot) || !newPath.startsWith(publicRoot)) {
+    parentDir = parentRel ? resolveInPublic(parentRel) : publicRoot;
+    // newName 已过 validateFileName，只有 parentRel 未受约束，所以对拼好的相对路径整体校验
+    newPath = parentDir ? resolveWithin(publicRoot, path.join(parentRel, newName)) : null;
+    if (!oldPath || !parentDir || !newPath) {
       return res.json({ code: 1, message: '非法路径', data: null });
     }
   } catch (e) {
@@ -2216,8 +2236,8 @@ router.post('/public-dirs', requireAdmin, function(req, res) {
   var newDirPath;
 
   try {
-    newDirPath = path.resolve(publicRoot, relPath ? relPath + '/' + name : name);
-    if (!newDirPath.startsWith(publicRoot)) {
+    newDirPath = resolveInPublic(relPath ? relPath + '/' + name : name);
+    if (!newDirPath) {
       return res.json({ code: 1, message: '非法路径', data: null });
     }
   } catch (e) {
@@ -2254,15 +2274,16 @@ router.post('/public-dirs/rename', requireAdmin, function(req, res) {
   var oldPath, newPath, parentDir;
 
   try {
-    oldPath = path.resolve(publicRoot, relPath);
+    oldPath = resolveInPublic(relPath);
     var parentRel = '';
     var slashIdx = relPath.lastIndexOf('/');
     if (slashIdx >= 0) {
       parentRel = relPath.substring(0, slashIdx);
     }
-    parentDir = parentRel ? path.resolve(publicRoot, parentRel) : publicRoot;
-    newPath = path.join(parentDir, newName);
-    if (!oldPath.startsWith(publicRoot) || !newPath.startsWith(publicRoot)) {
+    parentDir = parentRel ? resolveInPublic(parentRel) : publicRoot;
+    // newName 已过 validateDirName，只有 parentRel 未受约束，所以对拼好的相对路径整体校验
+    newPath = parentDir ? resolveWithin(publicRoot, path.join(parentRel, newName)) : null;
+    if (!oldPath || !parentDir || !newPath) {
       return res.json({ code: 1, message: '非法路径', data: null });
     }
   } catch (e) {
@@ -2293,8 +2314,8 @@ router.delete('/public-files', requireAdmin, function(req, res) {
   var filePath;
 
   try {
-    filePath = path.resolve(publicRoot, relPath);
-    if (!filePath.startsWith(publicRoot)) return deny403(res, '非法路径');
+    filePath = resolveInPublic(relPath);
+    if (!filePath) return deny403(res, '非法路径');
   } catch (e) {
     return deny404(res, '文件不存在');
   }
@@ -2347,11 +2368,11 @@ router.post('/public-files/move', requireAdmin, function(req, res) {
   var oldPath, newPath;
 
   try {
-    oldPath = path.resolve(publicRoot, relPath);
-    if (!oldPath.startsWith(publicRoot)) return res.json({ code: 1, message: '非法源路径', data: null });
+    oldPath = resolveInPublic(relPath);
+    if (!oldPath) return res.json({ code: 1, message: '非法源路径', data: null });
     var fileName = path.basename(oldPath);
-    newPath = path.resolve(publicRoot, targetRelPath ? targetRelPath + '/' + fileName : fileName);
-    if (!newPath.startsWith(publicRoot)) return res.json({ code: 1, message: '非法目标路径', data: null });
+    newPath = resolveInPublic(targetRelPath ? targetRelPath + '/' + fileName : fileName);
+    if (!newPath) return res.json({ code: 1, message: '非法目标路径', data: null });
   } catch (e) {
     return res.json({ code: 1, message: '路径无效', data: null });
   }
@@ -2376,11 +2397,11 @@ router.post('/public-dirs/move', requireAdmin, function(req, res) {
   var oldPath, newPath;
 
   try {
-    oldPath = path.resolve(publicRoot, relPath);
-    if (!oldPath.startsWith(publicRoot)) return res.json({ code: 1, message: '非法源路径', data: null });
+    oldPath = resolveInPublic(relPath);
+    if (!oldPath) return res.json({ code: 1, message: '非法源路径', data: null });
     var dirName = path.basename(oldPath);
-    newPath = path.resolve(publicRoot, targetRelPath ? targetRelPath + '/' + dirName : dirName);
-    if (!newPath.startsWith(publicRoot)) return res.json({ code: 1, message: '非法目标路径', data: null });
+    newPath = resolveInPublic(targetRelPath ? targetRelPath + '/' + dirName : dirName);
+    if (!newPath) return res.json({ code: 1, message: '非法目标路径', data: null });
   } catch (e) {
     return res.json({ code: 1, message: '路径无效', data: null });
   }
@@ -2401,8 +2422,8 @@ router.delete('/public-dirs', requireAdmin, function(req, res) {
   var dirPath;
 
   try {
-    dirPath = path.resolve(publicRoot, relPath);
-    if (!dirPath.startsWith(publicRoot)) return deny403(res, '非法路径');
+    dirPath = resolveInPublic(relPath);
+    if (!dirPath) return deny403(res, '非法路径');
   } catch (e) {
     return deny404(res, '目录不存在');
   }
@@ -3253,6 +3274,18 @@ router.post('/offline/create', requireAuth, function(req, res) {
     return res.json({ code: 1, message: '仅支持 HTTP/HTTPS 链接', data: null });
   }
 
+  // SSRF 预检：让用户在创建时就拿到明确错误，而不是等任务失败。
+  // 只做同步的字面量检查、不做 DNS —— create 是同步 handler，一次慢解析会挂住请求，
+  // 而且"创建时解析、启动时再解析"本身就是 TOCTOU。权威校验在连接期（_doRequest）。
+  var createPrecheck = null;
+  try {
+    createPrecheck = checkOfflineTargetLiteral(
+      new URL(url), url.toLowerCase().indexOf('https:') === 0);
+  } catch (e) { createPrecheck = null; }  // 解析失败交给下载阶段报错，保持既有行为
+  if (createPrecheck) {
+    return res.json({ code: 1, message: createPrecheck, data: null });
+  }
+
   var mimeType = mime.lookup(filename) || 'application/octet-stream';
   var dirId = targetDirId;
 
@@ -3349,6 +3382,61 @@ router.delete('/offline/:id', requireAuth, function(req, res) {
 // 最大重定向次数
 var MAX_REDIRECTS = 10;
 
+// ==================== 离线下载 SSRF 防护 ====================
+// 允许清单只读一次并缓存（与 config.js 的加载时机一致，改配置需重启生效）
+var _offlineAllowedHosts = null;
+function getAllowedOfflineHosts() {
+  if (_offlineAllowedHosts === null) {
+    var raw = [];
+    try {
+      var cfg = require('../config');
+      raw = (cfg.offlineDownload && cfg.offlineDownload.allowedHosts) || [];
+    } catch (e) {}
+    _offlineAllowedHosts = parseHostAllowlist ? parseHostAllowlist(raw) : [];
+  }
+  return _offlineAllowedHosts;
+}
+
+// 从已解析的 URL 取出 (hostname, port)；hostname 剥掉 IPv6 的方括号
+function splitOfflineTarget(parsedUrl, isHttps) {
+  var host = parsedUrl.hostname || '';
+  if (host.charAt(0) === '[' && host.charAt(host.length - 1) === ']') host = host.slice(1, -1);
+  return {
+    hostname: host,
+    port: parseInt(parsedUrl.port, 10) || (isHttps ? 443 : 80)
+  };
+}
+
+// 同步字面量预检：只判主机名本身是不是被禁的 IP 字面量，不做 DNS。
+// 返回 null = 通过；返回字符串 = 拒绝原因（可直接入库/推送给用户）
+function checkOfflineTargetLiteral(parsedUrl, isHttps) {
+  var t = splitOfflineTarget(parsedUrl, isHttps);
+  // (1) 显式允许清单优先 —— 必须在地址判定之前，否则运维配了 127.0.0.1:18899 也放不进来
+  if (isHostAllowlisted && isHostAllowlisted(getAllowedOfflineHosts(), t.hostname, t.port)) return null;
+  // (2) IP 字面量落在禁止段 → 拒绝。
+  //     这一步不可省：net 对 IP 字面量会跳过 DNS 解析，lookup 钩子根本不会被调用
+  if (isBlockedIpLiteral && isBlockedIpLiteral(t.hostname) === true) return BLOCKED_TARGET_MESSAGE;
+  // (3) 域名交给连接期的 lookup 处置
+  return null;
+}
+
+// 构造连接期守卫：校验的是 DNS 真正解析出来的地址（不存在"先解析校验、再解析连接"的窗口）
+function makeOfflineLookup(parsedUrl, isHttps) {
+  var t = splitOfflineTarget(parsedUrl, isHttps);
+  var allowedByHost = !!(isHostAllowlisted && isHostAllowlisted(getAllowedOfflineHosts(), t.hostname, t.port));
+  return createGuardedLookup({
+    isAddressAllowed: function (addr) {
+      if (allowedByHost) return true;              // 运维显式放行的主机：连内网也认
+      return isBlockedIpLiteral(addr) === false;   // 否则必须落在公网段
+    }
+  });
+}
+
+// 校验模块缺失 → 失败关闭（不静默放行）
+function offlineGuardMissing() {
+  return !(isBlockedIpLiteral && createGuardedLookup && parseHostAllowlist && isHostAllowlisted);
+}
+
 function doOfflineDownload(task, user, req, callback) {
   // 在异步操作前提取 session cookie 和 host（避免 req 被清理后无法访问）
   var sessionCookie = null;
@@ -3418,6 +3506,25 @@ function doOfflineDownload(task, user, req, callback) {
       return callback(new Error(parseErr));
     }
 
+    // ===== SSRF 防护：每一跳（含重定向后的新 URL）都校验 =====
+    // 重定向会递归回到 _doRequest（见下方 3xx 分支），所以这里是唯一需要的汇聚点
+    if (offlineGuardMissing()) {
+      var modErr = '离线下载地址校验不可用（lib/validator.js 版本过旧），已拒绝下载';
+      log.error('[Offline] ' + modErr);
+      OfflineDownload.updateStatus(task.id, 'failed', modErr);
+      if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: modErr });
+      return callback(new Error(modErr));
+    }
+    var literalBlocked = checkOfflineTargetLiteral(parsedUrl, isHttps);
+    if (literalBlocked) {
+      // 服务端日志可以记细节；给用户/数据库的文案里不含任何地址
+      log.warn('[Offline] 目标地址被拦截: host=' + parsedUrl.hostname
+        + ' 重定向次数=' + redirectCount + ' 任务=' + task.id);
+      OfflineDownload.updateStatus(task.id, 'failed', literalBlocked);
+      if (wsPush) wsPush.pushOfflineUpdate(user.id, task.id, 'failed', { error: literalBlocked });
+      return callback(new Error(literalBlocked));
+    }
+
     // 构建浏览器级请求头
     var requestHeaders = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -3448,7 +3555,9 @@ function doOfflineDownload(task, user, req, callback) {
       headers: requestHeaders,
       timeout: 120000,  // 120 秒超时
       rejectUnauthorized: false,  // 允许自签名证书
-      family: 4  // 强制 IPv4（某些服务器 IPv6 不通）
+      family: 4,  // 强制 IPv4（某些服务器 IPv6 不通）
+      // SSRF：连接前校验真实解析出来的地址（IP 字面量不走 lookup，已由上面的字面量预检覆盖）
+      lookup: makeOfflineLookup(parsedUrl, isHttps)
     };
 
     log.info('[Offline] 请求: ' + targetUrl + ' (重定向次数: ' + redirectCount + ')');
@@ -4704,9 +4813,9 @@ router.get('/files/text/:id', requireAuth, function(req, res) {
   if (req.query.public_path) {
     var pubPath = req.query.public_path;
     var pubRoot = Storage.PUBLIC_DIR;
-    var pubFilePath = path.resolve(pubRoot, pubPath);
-    // 安全检查：禁止 .. 跳出 PUBLIC_DIR
-    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '文件不存在');
+    // resolveWithin：path.sep 感知的包含性校验（startsWith 会让兄弟目录 public_evil 绕过）
+    var pubFilePath = resolveWithin(pubRoot, pubPath);
+    if (!pubFilePath) return deny404(res, '文件不存在');
     if (!fs.existsSync(pubFilePath)) return deny404(res, '文件不存在');
 
     var pubExt = pubPath.toLowerCase().split('.').pop();
@@ -4920,8 +5029,8 @@ router.put('/files/text/:id', requireAuth, function(req, res) {
   if (req.query.public_path) {
     var pubPath = req.query.public_path;
     var pubRoot = Storage.PUBLIC_DIR;
-    var pubFilePath = path.resolve(pubRoot, pubPath);
-    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '路径不合法');
+    var pubFilePath = resolveWithin(pubRoot, pubPath);
+    if (!pubFilePath) return deny404(res, '路径不合法');
     try {
       var saveEncoding = (req.body.encoding || 'utf-8').toLowerCase();
       var saveBuf;
@@ -5002,8 +5111,9 @@ router.post('/files/create', requireAuth, function(req, res) {
   if (req.body.public_path !== undefined) {
     if (!user.is_admin) return deny403(res, '仅管理员可在公共目录新建文件');
     var pubRoot = Storage.PUBLIC_DIR;
-    var pubFilePath = path.resolve(pubRoot, String(req.body.public_path || ''), name);
-    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '路径不合法');
+    // name 已被 validateFileName 约束，public_path 才是没约束的那个
+    var pubFilePath = resolveWithin(pubRoot, path.join(String(req.body.public_path || ''), name));
+    if (!pubFilePath) return deny404(res, '路径不合法');
     try {
       fs.writeFileSync(pubFilePath, Buffer.alloc(0));
       logTraffic(user.id, '', 'create_file', 0, name, 0, 0);
@@ -5068,8 +5178,8 @@ router.get('/files/docx/:id', requireAuth, function(req, res) {
   if (req.query.public_path) {
     var pubPath = req.query.public_path;
     var pubRoot = Storage.PUBLIC_DIR;
-    var pubFilePath = path.resolve(pubRoot, pubPath);
-    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '文件不存在');
+    var pubFilePath = resolveWithin(pubRoot, pubPath);
+    if (!pubFilePath) return deny404(res, '文件不存在');
     if (!fs.existsSync(pubFilePath)) return deny404(res, '文件不存在');
 
     var pubExt = pubPath.toLowerCase().split('.').pop();
@@ -5240,8 +5350,8 @@ router.get('/files/xlsx/:id', requireAuth, function(req, res) {
   if (req.query.public_path) {
     var pubPath = req.query.public_path;
     var pubRoot = Storage.PUBLIC_DIR;
-    var pubFilePath = path.resolve(pubRoot, pubPath);
-    if (!pubFilePath.startsWith(pubRoot)) return deny404(res, '文件不存在');
+    var pubFilePath = resolveWithin(pubRoot, pubPath);
+    if (!pubFilePath) return deny404(res, '文件不存在');
     if (!fs.existsSync(pubFilePath)) return deny404(res, '文件不存在');
     var pubExt = pubPath.toLowerCase().split('.').pop();
     if (pubExt !== 'xlsx' && pubExt !== 'xls') return res.status(415).json({ code: 415, message: '仅支持 xlsx/xls 格式' });

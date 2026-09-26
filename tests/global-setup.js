@@ -4,7 +4,7 @@
  */
 async function globalSetup() {
   console.log('[Setup] Test environment ready.');
-  console.log('[Setup] Server: http://127.0.0.1:88');
+  console.log('[Setup] Server: ' + (process.env.FMS_BASE_URL || 'http://127.0.0.1:88'));
   console.log('[Setup] Note: Auth-dependent tests will manage their own sessions.');
 }
 

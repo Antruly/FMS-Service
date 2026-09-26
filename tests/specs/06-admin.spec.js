@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const { ApiHelper } = require('../helpers/api-helper');
 
-const BASE_URL = 'http://127.0.0.1:88';
+const BASE_URL = process.env.FMS_BASE_URL || 'http://127.0.0.1:88';
 
 // ==================== 管理员 API 测试 ====================
 test.describe('管理员 - 用户管理', () => {

@@ -68,11 +68,6 @@ function requireAdmin(req, res, next) {
   });
 }
 
-// Test endpoint - verify routes are working
-router.get('/admin/version/test', function(req, res) {
-  res.json({ code: 0, message: 'OK', dir: VERSION_DIR });
-});
-
 // GET /api/version/latest - Public
 router.get('/version/latest', function(req, res) {
   var versions = readVersions();

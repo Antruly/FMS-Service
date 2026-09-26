@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.2.2 — Security hardening: QR-login takeover, path traversal, share authorization</sub>
+  <strong>End-to-End Encrypted Private File Management Service</strong><br><sub>v1.2.3 — Security hardening: app-log authz, upgrade zip-slip, offline-download SSRF, log injection, RNG</sub>
 </p>
 
 <p align="center">

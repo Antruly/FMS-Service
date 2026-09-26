@@ -203,5 +203,13 @@ module.exports = {
     baseUrl: process.env.APP_BASE_URL || ''
   },
 
+  // 离线下载允许访问的主机（逗号分隔；条目为 host 或 host:port，无 port 表示匹配该主机任意端口）
+  // 默认留空 = 只允许公网地址；内网 / 环回 / 链路本地 / 云元数据一律拒绝。
+  // 例：OFFLINE_DOWNLOAD_ALLOWED_HOSTS=127.0.0.1:88,nas.lan:5000
+  offlineDownload: {
+    allowedHosts: (process.env.OFFLINE_DOWNLOAD_ALLOWED_HOSTS || '')
+      .split(',').map(function(s) { return s.trim(); }).filter(Boolean)
+  },
+
   storageAlertEmail: process.env.STORAGE_ALERT_EMAIL || 'admins'
 };

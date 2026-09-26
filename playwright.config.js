@@ -1,7 +1,9 @@
 // @ts-check
 const { defineConfig, devices } = require('@playwright/test');
 
-const BASE_URL = 'http://127.0.0.1:88';
+// 允许把整套用例指向别的实例（隔离实例、灰度机器），与 spec 11 的写法保持一致。
+// 不设 FMS_BASE_URL 时行为与之前完全一样。
+const BASE_URL = process.env.FMS_BASE_URL || 'http://127.0.0.1:88';
 
 module.exports = defineConfig({
   testDir: './tests/specs',
